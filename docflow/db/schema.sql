@@ -1,8 +1,10 @@
+-- BEGIN POSTGRES-SPECIFIC
 -- Create schema if it doesn't exist
 CREATE SCHEMA IF NOT EXISTS docflow;
 
 -- Set search path
 SET search_path TO docflow;
+-- END POSTGRES-SPECIFIC
 
 -- Drop existing tables (in reverse dependency order)
 DROP TABLE IF EXISTS operation_dependencies;
@@ -16,10 +18,10 @@ DROP TABLE IF EXISTS docbasket;
 -- Create docbasket table
 CREATE TABLE IF NOT EXISTS docbasket (
     id VARCHAR(36) PRIMARY KEY,
-    name VARCHAR(255) UNIQUE NOT NULL,
+    name VARCHAR(255) NOT NULL UNIQUE,
     description TEXT,
-    config JSON,
-    status VARCHAR(50) DEFAULT 'active',
+    config JSON,  -- SQLite will store as TEXT, handled by SQLAlchemy
+    status VARCHAR(50) NOT NULL DEFAULT 'active',
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -29,15 +31,13 @@ CREATE TABLE IF NOT EXISTS documents (
     id VARCHAR(36) PRIMARY KEY,
     basket_id VARCHAR(36) NOT NULL REFERENCES docbasket(id) ON DELETE CASCADE,
     document_type VARCHAR(50) NOT NULL,
-    status VARCHAR(20) NOT NULL DEFAULT 'RECEIVED',
-    source VARCHAR(100) NOT NULL,
+    source VARCHAR(255) NOT NULL,
+    content JSON,  -- SQLite will store as TEXT, handled by SQLAlchemy
+    raw_content TEXT,
     related_po VARCHAR(50),
     checksum VARCHAR(64),
-    content JSON NOT NULL,
-    raw_content TEXT,
-    processing_attempts INTEGER DEFAULT 0,
-    last_error TEXT,
-    additional_info JSON,
+    status VARCHAR(50) NOT NULL DEFAULT 'RECEIVED',
+    processing_attempts INTEGER NOT NULL DEFAULT 0,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -46,9 +46,8 @@ CREATE TABLE IF NOT EXISTS documents (
 CREATE TABLE IF NOT EXISTS file_history (
     id VARCHAR(36) PRIMARY KEY,
     document_id VARCHAR(36) NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
-    original_path VARCHAR(500) NOT NULL,
-    internal_path VARCHAR(500) NOT NULL,
-    checksum VARCHAR(64),
+    original_path VARCHAR(255) NOT NULL,
+    internal_path VARCHAR(255) NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -58,7 +57,7 @@ CREATE TABLE IF NOT EXISTS operations (
     document_id VARCHAR(36) NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
     operation_type VARCHAR(100) NOT NULL,
     status VARCHAR(50) NOT NULL,
-    details JSON,
+    details JSON,  -- SQLite will store as TEXT, handled by SQLAlchemy
     error TEXT,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     completed_at TIMESTAMP
@@ -69,18 +68,18 @@ CREATE TABLE IF NOT EXISTS operation_dependencies (
     id VARCHAR(36) PRIMARY KEY,
     operation_id VARCHAR(36) NOT NULL REFERENCES operations(id) ON DELETE CASCADE,
     depends_on VARCHAR(36) NOT NULL REFERENCES operations(id) ON DELETE CASCADE,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(operation_id, depends_on)
 );
 
 -- Create doc_events table
 CREATE TABLE IF NOT EXISTS doc_events (
-    id SERIAL PRIMARY KEY,
-    event_id VARCHAR(36) UNIQUE NOT NULL,
+    id VARCHAR(36) PRIMARY KEY,
     basket_id VARCHAR(36) NOT NULL REFERENCES docbasket(id) ON DELETE CASCADE,
+    document_id VARCHAR(36) REFERENCES documents(id) ON DELETE NO ACTION,
     event_type VARCHAR(50) NOT NULL,
-    document_id VARCHAR(36) REFERENCES documents(id),
     event_timestamp TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    data JSON,
+    data JSON,  -- SQLite will store as TEXT, handled by SQLAlchemy
     source VARCHAR(50) NOT NULL DEFAULT 'docflow',
     status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
     error_message TEXT,
@@ -90,10 +89,10 @@ CREATE TABLE IF NOT EXISTS doc_events (
 
 -- Create document_metadata table
 CREATE TABLE IF NOT EXISTS document_metadata (
-    id SERIAL PRIMARY KEY,
+    id VARCHAR(36) PRIMARY KEY,
     document_id VARCHAR(36) NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
     key VARCHAR(100) NOT NULL,
-    value JSON NOT NULL,
+    value JSON NOT NULL,  -- SQLite will store as TEXT, handled by SQLAlchemy
     metadata_type VARCHAR(50) NOT NULL DEFAULT 'custom',
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -116,8 +115,6 @@ CREATE INDEX IF NOT EXISTS idx_doc_events_event_type ON doc_events(event_type);
 CREATE INDEX IF NOT EXISTS idx_doc_events_document_id ON doc_events(document_id);
 CREATE INDEX IF NOT EXISTS idx_doc_events_event_timestamp ON doc_events(event_timestamp);
 CREATE INDEX IF NOT EXISTS idx_doc_events_status ON doc_events(status);
-
--- Create indexes for document_metadata
 CREATE INDEX IF NOT EXISTS idx_document_metadata_document_id ON document_metadata(document_id);
 CREATE INDEX IF NOT EXISTS idx_document_metadata_key ON document_metadata(key);
 CREATE INDEX IF NOT EXISTS idx_document_metadata_type ON document_metadata(metadata_type); 

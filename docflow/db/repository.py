@@ -171,60 +171,43 @@ class DocumentMetadataRepository(BaseRepository[DocumentMetadata]):
         """Get metadata by type for a document"""
         return self.list(document_id=document_id, metadata_type=metadata_type)
 
-class DocEventRepository:
-    def __init__(self, session: Session):
-        self.session = session
-
-    def create(self, basket_id: str, event_type: str, data: Optional[Dict] = None,
-               document_id: Optional[str] = None) -> DocEvent:
-        event = DocEvent(
-            basket_id=basket_id,
-            event_type=event_type,
-            data=data or {},
-            document_id=document_id
-        )
-        self.session.add(event)
-        self.session.commit()
-        return event
-
+class DocEventRepository(BaseRepository[DocEvent]):
+    """Repository for document event operations"""
+    
+    def __init__(self, db: Database):
+        super().__init__(DocEvent, db)
+    
     def get_pending_events(self, basket_id: str, batch_size: int = 50) -> List[DocEvent]:
-        # First get all pending events
-        events = (
-            self.session.query(DocEvent)
-            .filter(DocEvent.basket_id == basket_id)
-            .filter(DocEvent.status == 'PENDING')
-            .order_by(asc(DocEvent.event_timestamp))
-            .limit(batch_size)
-            .all()
-        )
-
-        # Mark duplicates in Python
-        seen = set()
-        for event in events:
-            key = (event.document_id, event.event_type)
-            if key in seen:
-                event.status = 'IGNORED'
-                event.error_message = 'Duplicate event - earlier event exists'
-            seen.add(key)
-
-        self.session.commit()
-        return events
-
+        """Get pending events for a basket"""
+        with self.db.session() as session:
+            query = (
+                select(DocEvent)
+                .where(
+                    DocEvent.basket_id == basket_id,
+                    DocEvent.status == 'PENDING'
+                )
+                .order_by(DocEvent.event_timestamp.asc())
+                .limit(batch_size)
+            )
+            return list(session.execute(query).scalars())
+    
     def mark_processed(self, event_id: str) -> bool:
-        event = self.session.query(DocEvent).filter(DocEvent.event_id == event_id).first()
-        if event:
-            event.status = 'PROCESSED'
-            event.updated_at = datetime.utcnow()
-            self.session.commit()
-            return True
-        return False
-
+        """Mark an event as processed"""
+        with self.db.session() as session:
+            event = session.get(DocEvent, event_id)
+            if event:
+                event.status = 'PROCESSED'
+                session.commit()
+                return True
+            return False
+    
     def mark_failed(self, event_id: str, error_message: str) -> bool:
-        event = self.session.query(DocEvent).filter(DocEvent.event_id == event_id).first()
-        if event:
-            event.status = 'FAILED'
-            event.error_message = error_message
-            event.updated_at = datetime.utcnow()
-            self.session.commit()
-            return True
-        return False 
+        """Mark an event as failed"""
+        with self.db.session() as session:
+            event = session.get(DocEvent, event_id)
+            if event:
+                event.status = 'FAILED'
+                event.error_message = error_message
+                session.commit()
+                return True
+            return False 
