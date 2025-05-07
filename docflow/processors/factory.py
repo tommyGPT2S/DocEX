@@ -1,7 +1,9 @@
 from typing import Dict, Type, Optional
 from docflow.processors.base import BaseProcessor
 from docflow.db.connection import Database
-from docflow.db.models import Processor
+from docflow.db.models import Processor, DocBasket
+from docflow.processors.pdf_to_text import MatchingInvoiceToPOProcessor
+from docflow.processors.mapper import ProcessorMapper
 
 class ProcessorFactory:
     """Factory for creating and managing processor instances"""
@@ -9,6 +11,7 @@ class ProcessorFactory:
     def __init__(self):
         self._processors: Dict[str, Type[BaseProcessor]] = {}
         self._instances: Dict[str, BaseProcessor] = {}
+        self.mapper = ProcessorMapper()
     
     def register(self, processor_class: Type[BaseProcessor]) -> None:
         """Register a processor class"""
@@ -49,6 +52,9 @@ class ProcessorFactory:
     def clear_instances(self) -> None:
         """Clear all processor instances"""
         self._instances.clear()
+
+    def map_document_to_processor(self, document):
+        return self.mapper.get_processor(document)
 
 # Global factory instance
 factory = ProcessorFactory() 

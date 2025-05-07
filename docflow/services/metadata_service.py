@@ -6,14 +6,14 @@ from sqlalchemy import select
 class MetadataService:
     """Service for handling document metadata operations"""
     
-    def __init__(self, db: Database):
+    def __init__(self, db: Optional[Database] = None):
         """
         Initialize the metadata service
         
         Args:
-            db: Database instance
+            db: Database instance (optional)
         """
-        self.db = db
+        self.db = db or Database()
     
     def get_metadata(self, document_id: str) -> Dict[str, Any]:
         """

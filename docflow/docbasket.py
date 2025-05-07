@@ -338,8 +338,18 @@ class DocBasket:
         db = Database()
         with db.session() as session:
             file_path = Path(file_path)
-            content = file_path.read_text()
-            checksum = hashlib.sha256(content.encode()).hexdigest()
+            # Determine if file is binary (e.g., PDF, image) or text
+            binary_exts = {'.pdf', '.jpg', '.jpeg', '.png', '.gif', '.doc', '.docx', '.xls', '.xlsx'}
+            if file_path.suffix.lower() in binary_exts:
+                content = file_path.read_bytes()
+                checksum = hashlib.sha256(content).hexdigest()
+                size = len(content)
+                raw_content = content
+            else:
+                content = file_path.read_text()
+                checksum = hashlib.sha256(content.encode()).hexdigest()
+                size = len(content.encode())
+                raw_content = content
             existing = session.execute(
                 select(DocumentModel).where(
                     and_(
@@ -377,10 +387,10 @@ class DocBasket:
                 source=str(file_path),
                 path='',
                 document_type=document_type,
-                content={'content': content},
-                raw_content=content,
+                content={'content': content if isinstance(content, str) else None},
+                raw_content=raw_content if isinstance(raw_content, str) else None,
                 content_type=self._get_content_type(file_path),
-                size=len(content.encode()),
+                size=size,
                 checksum=checksum,
                 status='RECEIVED'
             )
@@ -407,7 +417,7 @@ class DocBasket:
                     'source': str(file_path),
                     'stored_path': stored_path,
                     'document_type': document_type,
-                    'size': len(content.encode()),
+                    'size': size,
                     'checksum': checksum
                 },
                 created_at=datetime.now(UTC),
