@@ -20,28 +20,38 @@ pip install git+https://github.com/tommyGPT2S/DocFlow.git
 
 ## Quick Start
 
+Before using DocFlow in your code, you must initialize the system using the CLI:
+
+```sh
+# Run this once to set up configuration and database
+$ docflow init
+```
+
+Then you can use the Python API (minimal example):
+
 ```python
 from docflow import DocFlow
+from pathlib import Path
 
-# Initialize DocFlow (loads config from default_config.yaml)
+# Create DocFlow instance (will check initialization internally)
 docflow = DocFlow()
 
-# List available routes
-for route in docflow.list_routes():
-    print(f"Route: {route.name}, Protocol: {route.protocol}, Purpose: {route.purpose}")
+# Create a basket
+basket = docflow.basket('mybasket')
 
-# Download a file
-download_route = docflow.get_route("my_download_route")
-result = download_route.download("remote_file.txt", "local_file.txt")
-print(result.message)
+# Create a simple text file
+hello_file = Path('hello.txt')
+hello_file.write_text('Hello scos.ai!')
 
-# Add a document to a basket and upload
-basket = docflow.create_basket("my_basket")
-doc = basket.add("local_file.txt", metadata={"source": "example"})
-upload_route = docflow.get_route("my_upload_route")
-upload_result = upload_route.upload_document(doc)
-print(upload_result.message)
+# Add the document to the basket
+doc = basket.add(str(hello_file))
+
+# Print document details
+print(doc.get_details())
+
+hello_file.unlink()
 ```
+Additional examples can be found in examples/ folder.
 
 ## Configuration
 
