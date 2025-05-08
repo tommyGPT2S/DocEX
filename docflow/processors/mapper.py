@@ -1,12 +1,16 @@
 from docflow.db.connection import Database
 from docflow.db.models import DocBasket
-from docflow.processors.pdf_to_text import MatchingInvoiceToPOProcessor
+from docflow.processors.pdf_invoice import PDFInvoiceProcessor
 
 class ProcessorMapper:
     def __init__(self):
         self.rules = [self.invoice_pdf_rule]
 
     def invoice_pdf_rule(self, document):
+        """
+        Rule for mapping invoice PDF documents to the PDFInvoiceProcessor
+        Returns the processor class if conditions are met, None otherwise
+        """
         basket_name = None
         if document.model and hasattr(document.model, 'basket_id'):
             db = Database()
@@ -14,12 +18,18 @@ class ProcessorMapper:
                 basket = session.query(DocBasket).filter_by(id=document.model.basket_id).first()
                 if basket:
                     basket_name = basket.name
+        
+        # Check if document is a PDF in the invoice basket
         file_type = document.name.split('.')[-1].lower()
         if basket_name == 'invoice' and file_type == 'pdf':
-            return MatchingInvoiceToPOProcessor
+            return PDFInvoiceProcessor
         return None
 
     def get_processor(self, document):
+        """
+        Get the appropriate processor for a document by evaluating all rules
+        Returns the processor class if a matching rule is found, None otherwise
+        """
         for rule in self.rules:
             processor = rule(document)
             if processor:

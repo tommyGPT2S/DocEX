@@ -10,6 +10,7 @@ from docflow.db.connection import Database
 from docflow.db.models import Operation
 from docflow.transport.models import RouteOperation
 from sqlalchemy import text
+from docflow.models.document_metadata import DocumentMetadata as MetaModel
 
 class Document:
     """Represents a document in DocFlow"""
@@ -113,11 +114,16 @@ class Document:
             "updated_at": self.updated_at
         }
 
-    def get_metadata(self) -> Dict[str, Any]:
-        """Get all metadata for this document from the database."""
+    def get_metadata(self) -> Dict[str, MetaModel]:
+        """Get all metadata for this document from the database as DocumentMetadata models."""
         db = Database()
         service = MetadataService(db)
         return service.get_metadata(self.id)
+
+    def get_metadata_dict(self) -> Dict[str, Any]:
+        """Get all metadata as a plain dict (for backward compatibility)."""
+        meta = self.get_metadata()
+        return {k: v.to_dict() for k, v in meta.items()}
 
     def create_operation(self, operation_type: str, status: str, details: Optional[Dict] = None) -> Any:
         """Create an operation record for this document."""

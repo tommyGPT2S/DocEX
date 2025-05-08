@@ -6,6 +6,7 @@ from uuid import uuid4
 from docflow.document import Document
 from docflow.db.connection import Database
 from docflow.db.models import ProcessingOperation
+from docflow.models.document_metadata import DocumentMetadata as MetaModel
 
 class ProcessingResult:
     """Result of a document processing operation"""
@@ -19,9 +20,19 @@ class ProcessingResult:
     ):
         self.success = success
         self.content = content
-        self.metadata = metadata or {}
+        # Accept metadata as dict of DocumentMetadata or dict
+        if metadata and all(isinstance(v, MetaModel) for v in metadata.values()):
+            self.metadata = metadata
+        elif metadata:
+            self.metadata = {k: MetaModel.from_dict(v) if isinstance(v, dict) else MetaModel(extra={"value": v}) for k, v in metadata.items()}
+        else:
+            self.metadata = {}
         self.error = error
         self.timestamp = datetime.now(UTC)
+
+    def metadata_dict(self) -> Dict[str, Any]:
+        """Return metadata as plain dict for compatibility."""
+        return {k: v.to_dict() for k, v in self.metadata.items()}
 
 class BaseProcessor(ABC):
     """Base class for document processors"""

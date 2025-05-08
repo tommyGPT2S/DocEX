@@ -902,4 +902,83 @@ logging:
    - Testing utilities
    - Debugging tools
    - Performance profiling
-   - Documentation generation 
+   - Documentation generation
+
+---
+
+# Appendix: User Context and Multi-tenancy Design
+
+## Design Philosophy
+
+DocFlow is designed to be tenant-agnostic and composable. User context is supported for auditing and logging, but all tenant management and access control are handled at the application or orchestration layer.
+
+- **DocFlow Core:** Focuses on document and basket management, processing, and storage.
+- **User Context:** Used for operation tracking, audit logging, and optional metadata enrichment.
+- **Multi-tenancy:** All tenant-specific logic (provisioning, access control, configuration) is managed outside DocFlow, typically in the API or orchestration layer.
+
+## UserContext Example
+
+```python
+from dataclasses import dataclass
+from typing import Optional, Dict, List
+
+@dataclass
+class UserContext:
+    user_id: str
+    user_email: Optional[str] = None
+    tenant_id: Optional[str] = None
+    roles: Optional[List[str]] = None
+    attributes: Optional[Dict] = None
+```
+
+- Pass `user_context` to DocFlow for logging/auditing:
+
+```python
+user_ctx = UserContext(user_id="alice", tenant_id="tenant1", roles=["admin"])
+df = DocFlow(user_context=user_ctx)
+df.create_basket("invoices")  # User action is logged
+```
+
+## Multi-tenancy Architecture
+
+```
+┌────────────────────────────┐
+│  Application/Orchestration │
+│  - Tenant provisioning     │
+│  - Access control         │
+│  - Per-tenant config      │
+└─────────────┬──────────────┘
+              │
+              ▼
+┌────────────────────────────┐
+│         DocFlow            │
+│  - Document management    │
+│  - Storage operations     │
+│  - Processing             │
+└────────────────────────────┘
+```
+
+## Implementation Guidelines
+
+- **Database/Storage Config:** Application layer provides tenant-specific config to DocFlow.
+- **User Context:** Used for audit logging, not for business logic or access control.
+- **Access Control:** Enforced outside DocFlow.
+
+## Benefits
+
+- **Separation of Concerns:** DocFlow is focused and maintainable.
+- **Flexibility:** Any multi-tenancy or RBAC model can be layered on top.
+- **Security:** No tenant data leakage; access control is centralized.
+
+## Best Practices
+
+- Keep DocFlow core tenant-agnostic.
+- Use `UserContext` for logging and traceability.
+- Manage all tenant and user access at the orchestration or API layer.
+- Pass only the necessary context to DocFlow for auditing.
+
+## Future Considerations
+
+- Enhanced audit logging and traceability.
+- User-specific configuration overrides (e.g., storage limits, processor plugins).
+- Integration with external IAM or RBAC systems. 

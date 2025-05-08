@@ -10,6 +10,7 @@ from docflow.models.metadata_keys import MetadataKey
 from docflow.db.models import Base
 from docflow.transport.models import Base as TransportBase
 from docflow.transport.transport_result import TransportResult
+from docflow.context import UserContext
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -96,13 +97,21 @@ class DocFlow:
             cls._instance = super().__new__(cls)
         return cls._instance
     
-    def __init__(self):
-        """Initialize DocFlow instance"""
+    def __init__(self, user_context: Optional[UserContext] = None):
+        """
+        Initialize DocFlow instance
+        
+        Args:
+            user_context: Optional user context for user-aware operations and auditing
+        """
         if not hasattr(self, 'initialized'):
             if not self.is_initialized():
                 raise RuntimeError("DocFlow not initialized. Call 'docflow init' to setup first.")
             self.db = Database()
+            self.user_context = user_context
             self.initialized = True
+            if user_context:
+                logger.info(f"DocFlow initialized for user {user_context.user_id}")
     
     @classmethod
     def setup(cls, **config) -> None:
@@ -195,7 +204,14 @@ class DocFlow:
         """
         if storage_config is None:
             storage_config = self._config.get('storage', {})
-        return DocBasket.create(name, description, storage_config)
+            
+        basket = DocBasket.create(name, description, storage_config)
+        
+        if self.user_context:
+            # Log creation with user context for auditing
+            logger.info(f"Basket {name} created by user {self.user_context.user_id}")
+            
+        return basket
     
     def get_basket(self, basket_id: int) -> Optional[DocBasket]:
         """
@@ -205,9 +221,15 @@ class DocFlow:
             basket_id: Basket ID
             
         Returns:
-            Document basket or None if not found
+            Basket if found, None otherwise
         """
-        return DocBasket.get(basket_id)
+        basket = super().get_basket(basket_id)
+        
+        if basket and self.user_context:
+            # Log access for auditing
+            logger.info(f"Basket {basket_id} accessed by user {self.user_context.user_id}")
+                
+        return basket
     
     def list_baskets(self) -> List[DocBasket]:
         """

@@ -26,6 +26,8 @@ from docflow.transport.route import Route
 from docflow.transport.config import RouteConfig
 from docflow.transport.transport_result import TransportResult
 from docflow.document import Document
+from docflow.utils.file_utils import is_binary_file, get_content_type
+from docflow.models.document_metadata import DocumentMetadata as MetaModel
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -229,23 +231,21 @@ class DocBasket:
     
     def find_documents_by_metadata(self, metadata: Dict[str, Any]) -> List[Document]:
         """
-        Find documents by metadata
-        
-        Args:
-            metadata: Dictionary of metadata key-value pairs
-            
-        Returns:
-            List of matching documents
+        Find documents by metadata (metadata values can be dicts or DocumentMetadata models)
         """
         with self.db.transaction() as session:
             # Build query
             query = select(DocumentModel).join(DocumentMetadata)
             for key, value in metadata.items():
+                # Accept either DocumentMetadata or dict/Any
+                if isinstance(value, MetaModel):
+                    value = value.to_dict()
+                if isinstance(value, dict) and 'extra' in value:
+                    value = value['extra'].get('value', None)
                 query = query.where(
                     DocumentMetadata.key == key,
-                    DocumentMetadata.value == value
+                    DocumentMetadata.value == str(value)
                 )
-            
             # Execute query
             documents = session.execute(query).scalars().all()
             return [Document(
@@ -285,43 +285,7 @@ class DocBasket:
             ) for basket in baskets]
     
     def _get_content_type(self, file_path: Path) -> str:
-        """
-        Get content type based on file extension
-        
-        Args:
-            file_path: Path to the file
-            
-        Returns:
-            Content type string
-        """
-        # Default content type
-        content_type = 'text/plain'
-        
-        if file_path.suffix:
-            # Map common file extensions to content types
-            # TODO: move this to a config file
-            content_types = {
-                '.txt': 'text/plain',
-                '.html': 'text/html',
-                '.htm': 'text/html',
-                '.json': 'application/json',
-                '.xml': 'application/xml',
-                '.pdf': 'application/pdf',
-                '.doc': 'application/msword',
-                '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-                '.xls': 'application/vnd.ms-excel',
-                '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                '.csv': 'text/csv',
-                '.md': 'text/markdown',
-                '.jpg': 'image/jpeg',
-                '.jpeg': 'image/jpeg',
-                '.png': 'image/png',
-                '.gif': 'image/gif',
-                '.svg': 'image/svg+xml'
-            }
-            content_type = content_types.get(file_path.suffix.lower(), 'application/octet-stream')
-        
-        return content_type
+        return get_content_type(file_path)
 
     def add(self, file_path: str, document_type: str = 'file', metadata: Optional[Dict[str, Any]] = None) -> Document:
         """
@@ -338,9 +302,7 @@ class DocBasket:
         db = Database()
         with db.session() as session:
             file_path = Path(file_path)
-            # Determine if file is binary (e.g., PDF, image) or text
-            binary_exts = {'.pdf', '.jpg', '.jpeg', '.png', '.gif', '.doc', '.docx', '.xls', '.xlsx'}
-            if file_path.suffix.lower() in binary_exts:
+            if is_binary_file(file_path):
                 content = file_path.read_bytes()
                 checksum = hashlib.sha256(content).hexdigest()
                 size = len(content)

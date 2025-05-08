@@ -204,4 +204,155 @@ storage:
 
 ---
 
+## 9. Reference: Standard Metadata Keys (ENUM)
+
+DocFlow provides a set of standard metadata keys in `docflow/models/metadata_keys.py` via the `MetadataKey` enum. These help you use consistent, searchable metadata across your documents.
+
+### Common Metadata Keys
+
+- File-related:
+  - `MetadataKey.ORIGINAL_PATH` → 'original_path'
+  - `MetadataKey.FILE_TYPE` → 'file_type'
+  - `MetadataKey.FILE_SIZE` → 'file_size'
+  - `MetadataKey.FILE_EXTENSION` → 'file_extension'
+  - `MetadataKey.ORIGINAL_FILE_TIMESTAMP` → 'original_file_timestamp'
+- Processing:
+  - `MetadataKey.PROCESSING_STATUS` → 'processing_status'
+  - `MetadataKey.PROCESSING_ERROR` → 'processing_error'
+- Business:
+  - `MetadataKey.RELATED_PO` → 'related_po'
+  - `MetadataKey.CUSTOMER_ID` → 'customer_id'
+  - `MetadataKey.INVOICE_NUMBER` → 'invoice_number'
+- Security:
+  - `MetadataKey.ACCESS_LEVEL` → 'access_level'
+- Audit:
+  - `MetadataKey.CREATED_BY` → 'created_by'
+  - `MetadataKey.CREATED_AT` → 'created_at'
+
+### Usage Example
+
+```python
+from docflow.models.metadata_keys import MetadataKey
+from docflow.services.metadata_service import MetadataService
+
+# Set standard metadata
+MetadataService().update_metadata(doc.id, {
+    MetadataKey.FILE_TYPE.value: 'pdf',
+    MetadataKey.CUSTOMER_ID.value: 'CUST-123',
+    MetadataKey.INVOICE_NUMBER.value: 'INV-2024-001',
+})
+
+# Get metadata
+meta = doc.get_metadata()
+print(meta[MetadataKey.FILE_TYPE.value])  # e.g., 'pdf'
+
+# Use custom metadata keys
+custom_key = MetadataKey.get_custom_key('my_custom_field')
+MetadataService().update_metadata(doc.id, {custom_key: 'custom_value'})
+```
+
+- You can use any of the keys in `MetadataKey` for consistent metadata.
+- For custom fields, use the `get_custom_key` helper to ensure proper prefixing.
+
+---
+
+## User Context and Multi-tenancy
+
+### User Context
+DocFlow supports user context for audit logging and operation tracking. The `UserContext` class provides a way to track user operations without implementing tenant-specific logic.
+
+```python
+from docflow.context import UserContext
+from docflow.docflow import DocFlow
+
+# Create user context
+user_context = UserContext(
+    user_id="user123",
+    user_email="user@example.com",
+    roles=["admin"]
+)
+
+# Initialize DocFlow with user context
+df = DocFlow(user_context=user_context)
+```
+
+The user context is used for:
+- Audit logging of operations
+- Operation tracking
+- User-aware logging
+
+### Multi-tenancy
+DocFlow is designed to be tenant-agnostic, focusing on its core document management responsibilities. Tenant management should be handled at the upper layer:
+
+1. **Database Configuration**
+   - Configure separate databases or schemas per tenant
+   - Use connection pooling with tenant-specific credentials
+   - Handle database routing at the application layer
+
+2. **Storage Configuration**
+   - Configure separate storage paths per tenant
+   - Manage storage quotas and access at the application layer
+   - Handle storage path routing based on tenant context
+
+3. **Access Control**
+   - Implement tenant-specific access control at the application layer
+   - Use middleware or decorators for tenant validation
+   - Handle user-tenant mapping in the application layer
+
+Example of tenant management at the application layer:
+```python
+class TenantAwareDocFlow:
+    def __init__(self, tenant_id: str):
+        self.tenant_id = tenant_id
+        self.db_config = self._get_tenant_db_config()
+        self.storage_config = self._get_tenant_storage_config()
+        
+    def _get_tenant_db_config(self):
+        # Get tenant-specific database configuration
+        return {
+            "type": "postgres",
+            "database": f"tenant_{self.tenant_id}",
+            # ... other config
+        }
+        
+    def _get_tenant_storage_config(self):
+        # Get tenant-specific storage configuration
+        return {
+            "filesystem": {
+                "path": f"/storage/tenant_{self.tenant_id}"
+            }
+        }
+        
+    def get_docflow(self, user_context: UserContext):
+        # Initialize DocFlow with tenant-specific config
+        DocFlow.setup(
+            database=self.db_config,
+            storage=self.storage_config
+        )
+        return DocFlow(user_context=user_context)
+```
+
+### Best Practices
+1. **Keep DocFlow Focused**
+   - Use DocFlow for document management only
+   - Handle tenant logic at the application layer
+   - Use user context for auditing and logging
+
+2. **Configuration Management**
+   - Store tenant configurations separately
+   - Use environment variables for sensitive data
+   - Implement configuration validation
+
+3. **Security**
+   - Validate tenant access at the application layer
+   - Use proper authentication and authorization
+   - Implement audit logging for all operations
+
+4. **Performance**
+   - Use connection pooling for database access
+   - Implement caching where appropriate
+   - Monitor resource usage per tenant
+
+---
+
 Happy coding with DocFlow! 

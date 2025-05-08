@@ -2,7 +2,7 @@ from typing import Dict, Type, Optional
 from docflow.processors.base import BaseProcessor
 from docflow.db.connection import Database
 from docflow.db.models import Processor, DocBasket
-from docflow.processors.pdf_to_text import MatchingInvoiceToPOProcessor
+from docflow.processors.pdf_invoice import PDFInvoiceProcessor
 from docflow.processors.mapper import ProcessorMapper
 
 class ProcessorFactory:
