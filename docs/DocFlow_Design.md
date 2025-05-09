@@ -1,6 +1,6 @@
 # DocFlow Design Document
 
-![DocFlow Architecture](New%20Era%20of%20Supply%20Chain/New%20Era%20of%20Supply%20Chain.001.jpeg)
+![DocFlow Architecture](docs/New%20Era%20of%20Supply%20Chain/image.png)
 
 ## Architecture Principles
 

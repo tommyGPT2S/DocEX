@@ -1,5 +1,7 @@
 # DocFlow
 
+![DocFlow Architecture](docs/New%20Era%20of%20Supply%20Chain/image.png)
+
 **DocFlow** is a robust, extensible document management and transport system for Python. It supports multiple storage backends, metadata management, and operation tracking, with a unified API for local, SFTP, HTTP, and other protocols.
 
 ## Features
@@ -76,8 +78,8 @@ transport_config:
 
 ## Documentation
 
+- [Developer Guide](docs/Developer_Guide.md)
 - [Design Document](docs/DocFlow%20Design.md)
-
 
 ## Contributing
 
