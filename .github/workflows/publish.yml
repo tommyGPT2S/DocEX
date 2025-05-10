@@ -7,8 +7,6 @@ on:
 
 jobs:
   build-and-publish:
-    permissions:
-      id-token: write  # Required for trusted publishing
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -21,6 +19,7 @@ jobs:
       - name: Build package
         run: python -m build
       - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
-        # with:
-        #   repository-url: https://test.pypi.org/legacy/  # Uncomment for TestPyPI 
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+        run: twine upload dist/* 
