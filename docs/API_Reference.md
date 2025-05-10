@@ -1,0 +1,143 @@
+# DocFlow Python API Reference
+
+This reference covers the main public classes and methods in DocFlow. For more details and advanced usage, see the [Developer Guide](Developer_Guide.md).
+
+---
+
+## DocFlow
+
+The main entry point for all document and transport operations.
+
+```python
+from docflow import DocFlow
+
+# Create an instance
+flow = DocFlow()
+
+# List baskets
+baskets = flow.list_baskets()
+
+# Get a basket
+basket = flow.basket('mybasket')
+
+# List routes
+routes = flow.list_routes()
+
+# Get a route
+route = flow.get_route('local_backup')
+```
+
+---
+
+## DocBasket
+
+A container for related documents.
+
+```python
+# Add a document
+doc = basket.add('path/to/file.txt', metadata={'source': 'example'})
+
+# List documents
+for doc in basket.list():
+    print(doc.name)
+
+# Remove a document
+basket.remove(doc.id)
+```
+
+---
+
+## Document
+
+Represents an individual document and its metadata.
+
+```python
+# Get document details
+print(doc.get_details())
+
+# Get content
+text = doc.get_content(mode='text')
+
+# Get and update metadata
+meta = doc.get_metadata()
+doc.update_metadata({'my_key': 'my_value'})
+
+# Get document operations
+ops = doc.get_operations()
+```
+
+---
+
+## Route
+
+Represents a transport route for uploading, downloading, and managing files.
+
+```python
+# Upload a document
+result = route.upload_document(doc)
+print(result.message)
+
+# Download a file
+result = route.download('remote_file.txt', 'local_file.txt')
+print(result.message)
+
+# List files
+result = route.list_files()
+print(result.details)
+```
+
+---
+
+## BaseProcessor & Processor Registration
+
+Processors transform or extract data from documents. You can create and register your own.
+
+```python
+from docflow.processors.base import BaseProcessor, ProcessingResult
+from docflow.document import Document
+
+class MyTextProcessor(BaseProcessor):
+    def can_process(self, document: Document) -> bool:
+        return document.name.lower().endswith('.txt')
+
+    def process(self, document: Document) -> ProcessingResult:
+        text = self.get_document_text(document)
+        return ProcessingResult(success=True, content=text.upper())
+
+# Register via CLI
+# docflow processor register --name MyTextProcessor --type content_processor --description "Uppercases text files" --config '{}'
+```
+
+---
+
+## MetadataService
+
+Service for managing document metadata.
+
+```python
+from docflow.services.metadata_service import MetadataService
+
+# Get metadata
+meta = MetadataService().get_metadata(doc.id)
+
+# Update metadata
+MetadataService().update_metadata(doc.id, {'key': 'value'})
+```
+
+---
+
+## UserContext (for audit logging)
+
+```python
+from docflow.context import UserContext
+from docflow.docflow import DocFlow
+
+user_context = UserContext(user_id="user123", user_email="user@example.com", roles=["admin"])
+df = DocFlow(user_context=user_context)
+```
+
+---
+
+## More
+- See the [Developer Guide](Developer_Guide.md) for advanced topics, configuration, and extensibility.
+- See the [Design Document](DocFlow_Design.md) for architecture and design principles. 

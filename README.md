@@ -1,5 +1,11 @@
 # DocFlow
 
+<!-- Badges -->
+![License](https://img.shields.io/github/license/tommyGPT2S/DocFlow)
+![Python](https://img.shields.io/pypi/pyversions/docflow)
+![Build](https://github.com/tommyGPT2S/DocFlow/actions/workflows/ci.yml/badge.svg)
+<!-- Add PyPI badge here when ready -->
+
 ![DocFlow Architecture](docs/New%20Era%20of%20Supply%20Chain/image.png)
 
 **DocFlow** is a robust, extensible document management and transport system for Python. It supports multiple storage backends, metadata management, and operation tracking, with a unified API for local, SFTP, HTTP, and other protocols.
