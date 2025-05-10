@@ -1,0 +1,27 @@
+# Include documentation
+include README.md
+include LICENSE
+include docs/DocFlow_Design.md
+include docs/Developer_Guide.md
+include docs/New Era of Supply Chain/image.png
+
+# Include configuration files
+include docflow/config/default_config.yaml
+
+# Include database schema
+include docflow/db/sqlite_schema.sql
+
+# Include examples
+recursive-include examples *
+
+# Include test files
+include test_simple.py
+include test_db_connection.py
+include test_sqlite.py
+include test_transport_workflow.py
+include verify_routes.py
+
+# Include any other important files
+include .env.example
+include .gitignore
+include CONTRIBUTING.md
