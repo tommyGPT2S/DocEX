@@ -24,4 +24,4 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           # No username/password needed! Uses OIDC for authentication
-          repository-url: https://test.pypi.org/legacy/  # Uncomment for TestPyPI 
+          # repository-url: https://test.pypi.org/legacy/  # Uncomment for TestPyPI 
