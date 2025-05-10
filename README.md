@@ -20,10 +20,16 @@
 
 ## Installation
 
-Install directly from GitHub:
+Install from PyPI:
 
 ```sh
-pip install git+https://github.com/tommyGPT2S/DocFlow.git
+pip install pydocflow
+```
+
+If you want to use PDF processing features (e.g., custom PDF processors), also install:
+
+```sh
+pip install pdfminer.six
 ```
 
 ## Quick Start

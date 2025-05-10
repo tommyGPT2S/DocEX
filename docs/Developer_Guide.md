@@ -8,7 +8,7 @@ Welcome to the DocFlow developer guide! This document will help you get started 
 
 1. **Install DocFlow** (from PyPI or GitHub):
    ```sh
-   pip install docflow
+   pip install pydocflow
    # or for latest development version:
    pip install git+https://github.com/tommyGPT2S/DocFlow.git
    ```
@@ -115,22 +115,38 @@ for b in flow.list_baskets():
    ```python
    from docflow.processors.base import BaseProcessor, ProcessingResult
    from docflow.document import Document
+   from pdfminer.high_level import extract_text
+   import io
 
-   class MyTextProcessor(BaseProcessor):
+   class MyPDFTextProcessor(BaseProcessor):
        def can_process(self, document: Document) -> bool:
-           return document.name.lower().endswith('.txt')
+           return document.name.lower().endswith('.pdf')
 
        def process(self, document: Document) -> ProcessingResult:
-           text = self.get_document_text(document)
-           # Do something with text...
-           return ProcessingResult(success=True, content=text.upper())
+           pdf_bytes = document.get_content(mode='bytes')
+           text = extract_text(io.BytesIO(pdf_bytes))
+           return ProcessingResult(success=True, content=text)
    ```
-2. **Register your processor:**
+2. **Dynamically add a processor mapping rule:**
+   Instead of editing the main package, you can patch the processor mapping at runtime:
+   ```python
+   from docflow.processors.factory import factory
+   from my_pdf_text_processor import MyPDFTextProcessor
+
+   def pdf_rule(document):
+       if document.name.lower().endswith('.pdf'):
+           return MyPDFTextProcessor
+       return None
+
+   factory.mapper.rules.insert(0, pdf_rule)  # Highest priority
+   ```
+   This allows you to use your custom processor for PDFs (or any custom logic) without modifying DocFlow internals.
+3. **Register your processor (optional):**
    ```sh
-   docflow processor register --name MyTextProcessor --type content_processor --description "Uppercases text files" --config '{}'
+   docflow processor register --name MyPDFTextProcessor --type content_processor --description "Extracts text from PDFs" --config '{}'
    ```
-3. **Add a mapping rule (optional):**
-   Edit `docflow/processors/mapper.py` to add a rule for your processor.
+4. **Add a mapping rule (optional):**
+   You can still edit `docflow/processors/mapper.py` for static rules, but dynamic patching is recommended for custom/external processors.
 
 ---
 
