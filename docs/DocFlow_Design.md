@@ -1,6 +1,6 @@
 # DocFlow Design Document
 
-![DocFlow Architecture](docs/New%20Era%20of%20Supply%20Chain/image.png)
+![DocFlow Architecture](/New%20Era%20of%20Supply%20Chain/image.png)
 
 ## Architecture Principles
 
@@ -44,7 +44,8 @@ docflow/
 ├── cli.py                 # CLI interface
 ├── docflow.py            # Main DocFlow class
 ├── docbasket.py          # Document basket implementation
-├── document.py           # Unified Document class (all usages)
+├── document.py           # Unified Document class
+├── context.py            # User context for auditing
 ├── config/
 │   ├── __init__.py
 │   ├── docflow_config.py # Configuration management
@@ -52,14 +53,13 @@ docflow/
 ├── db/
 │   ├── __init__.py
 │   ├── connection.py     # Database connection management
-│   ├── models.py         # Database models (Processor, ProcessingOperation, etc.)
-│   └── ...
+│   ├── models.py         # Database models
+│   └── abstract_database.py # Abstract database interface
 ├── processors/
 │   ├── __init__.py
 │   ├── base.py           # BaseProcessor and helpers
 │   ├── factory.py        # ProcessorFactory
-│   ├── csv_to_json.py    # Example processor
-│   └── models.py         # (empty or stub, models moved to db/models.py)
+│   └── csv_to_json.py    # Example processor
 ├── transport/
 │   ├── __init__.py
 │   ├── base.py           # Base transport interface
@@ -67,12 +67,21 @@ docflow/
 │   ├── local.py          # Local transport implementation
 │   ├── models.py         # Transport models
 │   └── route.py          # Route management
-└── storage/
+├── storage/
+│   ├── __init__.py
+│   ├── abstract_storage.py # Abstract storage interface
+│   ├── filesystem_storage.py # Filesystem storage implementation
+│   ├── s3_storage.py        # S3 storage implementation
+│   └── storage_factory.py   # Storage factory
+├── services/
+│   ├── __init__.py
+│   └── metadata_service.py  # Metadata management service
+├── models/
+│   ├── __init__.py
+│   └── metadata_keys.py     # Metadata key definitions
+└── utils/
     ├── __init__.py
-    ├── abstract_storage.py # Abstract storage interface
-    ├── filesystem_storage.py # Filesystem storage implementation
-    ├── s3_storage.py        # S3 storage implementation
-    └── storage_factory.py   # Storage factory
+    └── helpers.py           # Utility functions
 ```
 
 > **Note:**
@@ -139,7 +148,7 @@ class CSVToJSONProcessor(BaseProcessor):
 - The CLI uses the updated package structure and imports.
 - System initialization, basket creation, and document management are all in sync with the codebase.
 
-### 2.3 ID Formatting
+### 2.10 ID Formatting
 
 All IDs in the system follow a consistent format with a three-letter prefix followed by a UUID:
 
@@ -153,7 +162,7 @@ All IDs in the system follow a consistent format with a three-letter prefix foll
 - File History IDs: `fhi_<uuid>`
 - Operation Dependency IDs: `odp_<uuid>`
 
-### 2.4 Configuration Hierarchy
+### 2.11 Configuration Hierarchy
 
 1. **System Configuration**
    - Stored in `~/.docflow/config.yaml`
@@ -214,39 +223,34 @@ All IDs in the system follow a consistent format with a three-letter prefix foll
      fallback_route: sftp_distribution
    ```
 
-### 2.5 CLI Interface
+### 2.12 CLI Interface
 
-The CLI provides commands for system management:
+The CLI provides comprehensive system management commands:
 
 ```bash
-# Initialize DocFlow
-docflow init
+# System Initialization
+docflow init [--config CONFIG] [--force] [--db-type {sqlite,postgresql}] [--db-path DB_PATH] [--db-host DB_HOST] [--db-port DB_PORT] [--db-name DB_NAME] [--db-user DB_USER] [--db-password DB_PASSWORD] [--storage-path STORAGE_PATH] [--log-level {DEBUG,INFO,WARNING,ERROR,CRITICAL}]
 
-# Processor management
-docflow processor register --name CSVToJSONProcessor --type format_converter --description "Converts CSV to JSON" --config '{}'
-docflow processor remove --name CSVToJSONProcessor
+# Processor Management
+docflow processor register --name NAME --type TYPE --description DESCRIPTION [--config CONFIG] [--enabled/--disabled]
+docflow processor remove --name NAME
 docflow processor list
 
-# Create a new route
-docflow route create --name local_backup --type local --config path=/backup
-
-# List routes
+# Route Management
+docflow route create --name NAME --type TYPE --config CONFIG [--purpose PURPOSE] [--can-upload] [--can-download] [--can-list] [--can-delete] [--enabled] [--priority PRIORITY] [--tags TAGS] [--metadata METADATA]
 docflow route list
+docflow route delete --name NAME
 
-# Delete a route
-docflow route delete --name local_backup
-
-# Create a basket
-docflow basket create --name example_basket
-
-# List baskets
+# Basket Management
+docflow basket create --name NAME
 docflow basket list
+docflow basket delete --name NAME
 
-# Add a document
-docflow document add --basket example_basket --file document.pdf
-
-# List documents
-docflow document list --basket example_basket
+# Document Management
+docflow document add --basket BASKET --file FILE [--document-type TYPE] [--metadata METADATA]
+docflow document list --basket BASKET
+docflow document get --id ID
+docflow document delete --id ID
 ```
 
 ### 2.2 Database Schema
@@ -562,7 +566,7 @@ transport_config:
       metadata:
         retention_days: 30
         compression: true
-      
+    
     - name: sftp_distribution
       purpose: distribution
       protocol: sftp
