@@ -64,6 +64,9 @@ doc.update_metadata({'my_key': 'my_value'})
 
 # Get document operations
 ops = doc.get_operations()
+
+# Get metadata as a plain dictionary
+meta_dict = doc.get_metadata_dict()
 ```
 
 ---
@@ -134,6 +137,72 @@ from docflow.docflow import DocFlow
 
 user_context = UserContext(user_id="user123", user_email="user@example.com", roles=["admin"])
 df = DocFlow(user_context=user_context)
+```
+
+---
+
+## File History
+
+Track file movements and history for a document.
+
+```python
+from docflow.services.document_service import DocumentService
+from docflow.db.connection import Database
+
+# Get file history for a document
+db = Database()
+service = DocumentService(db, basket_id)
+history = service.get_file_history(doc.id)
+for entry in history:
+    print(entry.original_path, entry.internal_path)
+```
+
+---
+
+## Duplicate Detection
+
+Check for and mark duplicate documents.
+
+```python
+from docflow.services.document_service import DocumentService
+from docflow.db.connection import Database
+
+# Check for duplicates
+db = Database()
+service = DocumentService(db, basket_id)
+info = service.check_for_duplicates(source, checksum)
+print(info['is_duplicate'])
+
+# Mark a document as duplicate
+service.mark_as_duplicate(dup_id, orig_id)
+```
+
+---
+
+## Operation Tracking
+
+Track document operations and their dependencies.
+
+```python
+# Get document operations
+ops = doc.get_operations()
+for op in ops:
+    print(op['operation_type'], op['status'])
+
+# Get operation dependencies
+from docflow.db.repository import BaseRepository
+deps = BaseRepository.get_dependencies(operation_id)
+```
+
+---
+
+## Advanced Metadata
+
+Retrieve extended metadata for a document.
+
+```python
+# Get all metadata as a plain dictionary
+meta_dict = doc.get_metadata_dict()
 ```
 
 ---
