@@ -566,7 +566,7 @@ transport_config:
       metadata:
         retention_days: 30
         compression: true
-    
+      
     - name: sftp_distribution
       purpose: distribution
       protocol: sftp

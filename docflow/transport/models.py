@@ -8,7 +8,7 @@ from docflow.db.connection import get_base
 from .config import TransportType, RouteMethod
 
 # Get base class
-Base = declarative_base()
+Base = get_base()
 
 class Route(Base):
     """Database model for transport routes"""

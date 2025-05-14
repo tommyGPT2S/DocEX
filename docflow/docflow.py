@@ -11,6 +11,7 @@ from docflow.db.models import Base
 from docflow.transport.models import Base as TransportBase
 from docflow.transport.transport_result import TransportResult
 from docflow.context import UserContext
+from sqlalchemy import inspect
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -136,39 +137,118 @@ class DocFlow:
                 - logging: Logging configuration
                     - level: Logging level
                     - file: Path to log file
+                    
+        Raises:
+            RuntimeError: If storage directory creation fails
+            RuntimeError: If database initialization fails
+            RuntimeError: If configuration setup fails
         """
-        # Load defaults
-        defaults = cls._load_default_config()
-        
-        # Merge user config with defaults
-        merged_config = defaults.copy()
-        for key, value in config.items():
-            if isinstance(value, dict) and key in merged_config:
-                merged_config[key].update(value)
-            else:
-                merged_config[key] = value
-        
-        # Ensure storage directory exists
-        if 'storage' in merged_config and 'filesystem' in merged_config['storage']:
-            storage_path = Path(merged_config['storage']['filesystem']['path'])
-            storage_path.mkdir(parents=True, exist_ok=True)
-        
-        # Initialize configuration
-        cls._config = DocFlowConfig()
-        cls._config.setup(**merged_config)
-        
-        # Initialize database and create tables
-        db = Database()
-        
-        # Drop all tables first
-        Base.metadata.drop_all(db.get_engine())
-        TransportBase.metadata.drop_all(db.get_engine())
-        
-        # Create tables
-        Base.metadata.create_all(db.get_engine())
-        TransportBase.metadata.create_all(db.get_engine())
-        
-        logger.info("Database tables initialized successfully")
+        try:
+            # Load defaults
+            defaults = cls._load_default_config()
+            
+            # Ensure Default Configuration Exists
+            if not Path(__file__).parent / 'config' / 'default_config.yaml':
+                logger.error("Default configuration file not found at {config_path}")
+                raise RuntimeError("Default configuration file not found.")
+            
+            # Validate User Configuration
+            for key, value in config.items():
+                if key not in defaults:
+                    logger.warning(f"Unexpected configuration key: {key}")
+                elif isinstance(value, dict) and key in defaults:
+                    for subkey in value:
+                        if subkey not in defaults[key]:
+                            logger.warning(f"Unexpected subkey in {key}: {subkey}")
+            
+            # Merge user config with defaults
+            merged_config = defaults.copy()
+            for key, value in config.items():
+                if isinstance(value, dict) and key in merged_config:
+                    merged_config[key].update(value)
+                else:
+                    merged_config[key] = value
+            
+            # Ensure storage directory exists
+            if 'storage' in merged_config and 'filesystem' in merged_config['storage']:
+                try:
+                    storage_path = Path(merged_config['storage']['filesystem']['path'])
+                    storage_path.mkdir(parents=True, exist_ok=True)
+                    
+                    # Verify write permissions
+                    test_file = storage_path / '.test_write'
+                    try:
+                        test_file.touch()
+                        test_file.unlink()
+                    except (PermissionError, OSError) as e:
+                        raise RuntimeError(f"Storage directory {storage_path} is not writable: {str(e)}")
+                except Exception as e:
+                    raise RuntimeError(f"Failed to create storage directory: {str(e)}")
+            
+            # Initialize configuration
+            try:
+                cls._config = DocFlowConfig()
+                cls._config.setup(**merged_config)
+            except Exception as e:
+                raise RuntimeError(f"Failed to initialize configuration: {str(e)}")
+            
+            # Initialize database and create tables
+            try:
+                # Ensure all models are imported
+                import docflow.db.models
+                import docflow.transport.models
+                db = Database()
+                
+                # Drop all tables first
+                Base.metadata.drop_all(db.get_engine())
+                TransportBase.metadata.drop_all(db.get_engine())
+                
+                # Create tables in order
+                logger.info("Creating database tables...")
+                
+                # Create tables in dependency order
+                tables_to_create = [
+                    'docbasket',
+                    'document',
+                    'document_metadata',
+                    'file_history',
+                    'operations',
+                    'operation_dependencies',
+                    'doc_events',
+                    'processors',
+                    'processing_operations',
+                    'transport_routes',
+                    'route_operations'
+                ]
+                
+                for table_name in tables_to_create:
+                    try:
+                        if table_name in Base.metadata.tables:
+                            Base.metadata.tables[table_name].create(db.get_engine())
+                        elif table_name in TransportBase.metadata.tables:
+                            TransportBase.metadata.tables[table_name].create(db.get_engine())
+                        logger.info(f"Created table: {table_name}")
+                    except Exception as e:
+                        logger.error(f"Failed to create table {table_name}: {str(e)}")
+                        raise
+                
+                # Verify table creation
+                inspector = inspect(db.get_engine())
+                tables = inspector.get_table_names()
+                logger.info(f"Created tables: {', '.join(tables)}")
+                
+                missing_tables = [table for table in tables_to_create if table not in tables]
+                if missing_tables:
+                    raise RuntimeError(f"Failed to create required tables: {', '.join(missing_tables)}")
+                
+                logger.info("Database tables initialized successfully")
+            except Exception as e:
+                logger.error(f"Failed to initialize database: {str(e)}")
+                raise RuntimeError(f"Failed to initialize database: {str(e)}")
+                
+        except Exception as e:
+            logger.error(f"DocFlow initialization failed: {str(e)}")
+            raise
     
     @classmethod
     def get_config(cls) -> Dict[str, Any]:

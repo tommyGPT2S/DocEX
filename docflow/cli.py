@@ -60,25 +60,35 @@ def init(config, force, db_type, db_path, db_host, db_port, db_name, db_user, db
             # Use default configuration if no config file provided
             user_config = DocFlow.get_defaults()
         
+        # Ensure database.sqlite.path is set (fallback to default if not provided)
+        if 'database' not in user_config:
+            user_config['database'] = {}
+        if 'sqlite' not in user_config['database']:
+            user_config['database']['sqlite'] = {}
+        if 'path' not in user_config['database']['sqlite']:
+            user_config['database']['sqlite']['path'] = 'docflow.db'
+        
         # Merge command line options
         if db_type:
             user_config['database']['type'] = db_type
         if db_path:
-            user_config['database']['path'] = db_path
+            user_config['database']['sqlite']['path'] = db_path
         if db_host:
-            user_config['database']['host'] = db_host
+            user_config['database']['postgres']['host'] = db_host
         if db_port:
-            user_config['database']['port'] = db_port
+            user_config['database']['postgres']['port'] = db_port
         if db_name:
-            user_config['database']['database'] = db_name
+            user_config['database']['postgres']['database'] = db_name
         if db_user:
-            user_config['database']['user'] = db_user
+            user_config['database']['postgres']['user'] = db_user
         if db_password:
-            user_config['database']['password'] = db_password
+            user_config['database']['postgres']['password'] = db_password
         if storage_path:
-            user_config['storage']['path'] = storage_path
+            user_config['storage']['filesystem']['path'] = storage_path
         if log_level:
             user_config['logging']['level'] = log_level
+        
+        click.echo(f'DEBUG: Config before setup: {user_config}')
         
         # Initialize DocFlow
         DocFlow.setup(**user_config)
@@ -134,7 +144,7 @@ def init(config, force, db_type, db_path, db_host, db_port, db_name, db_user, db
                 db = Database(user_config)
                 inspector = inspect(db.get_engine())
                 tables = inspector.get_table_names()
-                required_tables = ['docbasket', 'document', 'document_metadata', 'file_history', 'operation', 'operation_dependency', 'doc_event', 'route', 'route_operation']
+                required_tables = ['docbasket', 'document', 'document_metadata', 'file_history', 'operations', 'operation_dependencies', 'doc_events', 'transport_routes', 'route_operations', 'processors', 'processing_operations']
                 missing_tables = [table for table in required_tables if table not in tables]
                 
                 if missing_tables:

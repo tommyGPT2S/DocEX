@@ -104,6 +104,16 @@ class MetadataKey(Enum):
     TAGS = "tags"
     EXPIRY_DATE = "expiry_date"
     
+    # Payment and Installment Metadata
+    PAYMENT_INSTALLMENTS = 'payment_installments'  # List of installment details
+    INSTALLMENT_STATUS = 'installment_status'      # Current status of installments
+    INSTALLMENT_COUNT = 'installment_count'        # Total number of installments
+    INSTALLMENT_CURRENT = 'installment_current'    # Current installment number
+    INSTALLMENT_DUE_DATE = 'installment_due_date'  # Due date for current installment
+    INSTALLMENT_AMOUNT = 'installment_amount'      # Amount for current installment
+    INSTALLMENT_TOTAL = 'installment_total'        # Total amount to be paid
+    INSTALLMENT_CURRENCY = 'installment_currency'  # Currency for installments
+    
     @classmethod
     def is_custom_key(cls, key: str) -> bool:
         """

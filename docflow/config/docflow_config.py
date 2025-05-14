@@ -63,13 +63,13 @@ class DocFlowConfig:
         """
         instance = cls()
         
-        # Update database configuration
+        # Deep update database configuration
         if 'database' in kwargs:
-            instance.config['database'].update(kwargs['database'])
+            instance._update_config_recursive(instance.config['database'], kwargs['database'])
         
-        # Update logging configuration
+        # Deep update logging configuration
         if 'logging' in kwargs:
-            instance.config['logging'].update(kwargs['logging'])
+            instance._update_config_recursive(instance.config['logging'], kwargs['logging'])
         
         # Ensure configuration directory exists
         config_dir = instance.config_file.parent
@@ -83,12 +83,100 @@ class DocFlowConfig:
     def _load_config(self) -> None:
         """Load configuration from file"""
         try:
-            with open(self.config_file, 'r') as f:
-                file_config = yaml.safe_load(f)
-                self._update_config_recursive(self.config, file_config)
-                self.logger.info(f"Configuration loaded from {self.config_file}")
+            if not self.config_file.exists():
+                raise RuntimeError(f"Configuration file not found: {self.config_file}")
+            
+            try:
+                with open(self.config_file, 'r') as f:
+                    file_config = yaml.safe_load(f)
+                    if file_config is None:
+                        raise RuntimeError("Configuration file is empty")
+                    self._update_config_recursive(self.config, file_config)
+                    self.logger.info(f"Configuration loaded from {self.config_file}")
+            except yaml.YAMLError as e:
+                raise RuntimeError(f"Invalid YAML in configuration file: {str(e)}")
+            except Exception as e:
+                raise RuntimeError(f"Failed to read configuration file: {str(e)}")
+            
+            # Validate configuration
+            self._validate_config()
+            
         except Exception as e:
-            self.logger.warning(f"Failed to load configuration: {str(e)}")
+            self.logger.error(f"Failed to load configuration: {str(e)}")
+            raise
+    
+    def _validate_config(self) -> None:
+        """Validate configuration structure and values"""
+        if not isinstance(self.config, dict):
+            raise RuntimeError("Configuration must be a dictionary")
+        
+        # Validate required sections
+        required_sections = ['database', 'storage', 'logging']
+        missing_sections = [section for section in required_sections if section not in self.config]
+        if missing_sections:
+            raise RuntimeError(f"Missing required configuration sections: {', '.join(missing_sections)}")
+        
+        # Validate database configuration
+        if 'database' in self.config:
+            db_config = self.config['database']
+            if 'type' not in db_config:
+                raise RuntimeError("Database type not specified")
+            
+            if db_config['type'] == 'postgres':
+                required_fields = ['user', 'password', 'host', 'port', 'database']
+                missing_fields = [field for field in required_fields if field not in db_config]
+                if missing_fields:
+                    raise RuntimeError(f"Missing required PostgreSQL configuration fields: {', '.join(missing_fields)}")
+            elif db_config['type'] == 'sqlite':
+                if 'sqlite' not in db_config or 'path' not in db_config['sqlite']:
+                    raise RuntimeError("SQLite database path not specified")
+            else:
+                raise RuntimeError(f"Unsupported database type: {db_config['type']}")
+        
+        # Validate storage configuration
+        if 'storage' in self.config:
+            storage_config = self.config['storage']
+            if 'filesystem' not in storage_config:
+                raise RuntimeError("Filesystem storage configuration not specified")
+            
+            fs_config = storage_config['filesystem']
+            if 'path' not in fs_config:
+                raise RuntimeError("Storage path not specified")
+            
+            # Verify storage path is absolute
+            storage_path = Path(fs_config['path'])
+            if not storage_path.is_absolute():
+                self.logger.warning(f"Storage path '{storage_path}' is relative. It will be resolved relative to the current working directory.")
+                storage_path = storage_path.resolve()
+            
+            # Verify storage directory is writable
+            try:
+                storage_path.mkdir(parents=True, exist_ok=True)
+                test_file = storage_path / '.test_write'
+                test_file.touch()
+                test_file.unlink()
+            except (PermissionError, OSError) as e:
+                raise RuntimeError(f"Storage directory {storage_path} is not writable: {str(e)}")
+        
+        # Validate logging configuration
+        if 'logging' in self.config:
+            log_config = self.config['logging']
+            if 'level' not in log_config:
+                raise RuntimeError("Logging level not specified")
+            
+            valid_levels = ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']
+            if log_config['level'] not in valid_levels:
+                raise RuntimeError(f"Invalid logging level. Must be one of: {', '.join(valid_levels)}")
+            
+            if 'file' in log_config:
+                log_path = Path(log_config['file'])
+                if not log_path.parent.exists():
+                    try:
+                        log_path.parent.mkdir(parents=True, exist_ok=True)
+                    except Exception as e:
+                        raise RuntimeError(f"Failed to create log directory: {str(e)}")
+        
+        self.logger.info("Configuration validation successful")
     
     def _save_config(self) -> None:
         """Save configuration to file"""
