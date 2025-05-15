@@ -1,14 +1,14 @@
 """
-Example of using a custom PDF processor with DocFlow.
+Example of using a custom PDF processor with DocEX.
 
 This example shows how to:
 1. Create a custom processor outside the main package
 2. Patch the processor factory mapping
-3. Use the custom processor with DocFlow
+3. Use the custom processor with DocEX
 """
 
-from docflow import DocFlow
-from docflow.processors.factory import factory
+from docex import DocFlow
+from docex.processors.factory import factory
 from my_pdf_text_processor import MyPDFTextProcessor
 import sys
 
@@ -24,8 +24,8 @@ def main():
         print("Patching processor factory mapping...")
         factory.mapper.rules.insert(0, pdf_rule)  # Highest priority
         
-        # 2. Create DocFlow instance
-        print("\nCreating DocFlow instance...")
+        # 2. Create DocEX instance
+        print("\nCreating DocEX instance...")
         docflow = DocFlow()
         
         # 3. Create or get a basket

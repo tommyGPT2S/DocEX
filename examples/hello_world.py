@@ -1,22 +1,22 @@
 """
-Minimal DocFlow example - Hello World!
+Minimal DocEX example - Hello World!
 
-This example shows the absolute minimum steps needed to get started with DocFlow:
+This example shows the absolute minimum steps needed to get started with DocEX:
 1. Create a basket
 2. Add a document
 3. Get document details
 
-Note: DocFlow must be initialized first using the CLI command 'docflow init'
+Note: DocEX must be initialized first using the CLI command 'docex init'
 """
 
-from docflow import DocFlow
+from docex import DocFlow
 from pathlib import Path
 import os
 import sys
 
 def main():
     try:
-        # Create DocFlow instance (will check initialization internally)
+        # Create DocEX instance (will check initialization internally)
         docflow = DocFlow()
         
         # Create a basket

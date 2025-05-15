@@ -1,11 +1,11 @@
-from docflow import DocFlow
-from docflow.processors.factory import factory
+from docex import DocFlow
+from docex.processors.factory import factory
 from pathlib import Path
 import sys
 import json
 import logging
-from docflow.db.models import DocBasket
-from docflow.db.connection import Database
+from docex.db.models import DocBasket
+from docex.db.connection import Database
 from sqlalchemy import text
 
 # Set up logging
@@ -20,7 +20,7 @@ def find_documents_by_po(po_number: str):
         po_number (str): The purchase order number to search for
     """
     try:
-        # Initialize DocFlow
+        # Initialize DocEX
         df = DocFlow()
         db = Database()
         
@@ -73,7 +73,7 @@ def process_invoice(pdf_path: str):
         pdf_path (str): Path to the PDF invoice file
     """
     try:
-        # 1. Create DocFlow instance
+        # 1. Create DocEX instance
         docflow = DocFlow()
 
         # 2. Create or get the 'invoice' basket

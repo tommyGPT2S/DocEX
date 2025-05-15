@@ -3,15 +3,15 @@ import shutil
 import unittest
 import asyncio
 from pathlib import Path
-from docflow.docflow import DocFlow
-from docflow.config.docflow_config import DocFlowConfig
-from docflow.db.models import Base
-from docflow.db.connection import Database
-from docflow.docbasket import DocBasket
-from docflow.transport.config import LocalTransportConfig, TransportType, RouteConfig, OtherParty
-from docflow.transport.transport_result import TransportResult
-from docflow.transport.transporter_factory import TransporterFactory
-from docflow.transport.local import LocalTransport
+from docex.docex import DocFlow
+from docex.config.docflow_config import DocFlowConfig
+from docex.db.models import Base
+from docex.db.connection import Database
+from docex.docbasket import DocBasket
+from docex.transport.config import LocalTransportConfig, TransportType, RouteConfig, OtherParty
+from docex.transport.transport_result import TransportResult
+from docex.transport.transporter_factory import TransporterFactory
+from docex.transport.local import LocalTransport
 
 class TestTransportPostgres(unittest.TestCase):
     """Test transport functionality with PostgreSQL database"""
@@ -34,10 +34,10 @@ class TestTransportPostgres(unittest.TestCase):
                 'type': 'postgresql',
                 'postgresql': {
                     'host': 'localhost',
-                    'port': 5444,
-                    'database': 'scm_simulation',
-                    'user': 'gpt2s',
-                    'password': '9pt2s2025!',
+                    'port': 5432,
+                    'database': 'docflow',
+                    'user': 'postgres',
+                    'password': 'postgres',
                     'schema': 'docflow'
                 }
             }

@@ -3,8 +3,8 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "PyDocflow"
-version = "0.1.9"
+name = "docex"
+version = "0.2.0"
 description = "A robust, lightweight, and developer-friendly document management and transport system for Python."
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -26,4 +26,4 @@ dependencies = [
 requires-python = ">=3.11"
 
 [project.scripts]
-docflow = "docflow.cli:cli" 
+docex = "docflow.cli:cli" 

@@ -11,9 +11,9 @@ This example:
 import os
 import csv
 from pathlib import Path
-from docflow import DocFlow
-from docflow.processors.factory import factory
-from docflow.processors.csv_to_json import CSVToJSONProcessor
+from docex import DocFlow
+from docex.processors.factory import factory
+from docex.processors.csv_to_json import CSVToJSONProcessor
 import shutil
 
 def create_test_csv(file_path: Path) -> Path:
@@ -32,7 +32,7 @@ def create_test_csv(file_path: Path) -> Path:
 
 def main():
     """Run the example"""
-    # Initialize DocFlow
+    # Initialize DocEX
     docflow = DocFlow()
     
     # Create test directory

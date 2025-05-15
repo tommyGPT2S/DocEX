@@ -5,10 +5,10 @@ from pathlib import Path
 from datetime import datetime, timedelta
 import json
 
-from docflow.docbasket import DocBasket, Document
-from docflow.models.metadata_keys import MetadataKey
-from docflow.db.connection import Database, Base
-from docflow.db.models import DocBasket as DocBasketModel
+from docex.docbasket import DocBasket, Document
+from docex.models.metadata_keys import MetadataKey
+from docex.db.connection import Database, Base
+from docex.db.models import DocBasket as DocBasketModel
 from sqlalchemy import select
 
 # Test configuration
@@ -37,12 +37,13 @@ def test_basket(db):
             session.commit()
     
     # Create new basket
-    basket = DocBasket(
+    basket = DocBasket.create(
         name=TEST_BASKET_NAME,
-        storage_type='filesystem',
-        storage_path=TEST_STORAGE_PATH,
-        metadata_type='postgres',
-        connection_string=TEST_DB_URL
+        description="Test basket",
+        storage_config={
+            'type': 'filesystem',
+            'path': TEST_STORAGE_PATH
+        }
     )
     
     yield basket

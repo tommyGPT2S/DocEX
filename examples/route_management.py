@@ -1,5 +1,5 @@
 """
-Route Management Example for DocFlow
+Route Management Example for DocEX
 
 This example demonstrates:
 1. Creating different types of routes
@@ -8,11 +8,11 @@ This example demonstrates:
 4. Deleting routes
 5. Working with route operations
 
-Note: DocFlow must be initialized first using the CLI command 'docflow init'
+Note: DocEX must be initialized first using the CLI command 'docex init'
 """
 
-from docflow import DocFlow
-from docflow.transport.config import TransportType, LocalTransportConfig
+from docex import DocFlow
+from docex.transport.config import TransportType, LocalTransportConfig
 from pathlib import Path
 import json
 import os
@@ -40,7 +40,7 @@ def print_route_info(route):
 
 def main():
     try:
-        # Create DocFlow instance (will check initialization internally)
+        # Create DocEX instance (will check initialization internally)
         docflow = DocFlow()
         
         # Create test directory for local routes

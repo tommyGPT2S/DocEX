@@ -1,6 +1,6 @@
 # Custom Processor Example
 
-This example demonstrates how to create and use a custom processor outside the main DocFlow package.
+This example demonstrates how to create and use a custom processor outside the main DocEX package.
 
 ## Files
 
@@ -30,13 +30,13 @@ This example demonstrates how to create and use a custom processor outside the m
    
    factory.mapper.rules.insert(0, pdf_rule)  # Highest priority
    ```
-   - This allows DocFlow to use your custom processor for PDF files
-   - No need to modify the main DocFlow package
+   - This allows DocEX to use your custom processor for PDF files
+   - No need to modify the main DocEX package
 
 3. **Usage**
    - The example script demonstrates:
      - Patching the processor mapping
-     - Creating a DocFlow instance
+     - Creating a DocEX instance
      - Adding a PDF document
      - Processing the document with the custom processor
      - Displaying the results
@@ -45,8 +45,17 @@ This example demonstrates how to create and use a custom processor outside the m
 
 1. Make sure you have the required dependencies:
    ```sh
-   pip install pdfminer.six pydocflow
+   pip install pdfminer.six pydocex
    ```
 
 2. Run the example:
+   ```sh
+   python run_custom_pdf_processor.py
    ```
+
+## Notes
+
+- The custom processor is registered dynamically at runtime
+- It will be used for all PDF files processed by DocEX
+- The processor can be modified without changing the main package
+- Multiple custom processors can be registered for different file types

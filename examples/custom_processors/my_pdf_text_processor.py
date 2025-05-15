@@ -1,13 +1,13 @@
 """
 Custom PDF Text Processor Example
 
-This example shows how to create a custom processor outside the main DocFlow package.
+This example shows how to create a custom processor outside the main DocEX package.
 The processor extracts text from PDF files using pdfminer.six, maintaining consistency
 with the main package's PDF processing.
 """
 
-from docflow.processors.base import BaseProcessor, ProcessingResult
-from docflow.document import Document
+from docex.processors.base import BaseProcessor, ProcessingResult
+from docex.document import Document
 from pdfminer.high_level import extract_text
 from pdfminer.layout import LAParams
 import io

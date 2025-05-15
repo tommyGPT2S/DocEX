@@ -1,10 +1,10 @@
-# DocFlow Python API Reference
+# DocEX Python API Reference
 
-This reference covers the main public classes and methods in DocFlow. For more details and advanced usage, see the [Developer Guide](Developer_Guide.md).
+This reference covers the main public classes and methods in DocEX. For more details and advanced usage, see the [Developer Guide](Developer_Guide.md).
 
 ---
 
-## DocFlow
+## DocEX
 
 The main entry point for all document and transport operations.
 
@@ -108,7 +108,7 @@ class MyTextProcessor(BaseProcessor):
         return ProcessingResult(success=True, content=text.upper())
 
 # Register via CLI
-# docflow processor register --name MyTextProcessor --type content_processor --description "Uppercases text files" --config '{}'
+# docex processor register --name MyTextProcessor --type content_processor --description "Uppercases text files" --config '{}'
 ```
 
 ---
@@ -209,4 +209,4 @@ meta_dict = doc.get_metadata_dict()
 
 ## More
 - See the [Developer Guide](Developer_Guide.md) for advanced topics, configuration, and extensibility.
-- See the [Design Document](DocFlow_Design.md) for architecture and design principles. 
+- See the [Design Document](DocEX_Design.md) for architecture and design principles. 

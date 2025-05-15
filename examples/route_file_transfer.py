@@ -1,5 +1,5 @@
 """
-Route File Transfer Example for DocFlow
+Route File Transfer Example for DocEX
 
 This example demonstrates:
 1. Using existing routes created by route_management.py
@@ -9,12 +9,12 @@ This example demonstrates:
 5. Tracking document operations and status
 
 Note: 
-1. DocFlow must be initialized first using the CLI command 'docflow init'
+1. DocEX must be initialized first using the CLI command 'docex init'
 2. Routes must be created first by running 'python examples/route_management.py'
 """
 
-from docflow import DocFlow
-from docflow.transport.config import RouteConfig, TransportType
+from docex import DocFlow
+from docex.transport.config import RouteConfig, TransportType
 from pathlib import Path
 import json
 import asyncio
@@ -62,7 +62,7 @@ def print_document_info(doc):
 
 async def main():
     try:
-        # Create DocFlow instance (will check initialization internally)
+        # Create DocEX instance (will check initialization internally)
         docflow = DocFlow()
         
         # Create test directories

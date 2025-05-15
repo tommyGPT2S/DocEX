@@ -1,0 +1,51 @@
+# DocEX Default Configuration
+
+# Database configuration
+database:
+  type: sqlite  # 'sqlite' or 'postgresql'
+  
+  # SQLite configuration
+  sqlite:
+    path: docex.db
+    
+  # PostgreSQL configuration
+  postgresql:
+    host: localhost
+    port: 5432
+    database: docex
+    user: postgres
+    password: postgres
+    schema: public
+    
+  # Common settings
+  echo: true  # Enable SQL query logging
+  pool_size: 5
+  max_overflow: 10
+  pool_timeout: 30
+  pool_recycle: 3600
+
+# Application settings
+app:
+  name: DocEX
+  version: 1.0.0
+  debug: true
+  log_level: DEBUG
+  storage_path: storage/docex
+  temp_path: temp/docex
+
+# Storage configuration
+storage:
+  type: filesystem  # 'filesystem', 's3', 'azure', 'gcs'
+  filesystem:
+    path: storage/docex
+    create_missing: true
+    permissions: 0o755
+
+# Logging configuration
+logging:
+  level: DEBUG  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+  format: '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+  file: logs/docex.log
+  max_size: 10485760  # 10MB
+  backup_count: 5
+  console: true 
