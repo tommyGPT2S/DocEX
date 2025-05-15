@@ -1,16 +1,20 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
+requires = ["setuptools>=42", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "PyDocflow"
-version = "0.1.9"
-description = "A robust, lightweight, and developer-friendly document management and transport system for Python."
+name = "docex"
+version = "2.0"
+description = "A robust, lightweight, and developer friendly document management and transport system for Python"
 readme = "README.md"
+authors = [{ name = "Tommy Jiang", email = "tommySCOS@scos.ai" }]
 license = { file = "LICENSE" }
-authors = [
-    { name = "Tommy Jiang", email = "tommyscosc@scos.ai" }
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
 ]
+requires-python = ">=3.11"
 dependencies = [
     "sqlalchemy>=2.0.0",
     "psycopg2-binary>=2.9.0",
@@ -21,9 +25,38 @@ dependencies = [
     "paramiko>=3.4.0",
     "aiohttp>=3.9.0",
     "python-dotenv>=1.0.0",
-    "click>=8.0.0"
+    "click>=8.0.0",
 ]
-requires-python = ">=3.11"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "black>=22.0.0",
+    "isort>=5.0.0",
+    "mypy>=0.900",
+]
+
+[tool.setuptools]
+packages = ["docflow"]
+
+[tool.black]
+line-length = 88
+
+[tool.isort]
+profile = "black"
+line_length = 88
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-v --cov=docflow"
 
 [project.scripts]
 docflow = "docflow.cli:cli" 

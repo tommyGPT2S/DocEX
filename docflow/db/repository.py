@@ -100,6 +100,19 @@ class DocumentRepository(BaseRepository[Document]):
         """Get documents by PO number in a basket"""
         return self.list(basket_id=basket_id, related_po=po_number)
 
+    def find_document_by_metadata(self, metadata_key: str, metadata_value: str) -> List[Document]:
+        """Find documents that have a specific metadata key-value pair."""
+        with self.db.session() as session:
+            query = (
+                select(Document)
+                .join(DocumentMetadata, Document.id == DocumentMetadata.document_id)
+                .where(
+                    DocumentMetadata.key == metadata_key,
+                    DocumentMetadata.value == metadata_value
+                )
+            )
+            return list(session.execute(query).scalars())
+
 class FileHistoryRepository(BaseRepository[FileHistory]):
     """Repository for file history operations"""
     
