@@ -59,4 +59,4 @@ python_files = ["test_*.py"]
 addopts = "-v --cov=docflow"
 
 [project.scripts]
-docflow = "docflow.cli:cli" 
+DocEX = "docflow.cli:cli" 

@@ -1,7 +1,7 @@
 """
-DocFlow CLI commands
+DocEX CLI commands
 
-This module provides command-line interface for DocFlow operations.
+This module provides command-line interface for DocEX operations.
 """
 
 import click
@@ -19,7 +19,7 @@ from sqlalchemy import inspect
 
 @click.group()
 def cli():
-    """DocFlow command-line interface"""
+    """DocEX command-line interface"""
     pass
 
 @cli.command()
@@ -35,7 +35,7 @@ def cli():
 @click.option('--storage-path', type=click.Path(), help='Storage path for documents')
 @click.option('--log-level', type=click.Choice(['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']), help='Logging level')
 def init(config, force, db_type, db_path, db_host, db_port, db_name, db_user, db_password, storage_path, log_level):
-    """Initialize DocFlow with configuration"""
+    """Initialize DocEX with configuration"""
     try:
         # Check if already initialized
         is_initialized = False
@@ -45,7 +45,7 @@ def init(config, force, db_type, db_path, db_host, db_port, db_name, db_user, db
             pass  # Ignore any errors when checking initialization status
         
         if is_initialized and not force:
-            if not click.confirm('DocFlow is already initialized. Do you want to reinitialize? This will drop all existing data.'):
+            if not click.confirm('DocEX is already initialized. Do you want to reinitialize? This will drop all existing data.'):
                 return
             click.echo('Removing existing database...')
             db_path = Path(DocFlowConfig().get('database.path', 'docflow.db'))
@@ -166,10 +166,10 @@ def init(config, force, db_type, db_path, db_host, db_port, db_name, db_user, db
         click.echo('\nConfiguration:')
         click.echo(yaml.dump(user_config, default_flow_style=False, sort_keys=False))
         
-        click.echo('\nDocFlow initialized successfully!')
+        click.echo('\nDocEX initialized successfully!')
         
     except Exception as e:
-        click.echo(f'Error initializing DocFlow: {str(e)}', err=True)
+        click.echo(f'Error initializing DocEX: {str(e)}', err=True)
         raise click.Abort()
 
 @cli.group()

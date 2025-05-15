@@ -1,4 +1,4 @@
-# DocFlow
+# DocEX
 
 <!-- Badges -->
 ![License](https://img.shields.io/github/license/tommyGPT2S/DocFlow)
@@ -23,7 +23,7 @@
 Install from PyPI:
 
 ```sh
-pip install pydocflow
+pip install docex
 ```
 
 If you want to use PDF processing features (e.g., custom PDF processors), also install:
@@ -38,7 +38,7 @@ Before using DocFlow in your code, you must initialize the system using the CLI:
 
 ```sh
 # Run this once to set up configuration and database
-$ docflow init
+$ DocEX init
 ```
 
 Then you can use the Python API (minimal example):
