@@ -1,16 +1,16 @@
 import os
-from docflow import DocFlow
-from docflow.db.connection import Database
-from docflow.db.repository import DocumentRepository
+from docex import DocEX
+from docex.db.connection import Database
+from docex.db.repository import DocumentRepository
 
 def test_find_document_by_metadata():
-    # Initialize DocFlow
-    flow = DocFlow()
+    # Initialize DocEX
+    docEX = DocEX()
     db = Database()
     doc_repo = DocumentRepository(db)
 
     # Create a new basket
-    basket = flow.basket('test_basket_metadata')
+    basket = docEX.basket('test_basket_metadata')
 
     # Create a test file
     test_file_path = 'test_metadata.txt'

@@ -1,5 +1,5 @@
-from docflow.db.connection import Base, Database
-from docflow.db.models import DocBasket, Document, FileHistory, Operation, OperationDependency, DocumentMetadata, DocEvent
+from docex.db.connection import Base, Database
+from docex.db.models import DocBasket, Document, FileHistory, Operation, OperationDependency, DocumentMetadata, DocEvent
 from sqlalchemy import text
 
 def init_db():

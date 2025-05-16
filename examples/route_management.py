@@ -1,5 +1,5 @@
 """
-Route Management Example for DocFlow
+Route Management Example for DocEX
 
 This example demonstrates:
 1. Creating different types of routes
@@ -8,11 +8,11 @@ This example demonstrates:
 4. Deleting routes
 5. Working with route operations
 
-Note: DocFlow must be initialized first using the CLI command 'docflow init'
+Note: DocEX must be initialized first using the CLI command 'DocEX init'
 """
 
-from docflow import DocFlow
-from docflow.transport.config import TransportType, LocalTransportConfig
+from docex import DocEX
+from docex.transport.config import TransportType, LocalTransportConfig
 from pathlib import Path
 import json
 import os
@@ -40,8 +40,8 @@ def print_route_info(route):
 
 def main():
     try:
-        # Create DocFlow instance (will check initialization internally)
-        docflow = DocFlow()
+        # Create DocEX instance (will check initialization internally)
+        docEX = DocEX()
         
         # Create test directory for local routes
         test_dir = Path("test_data")
@@ -58,7 +58,7 @@ def main():
             create_dirs=True
         )
         
-        outbound_route = docflow.create_route(
+        outbound_route = docEX.create_route(
             name="outbound_route",
             transport_type=TransportType.LOCAL,
             config=outbound_config.model_dump(),
@@ -79,7 +79,7 @@ def main():
             create_dirs=True
         )
         
-        inbound_route = docflow.create_route(
+        inbound_route = docEX.create_route(
             name="inbound_route",
             transport_type=TransportType.LOCAL,
             config=inbound_config.model_dump(),
@@ -93,33 +93,33 @@ def main():
         
         # 3. List all routes
         print("\n=== Listing All Routes ===")
-        routes = docflow.list_routes()
+        routes = docEX.list_routes()
         print(f"Found {len(routes)} routes:")
         for route in routes:
             print(f"- {route.name} ({route.protocol})")
         
         # 4. Get a specific route
         print("\n=== Getting Specific Route ===")
-        retrieved_route = docflow.get_route("outbound_route")
+        retrieved_route = docEX.get_route("outbound_route")
         if retrieved_route:
             print(f"Successfully retrieved route: {retrieved_route.name}")
         
         # 5. Delete a route
         print("\n=== Deleting Route ===")
-        result = docflow.delete_route("inbound_route")
+        result = docEX.delete_route("inbound_route")
         if result:
             print("Successfully deleted inbound_route")
         
         # 6. List routes again to verify deletion
         print("\n=== Verifying Route Deletion ===")
-        routes = docflow.list_routes()
+        routes = docEX.list_routes()
         print(f"Remaining routes: {len(routes)}")
         for route in routes:
             print(f"- {route.name} ({route.protocol})")
         
         # 7. Recreate the deleted route
         print("\n=== Recreating Deleted Route ===")
-        inbound_route = docflow.create_route(
+        inbound_route = docEX.create_route(
             name="inbound_route",
             transport_type=TransportType.LOCAL,
             config=inbound_config.model_dump(),
@@ -133,14 +133,14 @@ def main():
         
         # 8. List routes one final time
         print("\n=== Final Route List ===")
-        routes = docflow.list_routes()
+        routes = docEX.list_routes()
         print(f"Total routes: {len(routes)}")
         for route in routes:
             print(f"- {route.name} ({route.protocol})")
         
         # 9. Get available transport types
         print("\n=== Available Transport Types ===")
-        transport_types = docflow.get_available_transport_types()
+        transport_types = docEX.get_available_transport_types()
         print("Available transport types:")
         for t_type in transport_types:
             print(f"- {t_type}")

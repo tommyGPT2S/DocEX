@@ -1,9 +1,9 @@
-from docflow import DocFlow
-from docflow.db.connection import Database
-from docflow.transport.models import Base, Route
-from docflow.transport.transporter_factory import TransporterFactory
-from docflow.transport.local import LocalTransport
-from docflow.transport.config import TransportType
+from docex import DocFlow
+from docex.db.connection import Database
+from docex.transport.models import Base, Route
+from docex.transport.transporter_factory import TransporterFactory
+from docex.transport.local import LocalTransport
+from docex.transport.config import TransportType
 
 # Setup DocFlow
 DocFlow.setup(

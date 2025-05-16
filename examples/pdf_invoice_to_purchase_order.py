@@ -1,11 +1,11 @@
-from docflow import DocFlow
-from docflow.processors.factory import factory
+from docex import DocEX
+from docex.processors.factory import factory
 from pathlib import Path
 import sys
 import json
 import logging
-from docflow.db.models import DocBasket
-from docflow.db.connection import Database
+from docex.db.models import DocBasket
+from docex.db.connection import Database
 from sqlalchemy import text
 
 # Set up logging
@@ -21,11 +21,11 @@ def process_invoice(pdf_path: str):
         pdf_path (str): Path to the PDF invoice file
     """
     try:
-        # 1. Create DocFlow instance
-        docflow = DocFlow()
+        # 1. Create DocEX instance
+        docEX = DocEX()
 
         # 2. Create or get the 'invoice' basket
-        basket = docflow.basket('invoice')
+        basket = docEX.basket('invoice')
 
         # 3. Add the PDF document with custom metadata
         metadata = {'biz_doc_type': 'invoice'}

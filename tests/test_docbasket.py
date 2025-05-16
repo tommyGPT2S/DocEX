@@ -5,10 +5,10 @@ from pathlib import Path
 from datetime import datetime, timedelta
 import json
 
-from docflow.docbasket import DocBasket, Document
-from docflow.models.metadata_keys import MetadataKey
-from docflow.db.connection import Database, Base
-from docflow.db.models import DocBasket as DocBasketModel
+from docex.docbasket import DocBasket, Document
+from docex.models.metadata_keys import MetadataKey
+from docex.db.connection import Database, Base
+from docex.db.models import DocBasket as DocBasketModel
 from sqlalchemy import select
 
 # Test configuration

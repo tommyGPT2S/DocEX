@@ -1,4 +1,4 @@
-from docflow.db.connection import Database
+from docex.db.connection import Database
 from sqlalchemy import text
 
 def test_connection():

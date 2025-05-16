@@ -1,10 +1,10 @@
 import unittest
 from pathlib import Path
 import shutil
-from docflow import DocFlow
-from docflow.transport.config import TransportType, LocalTransportConfig
-from docflow.transport.local import LocalTransport
-from docflow.transport.transporter_factory import TransporterFactory
+from docex import DocFlow
+from docex.transport.config import TransportType, LocalTransportConfig
+from docex.transport.local import LocalTransport
+from docex.transport.transporter_factory import TransporterFactory
 import asyncio
 
 class TestDocFlowUsage(unittest.TestCase):

@@ -1,5 +1,5 @@
-from docflow.docbasket import DocBasket
-from docflow.models.metadata_keys import MetadataKey
+from docex.docbasket import DocBasket
+from docex.models.metadata_keys import MetadataKey
 import os
 from datetime import datetime
 import json

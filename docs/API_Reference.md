@@ -1,30 +1,32 @@
-# DocFlow Python API Reference
+# DocEX Python API Reference
 
-This reference covers the main public classes and methods in DocFlow. For more details and advanced usage, see the [Developer Guide](Developer_Guide.md).
+![DocEX Architecture](DocEX_Architecture.jpeg)
+
+This reference covers the main public classes and methods in DocEX. For more details and advanced usage, see the [Developer Guide](Developer_Guide.md).
 
 ---
 
-## DocFlow
+## DocEX
 
 The main entry point for all document and transport operations.
 
 ```python
-from docflow import DocFlow
+from docex import DocEX
 
 # Create an instance
-flow = DocFlow()
+docEX = DocEX()
 
 # List baskets
-baskets = flow.list_baskets()
+baskets = docEX.list_baskets()
 
 # Get a basket
-basket = flow.basket('mybasket')
+basket = docEX.basket('mybasket')
 
 # List routes
-routes = flow.list_routes()
+routes = docEX.list_routes()
 
 # Get a route
-route = flow.get_route('local_backup')
+route = docEX.get_route('local_backup')
 ```
 
 ---
@@ -96,8 +98,8 @@ print(result.details)
 Processors transform or extract data from documents. You can create and register your own.
 
 ```python
-from docflow.processors.base import BaseProcessor, ProcessingResult
-from docflow.document import Document
+from docex.processors.base import BaseProcessor, ProcessingResult
+from docex.document import Document
 
 class MyTextProcessor(BaseProcessor):
     def can_process(self, document: Document) -> bool:
@@ -108,7 +110,7 @@ class MyTextProcessor(BaseProcessor):
         return ProcessingResult(success=True, content=text.upper())
 
 # Register via CLI
-# docflow processor register --name MyTextProcessor --type content_processor --description "Uppercases text files" --config '{}'
+# docex processor register --name MyTextProcessor --type content_processor --description "Uppercases text files" --config '{}'
 ```
 
 ---
@@ -118,7 +120,7 @@ class MyTextProcessor(BaseProcessor):
 Service for managing document metadata.
 
 ```python
-from docflow.services.metadata_service import MetadataService
+from docex.services.metadata_service import MetadataService
 
 # Get metadata
 meta = MetadataService().get_metadata(doc.id)
@@ -132,11 +134,11 @@ MetadataService().update_metadata(doc.id, {'key': 'value'})
 ## UserContext (for audit logging)
 
 ```python
-from docflow.context import UserContext
-from docflow.docflow import DocFlow
+from docex.context import UserContext
+from docex import DocEX
 
 user_context = UserContext(user_id="user123", user_email="user@example.com", roles=["admin"])
-df = DocFlow(user_context=user_context)
+docEX = DocEX(user_context=user_context)
 ```
 
 ---
@@ -146,8 +148,8 @@ df = DocFlow(user_context=user_context)
 Track file movements and history for a document.
 
 ```python
-from docflow.services.document_service import DocumentService
-from docflow.db.connection import Database
+from docex.services.document_service import DocumentService
+from docex.db.connection import Database
 
 # Get file history for a document
 db = Database()
@@ -164,8 +166,8 @@ for entry in history:
 Check for and mark duplicate documents.
 
 ```python
-from docflow.services.document_service import DocumentService
-from docflow.db.connection import Database
+from docex.services.document_service import DocumentService
+from docex.db.connection import Database
 
 # Check for duplicates
 db = Database()
@@ -190,7 +192,7 @@ for op in ops:
     print(op['operation_type'], op['status'])
 
 # Get operation dependencies
-from docflow.db.repository import BaseRepository
+from docex.db.repository import BaseRepository
 deps = BaseRepository.get_dependencies(operation_id)
 ```
 
@@ -209,4 +211,4 @@ meta_dict = doc.get_metadata_dict()
 
 ## More
 - See the [Developer Guide](Developer_Guide.md) for advanced topics, configuration, and extensibility.
-- See the [Design Document](DocFlow_Design.md) for architecture and design principles. 
+- See the [Design Document](DocEX_Design.md) for architecture and design principles. 

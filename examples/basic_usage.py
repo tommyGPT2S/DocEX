@@ -1,5 +1,5 @@
 """
-Basic usage example for DocFlow library.
+Basic usage example for DocEX library.
 
 This example demonstrates:
 1. Using default configuration
@@ -8,10 +8,10 @@ This example demonstrates:
 4. Working with document metadata
 5. Getting basket statistics
 
-Note: DocFlow must be initialized first using the CLI command 'docflow init'
+Note: DocEX must be initialized first using the CLI command 'DocEX init'
 """
 
-from docflow import DocFlow
+from docex import DocEX
 from pathlib import Path
 import json
 import yaml
@@ -20,12 +20,12 @@ import sys
 def main():
     try:
         
-        # Create DocFlow instance (will check initialization internally)
-        docflow = DocFlow()
+        # Create DocEX instance (will check initialization internally)
+        docEX = DocEX()
         
         # Create or get a document basket (uses default storage config)
         basket_name = 'example_basket'
-        basket = docflow.basket(basket_name)
+        basket = docEX.basket(basket_name)
         
         # Create some example documents
         docs_dir = Path('example_docs')
@@ -80,7 +80,7 @@ def main():
         print(json.dumps(stats, indent=2, default=str))
         
         # List all baskets
-        all_baskets = docflow.list_baskets()
+        all_baskets = docEX.list_baskets()
         print("\nAll Baskets:")
         for b in all_baskets:
             print(f"- {b.name}: {b.description}")

@@ -1,5 +1,5 @@
 """
-Route File Transfer Example for DocFlow
+Route File Transfer Example for DocEX
 
 This example demonstrates:
 1. Using existing routes created by route_management.py
@@ -9,12 +9,12 @@ This example demonstrates:
 5. Tracking document operations and status
 
 Note: 
-1. DocFlow must be initialized first using the CLI command 'docflow init'
+1. DocEX must be initialized first using the CLI command 'DocEX init'
 2. Routes must be created first by running 'python examples/route_management.py'
 """
 
-from docflow import DocFlow
-from docflow.transport.config import RouteConfig, TransportType
+from docex import DocEX
+from docex.transport.config import RouteConfig, TransportType
 from pathlib import Path
 import json
 import asyncio
@@ -62,8 +62,8 @@ def print_document_info(doc):
 
 async def main():
     try:
-        # Create DocFlow instance (will check initialization internally)
-        docflow = DocFlow()
+        # Create DocEX instance (will check initialization internally)
+        docEX = DocEX()
         
         # Create test directories
         test_dir = Path("test_data")
@@ -72,14 +72,14 @@ async def main():
         test_dir.mkdir()
         
         # 1. Get the outbound route (will be used for download)
-        outbound_route = docflow.get_route("outbound_route")
+        outbound_route = docEX.get_route("outbound_route")
         if not outbound_route:
             print("Error: outbound_route not found.")
             print("Please run 'python examples/route_management.py' first to create the required routes.")
             sys.exit(1)
 
         # 2. Get the inbound route (will be used for upload)
-        inbound_route = docflow.get_route("inbound_route")
+        inbound_route = docEX.get_route("inbound_route")
         if not inbound_route:
             print("Error: inbound_route not found.")
             print("Please run 'python examples/route_management.py' first to create the required routes.")
@@ -106,12 +106,12 @@ async def main():
         print("\n=== Getting or creating basket ===")
         basket_name = "example_basket"
         try:
-            basket = docflow.basket(basket_name)
+            basket = docEX.basket(basket_name)
             print(f"Created new basket: {basket_name}")
         except ValueError as e:
             print(f"Using existing basket: {basket_name}")
             # Get the existing basket
-            baskets = docflow.list_baskets()
+            baskets = docEX.list_baskets()
             basket = next((b for b in baskets if b.name == basket_name), None)
             if not basket:
                 raise RuntimeError(f"Failed to get basket: {basket_name}")

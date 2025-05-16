@@ -10,8 +10,8 @@ if project_root not in sys.path:
     sys.path.append(project_root)
 
 from sqlalchemy import text
-from docflow.db.connection import Database, Base
-from docflow.db.models import DocBasket, Document, DocumentMetadata, Operation, OperationDependency, DocEvent
+from docex.db.connection import Database, Base
+from docex.db.models import DocBasket, Document, DocumentMetadata, Operation, OperationDependency, DocEvent
 
 def init_db():
     """Initialize database tables"""

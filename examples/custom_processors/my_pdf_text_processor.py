@@ -6,8 +6,8 @@ The processor extracts text from PDF files using pdfminer.six, maintaining consi
 with the main package's PDF processing.
 """
 
-from docflow.processors.base import BaseProcessor, ProcessingResult
-from docflow.document import Document
+from docex.processors.base import BaseProcessor, ProcessingResult
+from docex.document import Document
 from pdfminer.high_level import extract_text
 from pdfminer.layout import LAParams
 import io

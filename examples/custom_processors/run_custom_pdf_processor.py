@@ -7,8 +7,8 @@ This example shows how to:
 3. Use the custom processor with DocFlow
 """
 
-from docflow import DocFlow
-from docflow.processors.factory import factory
+from docex import DocFlow
+from docex.processors.factory import factory
 from my_pdf_text_processor import MyPDFTextProcessor
 import sys
 

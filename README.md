@@ -2,13 +2,13 @@
 
 <!-- Badges -->
 ![License](https://img.shields.io/github/license/tommyGPT2S/DocFlow)
-![Python](https://img.shields.io/pypi/pyversions/docflow)
+![Python](https://img.shields.io/pypi/pyversions/docex)
 ![Build](https://github.com/tommyGPT2S/DocFlow/actions/workflows/ci.yml/badge.svg)
 <!-- Add PyPI badge here when ready -->
 
-![DocFlow Architecture](docs/New%20Era%20of%20Supply%20Chain/image.png)
+![DocEX Architecture](docs/DocEX_Architecture.jpeg)
 
-**DocFlow** is a robust, extensible document management and transport system for Python. It supports multiple storage backends, metadata management, and operation tracking, with a unified API for local, SFTP, HTTP, and other protocols.
+**DocEX** is a robust, extensible document management and transport system for Python. It supports multiple storage backends, metadata management, and operation tracking, with a unified API for local, SFTP, HTTP, and other protocols.
 
 ## Features
 
@@ -34,24 +34,24 @@ pip install pdfminer.six
 
 ## Quick Start
 
-Before using DocFlow in your code, you must initialize the system using the CLI:
+Before using DocEX in your code, you must initialize the system using the CLI:
 
 ```sh
 # Run this once to set up configuration and database
-$ DocEX init
+$ docex init
 ```
 
 Then you can use the Python API (minimal example):
 
 ```python
-from docflow import DocFlow
+from docex import DocEX
 from pathlib import Path
 
-# Create DocFlow instance (will check initialization internally)
-docflow = DocFlow()
+# Create DocEX instance (will check initialization internally)
+docEX = DocEX()
 
 # Create a basket
-basket = docflow.basket('mybasket')
+basket = docEX.basket('mybasket')
 
 # Create a simple text file
 hello_file = Path('hello.txt')
@@ -91,7 +91,7 @@ transport_config:
 ## Documentation
 
 - [Developer Guide](docs/Developer_Guide.md)
-- [Design Document](docs/DocFlow%20Design.md)
+- [Design Document](docs/DocEX_Design.md)
 
 ## Contributing
 

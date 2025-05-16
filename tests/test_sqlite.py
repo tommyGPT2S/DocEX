@@ -1,7 +1,7 @@
-from docflow.docbasket import DocBasket
-from docflow.models.metadata_keys import MetadataKey
-from docflow.config.config_manager import ConfigManager
-from docflow.db.database_factory import DatabaseFactory
+from docex.docbasket import DocBasket
+from docex.models.metadata_keys import MetadataKey
+from docex.config.config_manager import ConfigManager
+from docex.db.database_factory import DatabaseFactory
 import os
 from datetime import datetime
 import json

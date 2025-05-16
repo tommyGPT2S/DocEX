@@ -11,9 +11,9 @@ This example:
 import os
 import csv
 from pathlib import Path
-from docflow import DocFlow
-from docflow.processors.factory import factory
-from docflow.processors.csv_to_json import CSVToJSONProcessor
+from docex import DocEX
+from docex.processors.factory import factory
+from docex.processors.csv_to_json import CSVToJSONProcessor
 import shutil
 
 def create_test_csv(file_path: Path) -> Path:
@@ -32,8 +32,8 @@ def create_test_csv(file_path: Path) -> Path:
 
 def main():
     """Run the example"""
-    # Initialize DocFlow
-    docflow = DocFlow()
+    # Initialize DocEX
+    docEX = DocEX()
     
     # Create test directory
     test_dir = Path("test_data")
@@ -47,11 +47,11 @@ def main():
         # Get or create basket (same pattern as basic_usage.py)
         basket_name = "test_basket"
         try:
-            basket = docflow.create_basket(basket_name)
+            basket = docEX.create_basket(basket_name)
             print(f"Created new basket: {basket_name}")
         except ValueError:
             print(f"Using existing basket: {basket_name}")
-            baskets = docflow.list_baskets()
+            baskets = docEX.list_baskets()
             basket = next((b for b in baskets if b.name == basket_name), None)
             if not basket:
                 raise RuntimeError(f"Failed to get basket: {basket_name}")

@@ -2,11 +2,11 @@ import os
 import shutil
 import unittest
 from pathlib import Path
-from docflow.docflow import DocFlow
-from docflow.config.docflow_config import DocFlowConfig
-from docflow.db.models import Base
-from docflow.db.connection import Database
-from docflow.docbasket import DocBasket
+from docCore import DocFlow
+from docex.config.docflow_config import DocFlowConfig
+from docex.db.models import Base
+from docex.db.connection import Database
+from docex.docbasket import DocBasket
 
 class TestDocFlowPostgres(unittest.TestCase):
     """Test DocFlow functionality with PostgreSQL configuration"""

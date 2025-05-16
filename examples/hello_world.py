@@ -9,18 +9,18 @@ This example shows the absolute minimum steps needed to get started with DocFlow
 Note: DocFlow must be initialized first using the CLI command 'docflow init'
 """
 
-from docflow import DocFlow
+from docex import DocEX
 from pathlib import Path
 import os
 import sys
 
 def main():
     try:
-        # Create DocFlow instance (will check initialization internally)
-        docflow = DocFlow()
+        # Create DocEX instance (will check initialization internally)
+        docEX = DocEX()
         
         # Create a basket
-        basket = docflow.basket('mybasket')
+        basket = docEX.basket('mybasket')
         
         # Create a simple text file
         hello_file = Path('hello.txt')

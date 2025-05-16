@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "docex"
-version = "2.0"
+version = "2.0.1"
 description = "A robust, lightweight, and developer friendly document management and transport system for Python"
 readme = "README.md"
 authors = [{ name = "Tommy Jiang", email = "tommySCOS@scos.ai" }]
@@ -37,7 +37,7 @@ dev = [
 ]
 
 [tool.setuptools]
-packages = ["docflow"]
+packages = ["docex"]
 
 [tool.black]
 line-length = 88
@@ -56,7 +56,7 @@ disallow_incomplete_defs = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
-addopts = "-v --cov=docflow"
+addopts = "-v --cov=docex"
 
 [project.scripts]
-DocEX = "docflow.cli:cli" 
+DocEX = "docex.cli:cli" 
