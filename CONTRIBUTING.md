@@ -1,6 +1,6 @@
-# Contributing to DocFlow
+# Contributing to DocEX
 
-Thank you for your interest in contributing to DocFlow! We welcome contributions from the community to make this project better.
+Thank you for your interest in contributing to DocEX! We welcome contributions from the community to make this project better.
 
 ## How to Contribute
 
@@ -35,7 +35,7 @@ Thank you for your interest in contributing to DocFlow! We welcome contributions
 
 ## Reporting Issues
 
-- Use the [GitHub Issues](https://github.com/tommyGPT2S/DocFlow/issues) page to report bugs or request features.
+- Use the [GitHub Issues](https://github.com/tommyGPT2S/DocEX/issues) page to report bugs or request features.
 - Please provide as much detail as possible, including steps to reproduce, logs, and your environment.
 
 ## Community
@@ -43,4 +43,4 @@ Thank you for your interest in contributing to DocFlow! We welcome contributions
 - Be respectful and inclusive in all interactions.
 - Help others by reviewing PRs and answering questions.
 
-Thank you for helping make DocFlow better! 
+Thank you for helping make DocEX better! 
