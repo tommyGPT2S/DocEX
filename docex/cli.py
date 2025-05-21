@@ -9,7 +9,7 @@ import os
 from pathlib import Path
 import yaml
 from docex import DocEX
-from docex.config.docflow_config import DocFlowConfig
+from docex.config.docex_config import DocEXConfig
 from docex.db.connection import Database
 from docex.db.models import Base
 from docex.transport.models import Base as TransportBase
@@ -48,14 +48,14 @@ def init(config, force, db_type, db_path, db_host, db_port, db_name, db_user, db
             if not click.confirm('DocEX is already initialized. Do you want to reinitialize? This will drop all existing data.'):
                 return
             click.echo('Removing existing database...')
-            db_path = Path(DocFlowConfig().get('database.path', 'docflow.db'))
+            db_path = Path(DocEXConfig().get('database.path', 'docex.db'))
             if db_path.exists():
                 db_path.unlink()
                 click.echo(f'Removed existing database at {db_path}')
         
         # Load configuration
         if config:
-            user_config = DocFlowConfig.from_file(config)
+            user_config = DocEXConfig.from_file(config)
         else:
             # Use default configuration if no config file provided
             user_config = DocEX.get_defaults()
@@ -66,7 +66,7 @@ def init(config, force, db_type, db_path, db_host, db_port, db_name, db_user, db
         if 'sqlite' not in user_config['database']:
             user_config['database']['sqlite'] = {}
         if 'path' not in user_config['database']['sqlite']:
-            user_config['database']['sqlite']['path'] = 'docflow.db'
+            user_config['database']['sqlite']['path'] = 'docex.db'
         
         # Merge command line options
         if db_type:
@@ -90,11 +90,11 @@ def init(config, force, db_type, db_path, db_host, db_port, db_name, db_user, db
         
         click.echo(f'DEBUG: Config before setup: {user_config}')
         
-        # Initialize DocFlow
-        DocFlow.setup(**user_config)
+        # Initialize DocEX
+        DocEX.setup(**user_config)
         
         # Save configuration
-        config_path = Path.home() / '.docflow' / 'config.yaml'
+        config_path = Path.home() / '.docex' / 'config.yaml'
         config_path.parent.mkdir(parents=True, exist_ok=True)
         
         # Convert Path objects to strings in configuration
@@ -113,8 +113,8 @@ def init(config, force, db_type, db_path, db_host, db_port, db_name, db_user, db
         with open(config_path, 'w') as f:
             yaml.dump(safe_config, f, default_flow_style=False, sort_keys=False)
         
-        # Create DocFlow instance for verification
-        docflow = DocFlow()
+        # Create DocEX instance for verification
+        docex = DocEX()
         
         # Verify storage setup
         storage_path = Path(user_config['storage']['filesystem']['path'])

@@ -14,24 +14,24 @@ def test_connection():
             query = text("""
                 SELECT table_name 
                 FROM information_schema.tables 
-                WHERE table_schema = 'docflow'
+                WHERE table_schema = 'docex'
             """)
             result = session.execute(query)
             tables = [row[0] for row in result]
             
-            print("\nFound tables in docflow schema:")
+            print("\nFound tables in docex schema:")
             for table in tables:
                 print(f"- {table}")
             
             # Test query on docbaskets table
             print("\nTesting docbaskets table:")
-            query = text("SELECT COUNT(*) FROM docflow.docbaskets")
+            query = text("SELECT COUNT(*) FROM docex.docbaskets")
             count = session.execute(query).scalar()
             print(f"Number of baskets: {count}")
             
             # Test query on documents table
             print("\nTesting documents table:")
-            query = text("SELECT COUNT(*) FROM docflow.documents")
+            query = text("SELECT COUNT(*) FROM docex.documents")
             count = session.execute(query).scalar()
             print(f"Number of documents: {count}")
             

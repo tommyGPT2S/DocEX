@@ -21,7 +21,7 @@ from sqlalchemy import func
 from docex.services.metadata_service import MetadataService
 from docex.db.database_factory import DatabaseFactory
 from docex.services.storage_service import StorageService
-from docex.config.docflow_config import DocFlowConfig
+from docex.config.docex_config import DocEXConfig
 from docex.transport.route import Route
 from docex.transport.config import RouteConfig
 from docex.transport.transport_result import TransportResult
@@ -38,7 +38,7 @@ class DocBasket:
     
     A document basket is a container for related documents with its own storage configuration.
     The basket's storage configuration is stored in the database and cannot be changed after creation.
-    Database connection is managed at the DocFlow level and cannot be changed.
+    Database connection is managed at the DocEX level and cannot be changed.
     """
     
     def __init__(
@@ -108,7 +108,7 @@ class DocBasket:
             ValueError: If a basket with the same name already exists
         """
         # Get config instance
-        config = DocFlowConfig()
+        config = DocEXConfig()
         
         # Use default storage config if none provided
         if storage_config is None:
@@ -146,7 +146,7 @@ class DocBasket:
                 if storage_config['type'] == 'filesystem':
                     if 'path' not in storage_config:
                         # Create basket-specific path under the default storage path using ID
-                        base_path = config.get('storage.filesystem.path', 'storage/docflow')
+                        base_path = config.get('storage.filesystem.path', 'storage/docex')
                         storage_config['path'] = str(Path(base_path) / f"basket_{basket_model.id}")
                 
                 # Update the storage config with the path
@@ -358,7 +358,7 @@ class DocBasket:
             )
             session.add(document)
             session.flush()
-            document_path = f"docflow/basket_{self.id}/{document.id}"
+            document_path = f"docex/basket_{self.id}/{document.id}"
             stored_path = self.storage_service.store_document(str(file_path), document_path)
             document.path = stored_path
             if metadata:

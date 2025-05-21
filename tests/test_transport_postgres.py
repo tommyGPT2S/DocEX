@@ -3,8 +3,8 @@ import shutil
 import unittest
 import asyncio
 from pathlib import Path
-from docCore import DocFlow
-from docex.config.docflow_config import DocFlowConfig
+from docex import DocEX
+from docex.config.docex_config import DocEXConfig
 from docex.db.models import Base
 from docex.db.connection import Database
 from docex.docbasket import DocBasket
@@ -28,8 +28,8 @@ class TestTransportPostgres(unittest.TestCase):
         self.dest_dir = self.test_dir / "dest"
         self.dest_dir.mkdir()
     
-        # Configure DocFlow with PostgreSQL
-        DocFlow.setup(
+        # Configure DocEX with PostgreSQL
+        DocEX.setup(
             database={
                 'type': 'postgresql',
                 'postgresql': {
@@ -38,7 +38,7 @@ class TestTransportPostgres(unittest.TestCase):
                     'database': 'scm_simulation',
                     'user': 'gpt2s',
                     'password': '9pt2s2025!',
-                    'schema': 'docflow'
+                    'schema': 'docex'
                 }
             }
         )

@@ -1,23 +1,23 @@
 """
-DocFlow - Document Management Library
+DocEX - Document Management Library
 
 This library provides a flexible and extensible document management system
 with support for multiple storage backends and metadata handling.
 
 Basic usage:
-    from docflow import DocFlow
+    from docex import DocEX
 
-    # Setup DocFlow with configuration
-    DocFlow.setup(
+    # Setup DocEX with configuration
+    DocEX.setup(
         database={
             'type': 'sqlite',
-            'sqlite': {'path': 'docflow.db'}
+            'sqlite': {'path': 'docex.db'}
         }
     )
 
     # Create a document basket
-    docflow = DocFlow()
-    basket = docflow.create_basket('my_basket')
+    docex = DocEX()
+    basket = docex.create_basket('my_basket')
 
     # Add documents
     doc = basket.add('path/to/document.txt')
@@ -26,7 +26,7 @@ Basic usage:
     print(doc.get_details())
 
     # Get available metadata keys
-    print(DocFlow.get_metadata_keys())
+    print(DocEX.get_metadata_keys())
 """
 
 from .docCore import DocEX

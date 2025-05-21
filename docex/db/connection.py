@@ -10,7 +10,7 @@ from sqlalchemy.orm import sessionmaker, Session, declarative_base
 from sqlalchemy.pool import QueuePool, StaticPool
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.engine import Engine
-from docex.config.docflow_config import DocFlowConfig
+from docex.config.docex_config import DocEXConfig
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -34,20 +34,20 @@ def get_base() -> Type:
 
 class Database:
     """
-    Database connection manager for DocFlow
+    Database connection manager for DocEX
     
     Handles both SQLite and PostgreSQL connections with proper configuration
     and connection pooling.
     """
     
-    def __init__(self, config: Optional[DocFlowConfig] = None):
+    def __init__(self, config: Optional[DocEXConfig] = None):
         """
         Initialize database connection
         
         Args:
-            config: DocFlowConfig instance. If None, uses default configuration.
+            config: DocEXConfig instance. If None, uses default configuration.
         """
-        self.config = config or DocFlowConfig()
+        self.config = config or DocEXConfig()
         self.engine = None
         self.Session = None
         self._initialize()
@@ -65,7 +65,7 @@ class Database:
                 
                 if db_type == 'sqlite':
                     # Get database path from config
-                    db_path = db_config.get('path', 'docflow.db')
+                    db_path = db_config.get('path', 'docex.db')
                     db_path = Path(db_path)
                     
                     # Ensure directory exists
@@ -102,7 +102,7 @@ class Database:
                     # PostgreSQL configuration
                     host = db_config.get('host', 'localhost')
                     port = db_config.get('port', 5432)
-                    database = db_config.get('database', 'docflow')
+                    database = db_config.get('database', 'docex')
                     user = db_config.get('user', 'postgres')
                     password = db_config.get('password', '')
                     

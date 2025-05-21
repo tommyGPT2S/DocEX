@@ -8,7 +8,7 @@ def init_db():
     
     # Drop the docbaskets table if it exists
     with db.transaction() as session:
-        session.execute(text("DROP TABLE IF EXISTS docflow.docbaskets"))
+        session.execute(text("DROP TABLE IF EXISTS docex.docbaskets"))
         session.commit()
     
     # Create all tables

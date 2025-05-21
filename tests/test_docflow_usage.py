@@ -1,14 +1,14 @@
 import unittest
 from pathlib import Path
 import shutil
-from docex import DocFlow
+from docex import DocEX
 from docex.transport.config import TransportType, LocalTransportConfig
 from docex.transport.local import LocalTransport
 from docex.transport.transporter_factory import TransporterFactory
 import asyncio
 
-class TestDocFlowUsage(unittest.TestCase):
-    """Test typical DocFlow usage pattern from a developer's perspective"""
+class TestDocEXUsage(unittest.TestCase):
+    """Test typical DocEX usage pattern from a developer's perspective"""
     
     def setUp(self):
         """Set up test environment"""
@@ -22,11 +22,11 @@ class TestDocFlowUsage(unittest.TestCase):
         self.test_doc = self.test_dir / "test_document.txt"
         self.test_doc.write_text("This is a test document")
         
-        # Initialize DocFlow with basic configuration
-        DocFlow.setup(
+        # Initialize DocEX with basic configuration
+        DocEX.setup(
             database={
                 'type': 'sqlite',
-                'sqlite': {'path': str(self.test_dir / 'docflow.db')}
+                'sqlite': {'path': str(self.test_dir / 'docex.db')}
             },
             storage={
                 'type': 'filesystem',
@@ -34,8 +34,8 @@ class TestDocFlowUsage(unittest.TestCase):
             }
         )
         
-        # Create DocFlow instance
-        self.docflow = DocFlow()
+        # Create DocEX instance
+        self.docex = DocEX()
     
     def tearDown(self):
         """Clean up test environment"""
@@ -45,7 +45,7 @@ class TestDocFlowUsage(unittest.TestCase):
     def test_typical_usage_flow(self):
         """Test the typical usage pattern: create basket → add document → send document"""
         # 1. Create a document basket
-        basket = self.docflow.create_basket(
+        basket = self.docex.create_basket(
             name="outbound_docs",
             description="Basket for outbound documents"
         )
@@ -72,7 +72,7 @@ class TestDocFlowUsage(unittest.TestCase):
             create_dirs=True
         )
         
-        route = self.docflow.create_route(
+        route = self.docex.create_route(
             name="test_route",
             transport_type=TransportType.LOCAL,
             config=transport_config.model_dump(),

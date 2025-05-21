@@ -13,7 +13,7 @@ from sqlalchemy import text
 from docex.models.document_metadata import DocumentMetadata as MetaModel
 
 class Document:
-    """Represents a document in DocFlow"""
+    """Represents a document in DocEX"""
     
     def __init__(
         self,

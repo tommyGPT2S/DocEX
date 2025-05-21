@@ -8,9 +8,9 @@ from pathlib import Path
 # Configure logging
 logger = logging.getLogger(__name__)
 
-class DocFlowConfig:
+class DocEXConfig:
     """
-    Manages system-wide configuration for DocFlow
+    Manages system-wide configuration for DocEX
     
     This class follows the singleton pattern to ensure only one configuration instance exists.
     It manages system-wide settings like database connection and logging.
@@ -34,7 +34,7 @@ class DocFlowConfig:
                 self.config = yaml.safe_load(f)
             
             # Load configuration from file if it exists
-            self.config_file = Path.home() / '.docflow' / 'config.yaml'
+            self.config_file = Path.home() / '.docex' / 'config.yaml'
             if self.config_file.exists():
                 self._load_config()
             
@@ -43,7 +43,7 @@ class DocFlowConfig:
     @classmethod
     def setup(cls, **kwargs) -> None:
         """
-        Set up DocFlow configuration
+        Set up DocEX configuration
         
         Args:
             database: Database configuration
@@ -78,7 +78,7 @@ class DocFlowConfig:
         # Save configuration
         instance._save_config()
         
-        instance.logger.info("DocFlow configuration updated")
+        instance.logger.info("DocEX configuration updated")
     
     def _load_config(self) -> None:
         """Load configuration from file"""

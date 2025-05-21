@@ -11,7 +11,7 @@ class ConfigManager:
     Manages configuration for document baskets
     
     This class handles basket-specific configuration settings.
-    It does not include database connection settings, which are managed by DocFlowConfig.
+    It does not include database connection settings, which are managed by DocEXConfig.
     """
     
     def __init__(self, config: Optional[Dict[str, Any]] = None):

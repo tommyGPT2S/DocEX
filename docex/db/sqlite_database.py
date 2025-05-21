@@ -19,7 +19,7 @@ class SQLiteDatabase(AbstractDatabase):
             config: Configuration manager
         """
         super().__init__(config)
-        self.db_path = config.get('database.sqlite.path', 'docflow.db')
+        self.db_path = config.get('database.sqlite.path', 'docex.db')
         self.engine = None
         self.Session = None
         self._current_session = None
@@ -106,7 +106,7 @@ class SQLiteDatabase(AbstractDatabase):
                 continue
             
             # Remove schema prefix from table names and references
-            line = line.replace('docflow.', '')
+            line = line.replace('docex.', '')
             processed_statements.append(line)
         
         # Join processed statements back into SQL

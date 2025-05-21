@@ -1,9 +1,9 @@
 # DocEX
 
 <!-- Badges -->
-![License](https://img.shields.io/github/license/tommyGPT2S/DocFlow)
+![License](https://img.shields.io/github/license/tommyGPT2S/DocEX)
 ![Python](https://img.shields.io/pypi/pyversions/docex)
-![Build](https://github.com/tommyGPT2S/DocFlow/actions/workflows/ci.yml/badge.svg)
+![Build](https://github.com/tommyGPT2S/DocEX/actions/workflows/ci.yml/badge.svg)
 <!-- Add PyPI badge here when ready -->
 
 ![DocEX Architecture](docs/DocEX_Architecture.jpeg)

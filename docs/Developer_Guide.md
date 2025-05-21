@@ -11,7 +11,7 @@ Welcome to the DocEX developer guide! This document will help you get started wi
    ```sh
    pip install docex
    # or for latest development version:
-   pip install git+https://github.com/tommyGPT2S/DocFlow.git
+   pip install git+https://github.com/tommyGPT2S/DocEX.git
    ```
 2. **Initialize DocEX** (run once per environment):
    ```sh
@@ -164,7 +164,7 @@ Please reference examples folders for sample files.
 
 ## 8. Configuring Storage and Database Backends
 
-DocEX supports multiple storage and database backends. You can configure these in your config file (usually `~/.docflow/config.yaml`) or during `docex init`.
+DocEX supports multiple storage and database backends. You can configure these in your config file (usually `~/.docex/config.yaml`) or during `docex init`.
 
 ### Change Database Backend to Postgres
 

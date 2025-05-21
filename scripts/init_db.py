@@ -23,17 +23,17 @@ def init_db():
     try:
         # Create schema if it doesn't exist
         with db.session() as session:
-            session.execute(text('CREATE SCHEMA IF NOT EXISTS docflow'))
+            session.execute(text('CREATE SCHEMA IF NOT EXISTS docex'))
             session.commit()
         
-        # Set search path to include docflow schema
+        # Set search path to include docex schema
         with db.session() as session:
-            session.execute(text('SET search_path TO docflow, public'))
+            session.execute(text('SET search_path TO docex, public'))
             session.commit()
         
-        # Create all tables in docflow schema
+        # Create all tables in docex schema
         for table in Base.metadata.tables.values():
-            table.schema = 'docflow'
+            table.schema = 'docex'
         
         Base.metadata.create_all(db._engine)
         print("Database tables created successfully!")
