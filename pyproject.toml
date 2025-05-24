@@ -36,9 +36,8 @@ dev = [
     "mypy>=0.900",
 ]
 
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["docex*"]
+[tool.setuptools]
+packages = { find = {} }
 
 [tool.black]
 line-length = 88
