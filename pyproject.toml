@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "docex"
-version = "2.0.1"
+version = "2.0.2"
 description = "A robust, lightweight, and developer friendly document management and transport system for Python"
 readme = "README.md"
 authors = [{ name = "Tommy Jiang", email = "tommySCOS@scos.ai" }]
