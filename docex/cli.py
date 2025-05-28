@@ -90,8 +90,8 @@ def init(config, force, db_type, db_path, db_host, db_port, db_name, db_user, db
         
         click.echo(f'DEBUG: Config before setup: {user_config}')
         
-        # Initialize DocFlow
-        DocFlow.setup(**user_config)
+        # Initialize Docex
+        DocEX.setup(**user_config)
         
         # Save configuration
         config_path = Path.home() / '.docflow' / 'config.yaml'
@@ -113,8 +113,8 @@ def init(config, force, db_type, db_path, db_host, db_port, db_name, db_user, db
         with open(config_path, 'w') as f:
             yaml.dump(safe_config, f, default_flow_style=False, sort_keys=False)
         
-        # Create DocFlow instance for verification
-        docflow = DocFlow()
+        # Create DocEx instance for verification
+        docex = DocEX()
         
         # Verify storage setup
         storage_path = Path(user_config['storage']['filesystem']['path'])
