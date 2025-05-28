@@ -122,7 +122,7 @@ class DocEXConfig:
             if 'type' not in db_config:
                 raise RuntimeError("Database type not specified")
             
-            if db_config['type'] == 'postgres':
+            if db_config['type'] in ['postgres']:
                 required_fields = ['user', 'password', 'host', 'port', 'database']
                 missing_fields = [field for field in required_fields if field not in db_config]
                 if missing_fields:

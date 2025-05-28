@@ -2,7 +2,7 @@ import os
 import shutil
 import unittest
 from pathlib import Path
-from docCore import DocEX
+from docex import DocEX
 from docex.config.docex_config import DocEXConfig
 from docex.db.models import Base
 from docex.db.connection import Database
