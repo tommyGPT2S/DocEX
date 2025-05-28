@@ -169,7 +169,7 @@ class DocEvent(Base):
     event_type = Column(String(50), nullable=False)
     event_timestamp = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC))
     data = Column(JSON)
-    source = Column(String(50), nullable=False, server_default=text("'docflow'"))
+    source = Column(String(50), nullable=False, server_default=text("'docex'"))
     status = Column(String(20), nullable=False, server_default=text("'PENDING'"))
     error_message = Column(Text)
     created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC))

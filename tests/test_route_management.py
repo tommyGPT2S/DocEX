@@ -1,7 +1,7 @@
 import unittest
 from pathlib import Path
 import shutil
-from docex import DocFlow
+from docex import DocEX
 from docex.transport.config import TransportType, LocalTransportConfig
 from docex.transport.local import LocalTransport
 from docex.transport.transporter_factory import TransporterFactory
@@ -19,11 +19,11 @@ class TestRouteManagement(unittest.TestCase):
             shutil.rmtree(self.test_dir)
         self.test_dir.mkdir()
         
-        # Initialize DocFlow with basic configuration
-        DocFlow.setup(
+        # Initialize DocEX with basic configuration
+        DocEX.setup(
             database={
                 'type': 'sqlite',
-                'sqlite': {'path': str(self.test_dir / 'docflow.db')}
+                'sqlite': {'path': str(self.test_dir / 'docex.db')}
             },
             storage={
                 'type': 'filesystem',
@@ -35,8 +35,8 @@ class TestRouteManagement(unittest.TestCase):
         db = Database()
         Base.metadata.create_all(db.get_engine())
         
-        # Create DocFlow instance
-        self.docflow = DocFlow()
+        # Create DocEX instance
+        self.docex = DocEX()
     
     def tearDown(self):
         """Clean up test environment"""
@@ -54,7 +54,7 @@ class TestRouteManagement(unittest.TestCase):
         )
         
         # Create route
-        route = self.docflow.create_route(
+        route = self.docex.create_route(
             name="test_route",
             transport_type=TransportType.LOCAL,
             config=transport_config.model_dump(),
@@ -92,18 +92,18 @@ class TestRouteManagement(unittest.TestCase):
             create_dirs=True
         )
         
-        route = self.docflow.create_route(
+        route = self.docex.create_route(
             name="test_route",
             transport_type=TransportType.LOCAL,
             config=transport_config.model_dump()
         )
         
         # Delete the route
-        result = self.docflow.delete_route("test_route")
+        result = self.docex.delete_route("test_route")
         self.assertTrue(result)
         
         # Verify route was deleted
-        deleted_route = self.docflow.get_route("test_route")
+        deleted_route = self.docex.get_route("test_route")
         self.assertIsNone(deleted_route)
     
     def test_list_routes(self):
@@ -117,21 +117,21 @@ class TestRouteManagement(unittest.TestCase):
         )
         
         # Create first route
-        self.docflow.create_route(
+        self.docex.create_route(
             name="route1",
             transport_type=TransportType.LOCAL,
             config=transport_config.model_dump()
         )
         
         # Create second route
-        self.docflow.create_route(
+        self.docex.create_route(
             name="route2",
             transport_type=TransportType.LOCAL,
             config=transport_config.model_dump()
         )
         
         # List all routes
-        routes = self.docflow.list_routes()
+        routes = self.docex.list_routes()
         
         # Verify routes were listed
         self.assertEqual(len(routes), 2)
@@ -149,14 +149,14 @@ class TestRouteManagement(unittest.TestCase):
             create_dirs=True
         )
         
-        self.docflow.create_route(
+        self.docex.create_route(
             name="test_route",
             transport_type=TransportType.LOCAL,
             config=transport_config.model_dump()
         )
         
         # Get the route
-        route = self.docflow.get_route("test_route")
+        route = self.docex.get_route("test_route")
         
         # Verify route was retrieved
         self.assertIsNotNone(route)
@@ -166,7 +166,7 @@ class TestRouteManagement(unittest.TestCase):
     def test_get_available_transport_types(self):
         """Test getting list of available transport types"""
         # Get available transport types
-        transport_types = self.docflow.get_available_transport_types()
+        transport_types = self.docex.get_available_transport_types()
         
         # Verify local transport is available
         self.assertIn(TransportType.LOCAL, transport_types) 

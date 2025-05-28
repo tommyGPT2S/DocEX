@@ -2,14 +2,14 @@ import os
 import shutil
 import unittest
 from pathlib import Path
-from docCore import DocFlow
-from docex.config.docflow_config import DocFlowConfig
+from docex import DocEX
+from docex.config.docex_config import DocEXConfig
 from docex.db.models import Base
 from docex.db.connection import Database
 from docex.docbasket import DocBasket
 
-class TestDocFlow(unittest.TestCase):
-    """Test DocFlow functionality with default SQLite configuration"""
+class TestDocEX(unittest.TestCase):
+    """Test DocEX functionality with default SQLite configuration"""
     
     def setUp(self):
         """Set up test environment"""
@@ -19,9 +19,9 @@ class TestDocFlow(unittest.TestCase):
             shutil.rmtree(self.test_dir)
         self.test_dir.mkdir(mode=0o755)  # Set directory permissions
         
-        # Set up DocFlow with default SQLite configuration
-        db_path = str(self.test_dir / 'docflow.db')
-        DocFlow.setup(
+        # Set up DocEX with default SQLite configuration
+        db_path = str(self.test_dir / 'docex.db')
+        DocEX.setup(
             database={
                 'type': 'sqlite',
                 'sqlite': {
@@ -34,7 +34,7 @@ class TestDocFlow(unittest.TestCase):
         )
         
         # Create database tables
-        self.docflow = DocFlow()
+        self.docex = DocEX()
         self.db = Database()
         
         # Create database tables
@@ -51,12 +51,12 @@ class TestDocFlow(unittest.TestCase):
     
     def test_default_configuration(self):
         """Test default configuration"""
-        config = DocFlowConfig()
+        config = DocEXConfig()
         self.assertEqual(config.get('database.type'), 'sqlite')
     
     def test_create_basket_with_default_storage(self):
         """Test creating a basket with default storage configuration"""
-        basket = self.docflow.create_basket('test_basket', 'Test basket')
+        basket = self.docex.create_basket('test_basket', 'Test basket')
         self.assertIsNotNone(basket)
         self.assertEqual(basket.name, 'test_basket')
         self.assertEqual(basket.description, 'Test basket')
@@ -70,7 +70,7 @@ class TestDocFlow(unittest.TestCase):
             'path': 'custom_storage/test_basket'
         }
         
-        basket = self.docflow.create_basket(
+        basket = self.docex.create_basket(
             'test_basket',
             'Test basket',
             storage_config=custom_storage
@@ -89,7 +89,7 @@ class TestDocFlow(unittest.TestCase):
         test_file.write_text('Test content')
         
         # Create basket and add document
-        basket = self.docflow.create_basket('test_basket')
+        basket = self.docex.create_basket('test_basket')
         doc = basket.add(str(test_file))
         
         self.assertIsNotNone(doc)
@@ -100,11 +100,11 @@ class TestDocFlow(unittest.TestCase):
     def test_list_baskets(self):
         """Test listing all baskets"""
         # Create multiple baskets
-        basket1 = self.docflow.create_basket('basket1')
-        basket2 = self.docflow.create_basket('basket2')
+        basket1 = self.docex.create_basket('basket1')
+        basket2 = self.docex.create_basket('basket2')
         
         # List baskets
-        baskets = self.docflow.list_baskets()
+        baskets = self.docex.list_baskets()
         
         self.assertEqual(len(baskets), 2)
         self.assertEqual(baskets[0].name, 'basket1')
@@ -113,19 +113,19 @@ class TestDocFlow(unittest.TestCase):
     def test_delete_basket(self):
         """Test deleting a basket"""
         # Create basket and add document
-        basket = self.docflow.create_basket('test_basket')
+        basket = self.docex.create_basket('test_basket')
         
         # Delete basket
         basket.delete()
         
         # Try to get deleted basket
-        deleted_basket = self.docflow.get_basket(basket.id)
+        deleted_basket = self.docex.get_basket(basket.id)
         self.assertIsNone(deleted_basket)
 
     def test_find_basket_by_name(self):
         """Test finding a basket by name"""
         # Create a basket
-        basket = self.docflow.create_basket('find_by_name_test')
+        basket = self.docex.create_basket('find_by_name_test')
         
         # Find the basket by name
         found_basket = DocBasket.find_by_name('find_by_name_test')
@@ -141,7 +141,7 @@ class TestDocFlow(unittest.TestCase):
     def test_update_document(self):
         """Test updating a document"""
         # Create basket and add document
-        basket = self.docflow.create_basket('update_test')
+        basket = self.docex.create_basket('update_test')
         test_file = self.test_dir / 'test.txt'
         test_file.write_text('Initial content')
         doc = basket.add(str(test_file))
@@ -159,7 +159,7 @@ class TestDocFlow(unittest.TestCase):
     def test_delete_document(self):
         """Test deleting a document"""
         # Create basket and add document
-        basket = self.docflow.create_basket('delete_doc_test')
+        basket = self.docex.create_basket('delete_doc_test')
         test_file = self.test_dir / 'test.txt'
         test_file.write_text('Test content')
         doc = basket.add(str(test_file))
@@ -174,7 +174,7 @@ class TestDocFlow(unittest.TestCase):
     def test_get_basket_stats(self):
         """Test getting basket statistics"""
         # Create basket and add documents
-        basket = self.docflow.create_basket('stats_test')
+        basket = self.docex.create_basket('stats_test')
         
         # Add multiple documents with different types and statuses
         test_file1 = self.test_dir / 'test1.txt'
@@ -197,7 +197,7 @@ class TestDocFlow(unittest.TestCase):
     def test_find_documents_by_metadata(self):
         """Test finding documents by metadata"""
         # Create basket and add document with metadata
-        basket = self.docflow.create_basket('metadata_test')
+        basket = self.docex.create_basket('metadata_test')
         test_file = self.test_dir / 'test.txt'
         test_file.write_text('Test content')
         
@@ -219,7 +219,7 @@ class TestDocFlow(unittest.TestCase):
     def test_document_details(self):
         """Test document details and content retrieval"""
         # Create basket and add document
-        basket = self.docflow.create_basket('details_test')
+        basket = self.docex.create_basket('details_test')
         test_file = self.test_dir / 'test.txt'
         test_file.write_text('Test content')
         doc = basket.add(str(test_file))
@@ -241,43 +241,43 @@ class TestDocFlow(unittest.TestCase):
     def test_database_configuration(self):
         """Test database configuration changes"""
         # Verify initial SQLite configuration
-        config = DocFlowConfig()
+        config = DocEXConfig()
         self.assertEqual(config.get('database.type'), 'sqlite')
         sqlite_config = config.get('database.sqlite', {})
-        self.assertEqual(sqlite_config['path'], str(self.test_dir / 'docflow.db'))
+        self.assertEqual(sqlite_config['path'], str(self.test_dir / 'docex.db'))
         
         # Set up PostgreSQL as default database
-        DocFlow.setup_database('postgres',
+        DocEX.setup_database('postgres',
             host='localhost',
             port=5444,
             database='scm_simulation',
             user='gpt2s',
             password='9pt2s2025!',
-            schema='docflow',
+            schema='docex',
             is_default_db=True
         )
         
         # Verify PostgreSQL is now default
-        config = DocFlowConfig()
+        config = DocEXConfig()
         self.assertEqual(config.get('database.type'), 'postgres')
         pg_config = config.get('database.postgres', {})
         self.assertEqual(pg_config['host'], 'localhost')
         self.assertEqual(pg_config['port'], 5444)
         self.assertEqual(pg_config['database'], 'scm_simulation')
         self.assertEqual(pg_config['user'], 'gpt2s')
-        self.assertEqual(pg_config['schema'], 'docflow')
+        self.assertEqual(pg_config['schema'], 'docex')
         
         # Switch back to SQLite as default
-        DocFlow.setup_database('sqlite',
-            path=str(self.test_dir / 'docflow.db'),
+        DocEX.setup_database('sqlite',
+            path=str(self.test_dir / 'docex.db'),
             is_default_db=True
         )
         
         # Verify SQLite is default again
-        config = DocFlowConfig()
+        config = DocEXConfig()
         self.assertEqual(config.get('database.type'), 'sqlite')
         sqlite_config = config.get('database.sqlite', {})
-        self.assertEqual(sqlite_config['path'], str(self.test_dir / 'docflow.db'))
+        self.assertEqual(sqlite_config['path'], str(self.test_dir / 'docex.db'))
 
 if __name__ == '__main__':
     unittest.main() 

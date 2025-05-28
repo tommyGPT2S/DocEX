@@ -1,9 +1,9 @@
 -- BEGIN POSTGRES-SPECIFIC
 -- Create schema if it doesn't exist
-CREATE SCHEMA IF NOT EXISTS docflow;
+CREATE SCHEMA IF NOT EXISTS docex;
 
 -- Set search path
-SET search_path TO docflow;
+SET search_path TO docex;
 -- END POSTGRES-SPECIFIC
 
 -- Drop existing tables (in reverse dependency order)
@@ -80,7 +80,7 @@ CREATE TABLE IF NOT EXISTS doc_events (
     event_type VARCHAR(50) NOT NULL,
     event_timestamp TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     data JSON,  -- SQLite will store as TEXT, handled by SQLAlchemy
-    source VARCHAR(50) NOT NULL DEFAULT 'docflow',
+    source VARCHAR(50) NOT NULL DEFAULT 'docex',
     status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
     error_message TEXT,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,

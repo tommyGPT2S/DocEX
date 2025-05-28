@@ -9,7 +9,7 @@ CREATE TEMPORARY TABLE document_id_mapping (
 );
 
 -- Step 2: Insert documents from old table into new documents table
-INSERT INTO docflow.documents (
+INSERT INTO docex.documents (
     id,
     basket_id,
     document_type,
@@ -39,7 +39,7 @@ SELECT
 FROM integration.document_metadata dm;
 
 -- Step 3: Insert file history records
-INSERT INTO docflow.file_history (
+INSERT INTO docex.file_history (
     id,
     document_id,
     original_path,
@@ -57,7 +57,7 @@ SELECT
 FROM integration.document_metadata dm;
 
 -- Step 4: Create docbaskets for each tenant
-INSERT INTO docflow.docbasket (
+INSERT INTO docex.docbasket (
     id,
     name,
     description,
@@ -78,13 +78,13 @@ FROM integration.document_metadata
 GROUP BY tenant_alias;
 
 -- Step 5: Update document basket references
-UPDATE docflow.documents d
+UPDATE docex.documents d
 SET basket_id = 'temp_' || dm.tenant_alias
 FROM integration.document_metadata dm
 WHERE d.id = dm.document_id;
 
 -- Step 6: Create metadata entries for additional_info
-INSERT INTO docflow.document_metadata (
+INSERT INTO docex.document_metadata (
     document_id,
     key,
     value,
@@ -103,7 +103,7 @@ FROM integration.document_metadata
 WHERE additional_info IS NOT NULL AND additional_info != '{}'::jsonb;
 
 -- Step 7: Create metadata entries for file paths
-INSERT INTO docflow.document_metadata (
+INSERT INTO docex.document_metadata (
     document_id,
     key,
     value,
@@ -130,7 +130,7 @@ DECLARE
     new_count INTEGER;
 BEGIN
     SELECT COUNT(*) INTO old_count FROM integration.document_metadata;
-    SELECT COUNT(*) INTO new_count FROM docflow.documents;
+    SELECT COUNT(*) INTO new_count FROM docex.documents;
     
     IF old_count != new_count THEN
         RAISE EXCEPTION 'Migration failed: Document count mismatch. Old: %, New: %', old_count, new_count;

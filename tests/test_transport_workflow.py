@@ -1,4 +1,4 @@
-from docex import DocFlow
+from docex import DocEX
 from pathlib import Path
 import json
 import asyncio
@@ -11,11 +11,11 @@ from sqlalchemy import text
 # Get environment from environment variable or default to development
 env = os.getenv('DOCFLOW_ENV', 'development')
 
-# Setup DocFlow with default configuration
-DocFlow.setup()
+# Setup DocEX with default configuration
+DocEX.setup()
 
-# Create DocFlow instance
-docflow = DocFlow()
+# Create DocEX instance
+docex = DocEX()
 
 def print_document_info(doc):
     """Helper function to print document information"""
@@ -59,7 +59,7 @@ def print_document_info(doc):
 
 async def main():
     # Step 1: Get the download route
-    download_route = docflow.get_route("download_route")
+    download_route = docex.get_route("download_route")
     if not download_route:
         raise Exception("Download route not found")
 
@@ -77,7 +77,7 @@ async def main():
 
     # Step 4: Create a basket and add the downloaded file
     print("\n=== Creating basket and adding file ===")
-    basket = docflow.create_basket("test_basket")
+    basket = docex.create_basket("test_basket")
     doc = basket.add(
         str(local_file_path),
         metadata={
@@ -89,7 +89,7 @@ async def main():
     print("Document added to basket")
 
     # Step 5: Get the upload route
-    upload_route = docflow.get_route("upload_route")
+    upload_route = docex.get_route("upload_route")
     if not upload_route:
         raise Exception("Upload route not found")
 

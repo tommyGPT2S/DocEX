@@ -48,7 +48,7 @@ docex/
 ├── context.py            # User context for auditing
 ├── config/
 │   ├── __init__.py
-│   ├── docflow_config.py # Configuration management
+│   ├── docex_config.py # Configuration management
 │   └── default_config.yaml
 ├── db/
 │   ├── __init__.py
@@ -165,7 +165,7 @@ All IDs in the system follow a consistent format with a three-letter prefix foll
 ### 2.11 Configuration Hierarchy
 
 1. **System Configuration**
-   - Stored in `~/.docflow/config.yaml`
+   - Stored in `~/.docex/config.yaml`
    - Managed through CLI commands
    - Contains database, storage, and transport settings
 
@@ -809,7 +809,7 @@ if result.success:
 
 ### 10.1 System Configuration
 ```yaml
-# ~/.docflow/config.yaml
+# ~/.docex/config.yaml
 database:
   type: sqlite  # or postgres
   sqlite:
@@ -841,12 +841,12 @@ logging:
 
 1. **Initialization**
    - System must be initialized using `docex init`
-   - Creates configuration directory at `~/.docflow`
+   - Creates configuration directory at `~/.docex`
    - Sets up default configuration
    - Initializes database and storage
 
 2. **Configuration Loading**
-   - Configuration loaded from `~/.docflow/config.yaml`
+   - Configuration loaded from `~/.docex/config.yaml`
    - Merged with default configuration
    - Validated against schema
    - Cached in memory for performance

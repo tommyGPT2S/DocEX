@@ -4,13 +4,13 @@ database:
   
   # SQLite configuration
   sqlite:
-    path: docflow.db
+    path: docex.db
     
   # PostgreSQL configuration
   postgres:
     host: localhost
     port: 5432
-    database: docflow
+    database: docex
     user: postgres
     password: postgres
     
@@ -23,7 +23,7 @@ database:
 
 # Application settings
 app:
-  name: DocFlow
+  name: DocEX
   version: 1.0.0
   debug: true
   log_level: DEBUG 
@@ -31,8 +31,8 @@ app:
 storage:
   type: filesystem
   filesystem:
-    path: storage/docflow
+    path: storage/docex
 
 logging:
   level: DEBUG
-  file: docflow.log 
+  file: docex.log 

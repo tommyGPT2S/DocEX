@@ -1,13 +1,13 @@
-from docex import DocFlow
+from docex import DocEX
 from docex.db.connection import Database
 from docex.transport.models import Base, Route
 from docex.transport.transporter_factory import TransporterFactory
 from docex.transport.local import LocalTransport
 from docex.transport.config import TransportType
 
-# Setup DocFlow
-DocFlow.setup(
-    database={'type': 'sqlite', 'sqlite': {'path': 'docflow.db'}},
+# Setup DocEX
+DocEX.setup(
+    database={'type': 'sqlite', 'sqlite': {'path': 'docex.db'}},
     storage={'type': 'filesystem', 'path': 'storage'}
 )
 
@@ -15,8 +15,8 @@ DocFlow.setup(
 db = Database()
 Base.metadata.create_all(db.get_engine())
 
-# Create DocFlow instance
-docflow = DocFlow()
+# Create DocEX instance
+docex = DocEX()
 
 # Delete any existing routes
 with db.session() as session:
@@ -24,7 +24,7 @@ with db.session() as session:
     session.commit()
 
 # Create upload route
-upload_route = docflow.create_route(
+upload_route = docex.create_route(
     name='upload_route',
     transport_type='local',
     config={'base_path': 'storage/upload', 'create_dirs': True},
@@ -36,7 +36,7 @@ upload_route = docflow.create_route(
 )
 
 # Create download route
-download_route = docflow.create_route(
+download_route = docex.create_route(
     name='download_route',
     transport_type='local',
     config={'base_path': 'storage/download', 'create_dirs': True},

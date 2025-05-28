@@ -31,7 +31,7 @@ class PostgresDatabase(AbstractDatabase):
             f"{pg_config.get('password', 'postgres')}@"
             f"{pg_config.get('host', 'localhost')}:"
             f"{pg_config.get('port', 5432)}/"
-            f"{pg_config.get('database', 'docflow')}"
+            f"{pg_config.get('database', 'docex')}"
         )
         
         # Create engine with PostgreSQL specific settings

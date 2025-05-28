@@ -3,7 +3,7 @@ import os
 from typing import Dict, Any, Optional, List
 from pathlib import Path
 import yaml
-from docex.config.docflow_config import DocFlowConfig
+from docex.config.docex_config import DocEXConfig
 from docex.db.connection import Database
 from docex.docbasket import DocBasket
 from docex.models.metadata_keys import MetadataKey
@@ -67,16 +67,16 @@ class DocEX:
     
     @classmethod
     def is_initialized(cls) -> bool:
-        """Check if DocFlow has been initialized
+        """Check if DocEX has been initialized
         
         Returns:
-            True if DocFlow has been initialized, False otherwise
+            True if DocEX has been initialized, False otherwise
         """
         if cls._config is not None:
             return True
             
         # Try to load configuration from file
-        config_path = Path.home() / '.docflow' / 'config.yaml'
+        config_path = Path.home() / '.docex' / 'config.yaml'
         if not config_path.exists():
             logger.error(f"Configuration file not found at {config_path}")
             return False
@@ -86,11 +86,11 @@ class DocEX:
             return False
             
         try:
-            cls._config = DocFlowConfig()
+            cls._config = DocEXConfig()
             cls._config.config = config
             return True
         except Exception as e:
-            logger.error(f"Failed to initialize DocFlow configuration: {str(e)}")
+            logger.error(f"Failed to initialize DocEX configuration: {str(e)}")
             return False
     
     def __new__(cls):
@@ -100,26 +100,26 @@ class DocEX:
     
     def __init__(self, user_context: Optional[UserContext] = None):
         """
-        Initialize DocFlow instance
+        Initialize DocEX instance
         
         Args:
             user_context: Optional user context for user-aware operations and auditing
         """
         if not hasattr(self, 'initialized'):
             if not self.is_initialized():
-                raise RuntimeError("DocFlow not initialized. Call 'docflow init' to setup first.")
+                raise RuntimeError("DocEX not initialized. Call 'docex init' to setup first.")
             self.db = Database()
             self.user_context = user_context
             self.initialized = True
             if user_context:
-                logger.info(f"DocFlow initialized for user {user_context.user_id}")
+                logger.info(f"DocEX initialized for user {user_context.user_id}")
     
     @classmethod
     def setup(cls, **config) -> None:
         """
-        Set up DocFlow configuration
+        Set up DocEX configuration
         
-        This should be called before creating a DocFlow instance.
+        This should be called before creating a DocEX instance.
         
         Args:
             **config: Configuration options
@@ -187,7 +187,7 @@ class DocEX:
             
             # Initialize configuration
             try:
-                cls._config = DocFlowConfig()
+                cls._config = DocEXConfig()
                 cls._config.setup(**merged_config)
             except Exception as e:
                 raise RuntimeError(f"Failed to initialize configuration: {str(e)}")
@@ -247,14 +247,14 @@ class DocEX:
                 raise RuntimeError(f"Failed to initialize database: {str(e)}")
                 
         except Exception as e:
-            logger.error(f"DocFlow initialization failed: {str(e)}")
+            logger.error(f"DocEX initialization failed: {str(e)}")
             raise
     
     @classmethod
     def get_config(cls) -> Dict[str, Any]:
         """Get current configuration"""
         if cls._config is None:
-            raise RuntimeError("DocFlow not initialized. Call setup() first.")
+            raise RuntimeError("DocEX not initialized. Call setup() first.")
         return cls._config.get_all()
     
     @classmethod
@@ -339,7 +339,7 @@ class DocEX:
                     - password: Database password
         """
         if cls._config is None:
-            raise RuntimeError("DocFlow not initialized. Call setup() first.")
+            raise RuntimeError("DocEX not initialized. Call setup() first.")
             
         if db_type not in ['sqlite', 'postgres']:
             raise ValueError(f"Invalid database type: {db_type}")

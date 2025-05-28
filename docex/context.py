@@ -4,7 +4,7 @@ from typing import Optional, Dict, List
 @dataclass
 class UserContext:
     """
-    Context object for carrying user-specific information through DocFlow operations.
+    Context object for carrying user-specific information through DocEX operations.
     
     Attributes:
         user_id: Unique identifier for the user

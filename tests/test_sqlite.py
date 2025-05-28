@@ -101,7 +101,7 @@ def test_metadata_verification():
     # Create test basket
     basket_name = f"test_basket_metadata_verify_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     print(f"Creating test basket for metadata verification: {basket_name}")
-    test_basket = DocBasket.create(basket_name, config)
+    test_basket = DocBasket.create(basket_name, storage_config=config.get('storage'))
     
     # Test files and their content
     test_files = [
@@ -170,7 +170,7 @@ def test_duplicate_file_handling():
     # Create test basket
     basket_name = f"test_basket_duplicate_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     print(f"Creating test basket for duplicate file handling: {basket_name}")
-    test_basket = DocBasket.create(basket_name, config)
+    test_basket = DocBasket.create(basket_name, storage_config=config.get('storage'))
     
     # Create test file
     test_file = "duplicate_test.txt"
@@ -227,7 +227,7 @@ def test_sqlite_json_handling():
     # Create test basket
     basket_name = f"test_basket_json_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     print(f"Creating test basket for JSON handling: {basket_name}")
-    test_basket = DocBasket.create(basket_name, config)
+    test_basket = DocBasket.create(basket_name, storage_config=config.get('storage'))
     
     try:
         # Test JSON in document content
@@ -301,7 +301,7 @@ def test_sqlite_transaction_behavior():
     # Create test basket
     basket_name = f"test_basket_transaction_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     print(f"Creating test basket for transaction testing: {basket_name}")
-    test_basket = DocBasket.create(basket_name, config)
+    test_basket = DocBasket.create(basket_name, storage_config=config.get('storage'))
     
     try:
         # Test successful transaction
