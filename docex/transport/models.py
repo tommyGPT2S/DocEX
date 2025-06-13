@@ -1,4 +1,4 @@
-from datetime import datetime, UTC
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Dict, Any, Optional, List
 from sqlalchemy import Column, String, Integer, DateTime, JSON, ForeignKey, Text, Boolean, Enum as SQLEnum
@@ -36,8 +36,8 @@ class Route(Base):
     tags = Column(JSON, nullable=False, default=[])  # Stored as JSON array
     priority = Column(Integer, nullable=False, default=0)
     enabled = Column(Boolean, nullable=False, default=True)
-    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC))
-    updated_at = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     # Relationships
     operations = relationship("RouteOperation", back_populates="route", cascade="all, delete-orphan")
@@ -91,4 +91,4 @@ class RouteOperation(Base):
     completed_at = Column(DateTime, nullable=True)
 
     # Relationships
-    route = relationship("Route", back_populates="operations") 
+    route = relationship("Route", back_populates="operations")

@@ -1,6 +1,6 @@
 from typing import Optional, Dict, Any, Union, List
 from pathlib import Path
-from datetime import datetime, timedelta, UTC, timezone
+from datetime import datetime, timedelta, timezone
 import hashlib
 from uuid import uuid4
 import json
@@ -229,23 +229,30 @@ class DocBasket:
                 model=basket
             )
     
-    def find_documents_by_metadata(self, metadata: Dict[str, Any]) -> List[Document]:
+    def find_documents_by_metadata(self, metadata: Union[Dict[str, Any], str]) -> List[Document]:
         """
-        Find documents by metadata (metadata values can be dicts or DocumentMetadata models)
+        Find documents by metadata. Accepts either a dictionary of key-value pairs or a single string value.
         """
         with self.db.transaction() as session:
-            # Build query
             query = select(DocumentModel).join(DocumentMetadata)
-            for key, value in metadata.items():
-                # Accept either DocumentMetadata or dict/Any
-                if isinstance(value, MetaModel):
-                    value = value.to_dict()
-                if isinstance(value, dict) and 'extra' in value:
-                    value = value['extra'].get('value', None)
-                query = query.where(
-                    DocumentMetadata.key == key,
-                    DocumentMetadata.value == str(value)
-                )
+            
+            if isinstance(metadata, dict):
+                # Handle dictionary input
+                for key, value in metadata.items():
+                    if isinstance(value, MetaModel):
+                        value = value.to_dict()
+                    if isinstance(value, dict) and 'extra' in value:
+                        value = value['extra'].get('value', None)
+                    query = query.where(
+                        DocumentMetadata.key == key,
+                        DocumentMetadata.value == str(value)
+                    )
+            elif isinstance(metadata, str):
+                # Handle string input (search across all metadata values)
+                query = query.where(DocumentMetadata.value == metadata)
+            else:
+                raise ValueError("Metadata must be a dictionary or a string.")
+            
             # Execute query
             documents = session.execute(query).scalars().all()
             return [Document(
@@ -363,12 +370,13 @@ class DocBasket:
             document.path = stored_path
             if metadata:
                 for key, value in metadata.items():
+                    print(f"Storing metadata: {key} = {value}")  # Debug log
                     meta = DocumentMetadata(
                         document_id=document.id,
                         key=key,
                         value=value,
-                        created_at=datetime.now(UTC),
-                        updated_at=datetime.now(UTC)
+                        created_at=datetime.now(timezone.utc),
+                        updated_at=datetime.now(timezone.utc)
                     )
                     session.add(meta)
             operation = Operation(
@@ -382,8 +390,8 @@ class DocBasket:
                     'size': size,
                     'checksum': checksum
                 },
-                created_at=datetime.now(UTC),
-                completed_at=datetime.now(UTC)
+                created_at=datetime.now(timezone.utc),
+                completed_at=datetime.now(timezone.utc)
             )
             session.add(operation)
             session.commit()
@@ -574,4 +582,4 @@ class DocBasket:
                 'type_counts': type_counts,
                 'created_at': basket.created_at,
                 'updated_at': basket.updated_at
-            } 
+            }

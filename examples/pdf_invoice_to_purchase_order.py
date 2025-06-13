@@ -7,6 +7,7 @@ import logging
 from docex.db.models import DocBasket
 from docex.db.connection import Database
 from sqlalchemy import text
+from docex.config.docex_config import DocEXConfig 
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)

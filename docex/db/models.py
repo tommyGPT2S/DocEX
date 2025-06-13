@@ -1,4 +1,4 @@
-from datetime import datetime, UTC
+from datetime import datetime, timezone
 from typing import Dict, Any, Optional, Type
 from sqlalchemy import Column, String, Integer, DateTime, JSON, ForeignKey, Text, text, UniqueConstraint, Table, MetaData, Boolean
 from sqlalchemy.orm import relationship
@@ -49,8 +49,8 @@ class DocBasket(Base):
     description = Column(Text, nullable=True)
     storage_config = Column(JSON, nullable=False)  # Storage configuration (type, path, etc.)
     status = Column(String(50), nullable=False, default='active')
-    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC))
-    updated_at = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     
     # Relationships
     documents = relationship('Document', back_populates='basket', cascade='all, delete-orphan')
@@ -75,8 +75,8 @@ class Document(Base):
     checksum = Column(String(64), nullable=False)  # SHA-256 checksum
     status = Column(String(50), nullable=False, default='active')
     processing_attempts = Column(Integer, nullable=False, default=0)  # Number of processing attempts
-    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC))
-    updated_at = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     
     # Relationships
     basket = relationship('DocBasket', back_populates='documents')
@@ -94,7 +94,7 @@ class FileHistory(Base):
     document_id = Column(String(36), ForeignKey('document.id'), nullable=False)
     original_path = Column(String(255))
     internal_path = Column(String(255))
-    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC))
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
     
     # Relationships
     document = relationship('Document', back_populates='file_history')
@@ -109,7 +109,7 @@ class Operation(Base):
     status = Column(String(50), nullable=False)
     details = Column(JSON)
     error = Column(Text)
-    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC))
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
     completed_at = Column(DateTime)
     
     # Relationships
@@ -130,7 +130,7 @@ class OperationDependency(Base):
     id = Column(String(36), primary_key=True, default=lambda: generate_id(OperationDependency))
     operation_id = Column(String(36), ForeignKey('operations.id', ondelete='CASCADE'), nullable=False)
     depends_on = Column(String(36), ForeignKey('operations.id', ondelete='CASCADE'), nullable=False)
-    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC))
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
     
     # Relationships
     operation = relationship('Operation',
@@ -153,8 +153,8 @@ class DocumentMetadata(Base):
     key = Column(String(255), nullable=False)
     value = Column(Text, nullable=False)
     metadata_type = Column(String(50), nullable=False, default='custom')
-    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC))
-    updated_at = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     
     # Relationships
     document = relationship('Document', back_populates='doc_metadata')
@@ -167,13 +167,13 @@ class DocEvent(Base):
     basket_id = Column(String(36), ForeignKey('docbasket.id', ondelete='CASCADE'), nullable=False)
     document_id = Column(String(36), ForeignKey('document.id', ondelete='NO ACTION'), nullable=True)
     event_type = Column(String(50), nullable=False)
-    event_timestamp = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC))
+    event_timestamp = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
     data = Column(JSON)
     source = Column(String(50), nullable=False, server_default=text("'docex'"))
     status = Column(String(20), nullable=False, server_default=text("'PENDING'"))
     error_message = Column(Text)
-    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC))
-    updated_at = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     
     # Relationships
     basket = relationship('DocBasket', back_populates='events')
@@ -190,8 +190,8 @@ class Processor(Base):
     description = Column(Text)
     config = Column(JSON, nullable=False, default={})
     enabled = Column(Boolean, nullable=False, default=True)
-    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC))
-    updated_at = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     # Relationships
     operations = relationship("ProcessingOperation", back_populates="processor", cascade="all, delete-orphan")
@@ -207,9 +207,9 @@ class ProcessingOperation(Base):
     input_metadata = Column(JSON)
     output_metadata = Column(JSON)
     error = Column(Text)
-    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC))
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
     completed_at = Column(DateTime)
 
     # Relationships
     processor = relationship("Processor", back_populates="operations")
-    document = relationship("Document", back_populates="processing_operations") 
+    document = relationship("Document", back_populates="processing_operations")

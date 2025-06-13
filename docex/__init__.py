@@ -29,13 +29,9 @@ Basic usage:
     print(DocEX.get_metadata_keys())
 """
 
-from .docCore import DocEX
-from docex.docbasket import DocBasket, Document
+from docex.docCore import DocEX  # Updated to use docCore instead of docex
+from docex.config.docex_config import DocEXConfig  # Updated import
 
-__all__ = [
-    'DocEX',          # Main entry point
-    'DocBasket',        # Document basket management
-    'Document',         # Document operations
-]
+__all__ = ['DocEX', 'DocEXConfig']
 
 __version__ = '2.0.1'
