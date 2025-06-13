@@ -1,0 +1,38 @@
+# Database configuration
+database:
+  type: sqlite
+  
+  # SQLite configuration
+  sqlite:
+    path: docflow.db
+    
+  # PostgreSQL configuration
+  postgres:
+    host: localhost
+    port: 5432
+    database: docflow
+    user: postgres
+    password: postgres
+    
+  # Common settings
+  echo: false  # Enable SQL query logging
+  pool_size: 5
+  max_overflow: 10
+  pool_timeout: 30
+  pool_recycle: 3600
+
+# Application settings
+app:
+  name: DocFlow
+  version: 1.0.0
+  debug: false
+  log_level: INFO 
+
+storage:
+  type: filesystem
+  filesystem:
+    path: storage/docflow
+
+logging:
+  level: INFO
+  file: docflow.log 

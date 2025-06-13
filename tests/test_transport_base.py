@@ -3,7 +3,7 @@ import shutil
 import unittest
 from abc import ABC, abstractmethod
 from pathlib import Path
-from datetime import datetime, UTC
+from datetime import datetime, timezone
 from enum import Enum
 from sqlalchemy import create_engine, Column, String, Integer, DateTime, JSON, ForeignKey, Text, Enum as SQLEnum, Boolean
 from sqlalchemy.orm import sessionmaker, declarative_base
@@ -58,8 +58,8 @@ class Route(Base):
     tags = Column(JSON, nullable=False, default=[])
     priority = Column(Integer, nullable=False, default=0)
     enabled = Column(Boolean, nullable=False, default=True)
-    created_at = Column(DateTime, nullable=False, default=datetime.now(UTC))
-    updated_at = Column(DateTime, nullable=False, default=datetime.now(UTC), onupdate=datetime.now(UTC))
+    created_at = Column(DateTime, nullable=False, default=datetime.now(timezone.utc))
+    updated_at = Column(DateTime, nullable=False, default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc))
 
     def supports_method(self, method: RouteMethod) -> bool:
         """Check if route supports a specific method"""
@@ -95,7 +95,7 @@ class RouteOperation(Base):
     document_id = Column(String(255), nullable=True)
     details = Column(JSON, nullable=True)
     error = Column(Text, nullable=True)
-    created_at = Column(DateTime, nullable=False, default=datetime.now(UTC))
+    created_at = Column(DateTime, nullable=False, default=datetime.now(timezone.utc))
     completed_at = Column(DateTime, nullable=True)
 
 class BaseTransportTest(ABC, unittest.TestCase):
@@ -240,4 +240,4 @@ class BaseTransportTest(ABC, unittest.TestCase):
         # Verify disabled state
         saved_route = self.session.query(Route).filter_by(name="disabled_route").first()
         self.assertIsNotNone(saved_route)
-        self.assertFalse(saved_route.enabled) 
+        self.assertFalse(saved_route.enabled)

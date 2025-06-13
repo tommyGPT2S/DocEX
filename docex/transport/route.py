@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Optional, Dict, Any, List, Union
 from pathlib import Path
-from datetime import datetime, UTC
+from datetime import datetime, timezone
 from uuid import uuid4
 
 from .base import BaseTransporter, TransportResult
@@ -118,8 +118,8 @@ class Route:
             can_download=config.can_download,
             can_list=config.can_list,
             can_delete=config.can_delete,
-            created_at=datetime.now(UTC),
-            updated_at=datetime.now(UTC)
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc)
         )
     
     async def upload_document(self, document: Document) -> TransportResult:
@@ -188,7 +188,7 @@ class Route:
                 
                 # Update operation status
                 operation.status = "success" if result.success else "failed"
-                operation.completed_at = datetime.now(UTC)
+                operation.completed_at = datetime.now(timezone.utc)
                 if not result.success:
                     operation.error = str(result.error)
                 operation.details.update({
@@ -224,7 +224,7 @@ class Route:
                 
                 # Update operation status
                 operation.status = "failed"
-                operation.completed_at = datetime.now(UTC)
+                operation.completed_at = datetime.now(timezone.utc)
                 operation.error = str(e)
                 session.commit()
                 
@@ -312,7 +312,7 @@ class Route:
                 
                 # Update operation status
                 operation.status = "success" if result.success else "failed"
-                operation.completed_at = datetime.now(UTC)
+                operation.completed_at = datetime.now(timezone.utc)
                 if not result.success:
                     operation.error = str(result.error)
                 operation.details.update({
@@ -330,7 +330,7 @@ class Route:
                 
                 # Update operation status
                 operation.status = "failed"
-                operation.completed_at = datetime.now(UTC)
+                operation.completed_at = datetime.now(timezone.utc)
                 operation.error = str(e)
                 session.commit()
             raise
@@ -400,4 +400,4 @@ class Route:
             "can_delete": self.can_delete,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat()
-        } 
+        }

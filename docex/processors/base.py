@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional, Union
-from datetime import datetime, UTC
+from datetime import datetime
 from uuid import uuid4
 
 from docex.document import Document
@@ -28,7 +28,7 @@ class ProcessingResult:
         else:
             self.metadata = {}
         self.error = error
-        self.timestamp = datetime.now(UTC)
+        self.timestamp = datetime.now()
 
     def metadata_dict(self) -> Dict[str, Any]:
         """Return metadata as plain dict for compatibility."""
