@@ -1,5 +1,5 @@
 from typing import Optional, List, Dict, Any, Union
-from datetime import datetime, timedelta, UTC
+from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 from uuid import uuid4
@@ -108,8 +108,8 @@ class DocumentService:
                 checksum=checksum,
                 status='RECEIVED',
                 processing_attempts=0,
-                created_at=datetime.now(UTC),
-                updated_at=datetime.now(UTC)
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc)
             )
             
             session.add(document)
@@ -131,8 +131,8 @@ class DocumentService:
                 checksum=checksum,
                 status='RECEIVED',
                 processing_attempts=0,
-                created_at=datetime.now(UTC),
-                updated_at=datetime.now(UTC)
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc)
             )
     
     def get_document(self, document_id: str) -> Optional[DocumentModel]:
@@ -164,7 +164,7 @@ class DocumentService:
             if document:
                 for key, value in kwargs.items():
                     setattr(document, key, value)
-                document.updated_at = datetime.now(UTC)
+                document.updated_at = datetime.now(timezone.utc)
                 session.commit()
             return document
     
@@ -220,7 +220,7 @@ class DocumentService:
                 document_id=document_id,
                 original_path=original_path,
                 internal_path=internal_path,
-                created_at=datetime.now(UTC)
+                created_at=datetime.now(timezone.utc)
             )
             session.add(history)
             session.commit()
@@ -261,8 +261,8 @@ class DocumentService:
                 operation_type=operation_type,
                 status=status,
                 details=details or {},
-                created_at=datetime.now(UTC),
-                completed_at=datetime.now(UTC)
+                created_at=datetime.now(timezone.utc),
+                completed_at=datetime.now(timezone.utc)
             )
             session.add(operation)
             session.commit()
@@ -298,7 +298,7 @@ class DocumentService:
             if existing:
                 existing.value = value
                 existing.metadata_type = metadata_type
-                existing.updated_at = datetime.now(UTC)
+                existing.updated_at = datetime.now(timezone.utc)
                 session.commit()
                 return existing
             
@@ -309,8 +309,8 @@ class DocumentService:
                 key=key,
                 value=value,
                 metadata_type=metadata_type,
-                created_at=datetime.now(UTC),
-                updated_at=datetime.now(UTC)
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc)
             )
             session.add(metadata)
             session.commit()
@@ -354,4 +354,4 @@ class DocumentService:
         # Add file history
         self.add_file_history(document.id, file_path, file_path)
         
-        return document 
+        return document

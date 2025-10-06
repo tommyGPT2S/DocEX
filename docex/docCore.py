@@ -12,6 +12,7 @@ from docex.transport.models import Base as TransportBase
 from docex.transport.transport_result import TransportResult
 from docex.context import UserContext
 from sqlalchemy import inspect
+from datetime import datetime, timezone
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -628,4 +629,4 @@ class DocEX:
         basket = DocBasket.find_by_name(basket_name)
         if basket:
             return basket
-        return self.create_basket(basket_name, description, storage_config) 
+        return self.create_basket(basket_name, description, storage_config)
