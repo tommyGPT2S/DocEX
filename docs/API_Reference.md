@@ -209,6 +209,69 @@ meta_dict = doc.get_metadata_dict()
 
 ---
 
+## Storage Backends
+
+DocEX supports multiple storage backends including filesystem and S3.
+
+### Filesystem Storage
+
+Default storage backend using local filesystem:
+
+```python
+# Configured in config.yaml
+storage:
+  type: filesystem
+  filesystem:
+    path: /path/to/storage
+```
+
+### S3 Storage
+
+Amazon S3 storage backend with support for multiple credential sources:
+
+```python
+# Configured in config.yaml
+storage:
+  type: s3
+  s3:
+    bucket: docex-bucket
+    region: us-east-1
+    # Optional: credentials (can use env vars or IAM roles)
+    access_key: your-access-key
+    secret_key: your-secret-key
+    # Optional: prefix for organizing files
+    prefix: docex/
+```
+
+**S3 Storage Features:**
+- Automatic retry on transient errors
+- Support for environment variables and IAM roles
+- Configurable timeouts and retry settings
+- Presigned URL generation
+- Prefix support for file organization
+
+**Example: Using S3 Storage**
+```python
+from docex import DocEX
+
+# Configure S3 storage
+docEX = DocEX()
+
+# Create basket with S3 storage
+basket = docEX.create_basket('mybasket', storage_config={
+    'type': 's3',
+    's3': {
+        'bucket': 'my-bucket',
+        'region': 'us-east-1',
+        'prefix': 'mybasket/'
+    }
+})
+
+# Add document (stored in S3)
+doc = basket.add('path/to/file.pdf')
+```
+
 ## More
 - See the [Developer Guide](Developer_Guide.md) for advanced topics, configuration, and extensibility.
-- See the [Design Document](DocEX_Design.md) for architecture and design principles. 
+- See the [Design Document](DocEX_Design.md) for architecture and design principles.
+- See the [S3 Storage Troubleshooting Guide](S3_Storage_Troubleshooting.md) for S3-specific issues. 

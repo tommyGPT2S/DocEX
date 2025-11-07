@@ -38,6 +38,15 @@ class StorageService:
             # Convert path to absolute if relative
             config['path'] = str(Path(config['path']).resolve())
         
+        # Validate S3 configuration
+        elif storage_type == 's3':
+            if 'bucket' not in config:
+                raise ValueError("S3 storage requires 'bucket' in configuration")
+            # Optional: validate bucket name format
+            bucket_name = config['bucket']
+            if not bucket_name or len(bucket_name) < 3 or len(bucket_name) > 63:
+                raise ValueError(f"Invalid S3 bucket name: {bucket_name}")
+        
         logger.info(f"Initialized storage service with type: {storage_type}")
         self.storage = StorageFactory.create_storage(config)
     
@@ -84,9 +93,15 @@ class StorageService:
         Get storage path
         
         Returns:
-            Storage path
+            Storage path (for filesystem) or bucket name (for S3)
         """
-        return self.storage.config['path']
+        if hasattr(self.storage, 'config') and 'path' in self.storage.config:
+            return self.storage.config['path']
+        elif hasattr(self.storage, 'bucket'):
+            # For S3 storage, return bucket name
+            return self.storage.bucket
+        else:
+            return ''
     
     def ensure_storage_exists(self) -> None:
         """
