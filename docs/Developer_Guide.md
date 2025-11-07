@@ -194,22 +194,73 @@ storage:
   default_type: s3
   s3:
     bucket: docex-bucket
+    region: us-east-1
+    # Optional: credentials (can also use environment variables or IAM roles)
     access_key: your-access-key
     secret_key: your-secret-key
-    region: us-east-1
+    # Optional: S3 key prefix for organizing files
+    prefix: docex/
+    # Optional: retry configuration
+    max_retries: 3
+    retry_delay: 1.0
+    # Optional: timeout configuration
+    connect_timeout: 60
+    read_timeout: 60
 ```
 
-- Make sure your AWS credentials and bucket are correct.
-- You can also configure per-basket storage by passing a storage config when creating a basket:
+**Credential Sources (in priority order):**
+1. Config file credentials (highest priority)
+2. Environment variables (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`)
+3. IAM role / instance profile (for EC2/ECS)
+4. AWS profile from `~/.aws/credentials` (lowest priority)
+
+**Using Environment Variables:**
+```yaml
+storage:
+  default_type: s3
+  s3:
+    bucket: docex-bucket
+    region: us-east-1
+    # Credentials will be read from environment variables
+```
+
+```bash
+export AWS_ACCESS_KEY_ID=your-access-key
+export AWS_SECRET_ACCESS_KEY=your-secret-key
+export AWS_DEFAULT_REGION=us-east-1
+```
+
+**Using IAM Roles (EC2/ECS):**
+```yaml
+storage:
+  default_type: s3
+  s3:
+    bucket: docex-bucket
+    region: us-east-1
+    # No credentials needed - IAM role will be used automatically
+```
+
+**Per-Basket S3 Configuration:**
+You can configure per-basket storage by passing a storage config when creating a basket:
   ```python
   basket = docEX.create_basket('mybasket', storage_config={
       'type': 's3',
-      'bucket': 'my-bucket',
-      'access_key': '...',
-      'secret_key': '...',
-      'region': 'us-east-1'
+      's3': {
+          'bucket': 'my-bucket',
+          'region': 'us-east-1',
+          'prefix': 'mybasket/',  # Optional prefix for this basket
+          'access_key': '...',  # Optional
+          'secret_key': '...'   # Optional
+      }
   })
   ```
+
+**S3 Storage Features:**
+- Automatic retry on transient errors (500, 503, throttling, timeouts)
+- Configurable retry attempts and delays
+- Support for S3 key prefixes for organizing files
+- Presigned URL generation for secure access
+- Comprehensive error handling and logging
 
 ### Change Storage Backend to Filesystem (default)
 

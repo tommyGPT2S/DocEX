@@ -55,7 +55,16 @@ def init(config, force, db_type, db_path, db_host, db_port, db_name, db_user, db
         
         # Load configuration
         if config:
-            user_config = DocEXConfig.from_file(config)
+            # Load config from file
+            config_path = Path(config)
+            if not config_path.exists():
+                click.echo(f'Error: Configuration file not found: {config}', err=True)
+                raise click.Abort()
+            with open(config_path, 'r') as f:
+                user_config = yaml.safe_load(f)
+            if user_config is None:
+                click.echo(f'Error: Configuration file is empty: {config}', err=True)
+                raise click.Abort()
         else:
             # Use default configuration if no config file provided
             user_config = DocEX.get_defaults()
@@ -117,13 +126,49 @@ def init(config, force, db_type, db_path, db_host, db_port, db_name, db_user, db
         docex = DocEX()
         
         # Verify storage setup
-        storage_path = Path(user_config['storage']['filesystem']['path'])
+        storage_config = user_config.get('storage', {})
+        storage_type = storage_config.get('type', 'filesystem')
+        
         click.echo('\nStorage Setup:')
-        click.echo(f'  Path: {storage_path.absolute()}')
-        click.echo(f'  Exists: {storage_path.exists()}')
-        if storage_path.exists():
-            click.echo(f'  Permissions: {oct(storage_path.stat().st_mode)[-3:]}')
-            click.echo(f'  Owner: {storage_path.owner()}')
+        click.echo(f'  Type: {storage_type}')
+        
+        if storage_type == 'filesystem':
+            storage_path = Path(storage_config.get('filesystem', {}).get('path', 'storage/docex'))
+            click.echo(f'  Path: {storage_path.absolute()}')
+            click.echo(f'  Exists: {storage_path.exists()}')
+            if storage_path.exists():
+                click.echo(f'  Permissions: {oct(storage_path.stat().st_mode)[-3:]}')
+                click.echo(f'  Owner: {storage_path.owner()}')
+        elif storage_type == 's3':
+            s3_config = storage_config.get('s3', {})
+            bucket = s3_config.get('bucket', 'N/A')
+            region = s3_config.get('region', 'N/A')
+            prefix = s3_config.get('prefix', '')
+            click.echo(f'  Bucket: {bucket}')
+            click.echo(f'  Region: {region}')
+            if prefix:
+                click.echo(f'  Prefix: {prefix}')
+            # Check if credentials are provided
+            has_credentials = bool(s3_config.get('access_key') and s3_config.get('secret_key'))
+            has_env_vars = bool(os.getenv('AWS_ACCESS_KEY_ID') or os.getenv('AWS_SECRET_ACCESS_KEY'))
+            if has_credentials:
+                click.echo(f'  Credentials: From config file')
+            elif has_env_vars:
+                click.echo(f'  Credentials: From environment variables')
+            else:
+                click.echo(f'  Credentials: Using IAM role or default profile')
+            
+            # Try to verify S3 connection (optional, won't fail if can't connect)
+            try:
+                from docex.storage.storage_factory import StorageFactory
+                test_storage = StorageFactory.create_storage({
+                    'type': 's3',
+                    **s3_config
+                })
+                click.echo(f'  Status: S3 storage initialized successfully')
+            except Exception as e:
+                click.echo(f'  Status: S3 storage initialization warning: {str(e)}')
+                click.echo(f'  Note: This may be expected if using IAM roles or if bucket does not exist yet')
         
         # Verify database setup
         db_config = user_config['database']

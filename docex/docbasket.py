@@ -142,14 +142,26 @@ class DocBasket:
                 session.add(basket_model)
                 session.flush()  # Get the ID without committing
                 
-                # Now that we have the ID, set up the storage path
+                # Now that we have the ID, set up the storage path/configuration
                 if storage_config['type'] == 'filesystem':
                     if 'path' not in storage_config:
                         # Create basket-specific path under the default storage path using ID
                         base_path = config.get('storage.filesystem.path', 'storage/docex')
                         storage_config['path'] = str(Path(base_path) / f"basket_{basket_model.id}")
+                elif storage_config['type'] == 's3':
+                    # For S3, ensure s3 config is properly nested
+                    if 's3' not in storage_config:
+                        # If s3 config is at top level, move it under 's3' key
+                        s3_config = {k: v for k, v in storage_config.items() if k != 'type'}
+                        storage_config = {
+                            'type': 's3',
+                            's3': s3_config
+                        }
+                    # Add prefix for basket organization if not present
+                    if 'prefix' not in storage_config.get('s3', {}):
+                        storage_config['s3']['prefix'] = f"baskets/{basket_model.id}/"
                 
-                # Update the storage config with the path
+                # Update the storage config
                 basket_model.storage_config = json.dumps(storage_config)
                 session.commit()  # Commit the transaction to ensure ID is persisted
                 
@@ -157,9 +169,10 @@ class DocBasket:
                 storage_service = StorageService(storage_config)
                 storage_service.ensure_storage_exists()
                 
-                # Create the basket directory
-                basket_path = Path(storage_config['path'])
-                basket_path.mkdir(parents=True, exist_ok=True)
+                # Create the basket directory (only for filesystem)
+                if storage_config['type'] == 'filesystem':
+                    basket_path = Path(storage_config['path'])
+                    basket_path.mkdir(parents=True, exist_ok=True)
                 
                 return cls(
                     id=basket_model.id,
