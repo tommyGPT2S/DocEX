@@ -165,7 +165,7 @@ llm_adapter = OpenAIAdapter({
 
 vector_processor = VectorIndexingProcessor({
     'llm_adapter': llm_adapter,
-    'vector_db_type': 'memory'  # or 'pgvector', 'pinecone'
+    'vector_db_type': 'memory'  # Use 'pgvector' for production
 })
 
 # Index document
@@ -190,8 +190,7 @@ for result in results:
 
 **Vector Database Options:**
 - **Memory** - For testing/development (no setup required)
-- **pgvector** - PostgreSQL extension (recommended for production)
-- **Pinecone** - Managed service (for large-scale deployments)
+- **pgvector** - PostgreSQL extension (recommended for production, handles up to 100M vectors)
 
 See [Vector Search Guide](docs/VECTOR_SEARCH_GUIDE.md) for detailed documentation.
 

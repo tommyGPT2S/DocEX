@@ -71,7 +71,7 @@ llm_adapter = OpenAIAdapter({
 # Create vector indexing processor
 vector_processor = VectorIndexingProcessor({
     'llm_adapter': llm_adapter,
-    'vector_db_type': 'memory',  # or 'pgvector', 'pinecone'
+    'vector_db_type': 'memory',  # Use 'pgvector' for production
     'store_in_metadata': True
 })
 
@@ -179,45 +179,6 @@ pip install pgvector
 pip install docex[vector]
 ```
 
-### 3. Pinecone (Managed Service)
-
-**Best for:** Large-scale production, fully managed solution
-
-**Setup:**
-1. Create account at https://www.pinecone.io
-2. Get API key
-3. Create index
-
-**Usage:**
-```python
-vector_processor = VectorIndexingProcessor({
-    'llm_adapter': llm_adapter,
-    'vector_db_type': 'pinecone',
-    'vector_db_config': {
-        'api_key': os.getenv('PINECONE_API_KEY'),
-        'index_name': 'docex-documents',
-        'dimension': 1536  # OpenAI embedding dimension
-    }
-})
-```
-
-**Pros:**
-- ✅ Fully managed
-- ✅ Excellent performance
-- ✅ Scales to billions of vectors
-- ✅ Production-ready
-
-**Cons:**
-- ❌ Cost (~$70/month starter)
-- ❌ External dependency
-- ❌ No ACID transactions with DocEX
-
-**Installation:**
-```bash
-pip install pinecone-client
-# Or use optional dependencies:
-pip install docex[pinecone]
-```
 
 ---
 

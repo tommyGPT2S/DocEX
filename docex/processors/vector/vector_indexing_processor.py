@@ -23,7 +23,7 @@ class VectorIndexingProcessor(BaseProcessor):
     
     This processor:
     1. Generates embeddings using an LLM adapter
-    2. Stores embeddings in a vector database (pgvector, Pinecone, or in-memory)
+    2. Stores embeddings in a vector database (pgvector for production, memory for testing)
     3. Stores vector metadata in DocEX metadata system
     4. Tracks indexing operations in DocEX
     """
@@ -35,9 +35,8 @@ class VectorIndexingProcessor(BaseProcessor):
         Args:
             config: Configuration dictionary with:
                 - llm_adapter: LLM adapter instance or config for creating one
-                - vector_db_type: 'pgvector', 'pinecone', or 'memory'
-                - vector_db_config: Configuration for vector database
-                - embedding_model: Model to use for embeddings (default: from LLM adapter)
+                - vector_db_type: 'pgvector' (recommended for production) or 'memory' (for testing)
+                - vector_db_config: Configuration for vector database (not needed for memory)
                 - store_in_metadata: Whether to store embeddings in DocEX metadata (default: True)
         """
         super().__init__(config)
@@ -56,6 +55,10 @@ class VectorIndexingProcessor(BaseProcessor):
         self.vector_db_config = config.get('vector_db_config', {})
         self.store_in_metadata = config.get('store_in_metadata', True)
         
+        # Validate vector_db_type
+        if self.vector_db_type not in ['pgvector', 'memory']:
+            raise ValueError(f"Unsupported vector_db_type: {self.vector_db_type}. Supported types: 'pgvector' (recommended for production), 'memory' (for testing)")
+        
         # Initialize vector database
         self.vector_db = self._initialize_vector_db()
     
@@ -63,12 +66,10 @@ class VectorIndexingProcessor(BaseProcessor):
         """Initialize vector database based on type"""
         if self.vector_db_type == 'pgvector':
             return self._init_pgvector()
-        elif self.vector_db_type == 'pinecone':
-            return self._init_pinecone()
         elif self.vector_db_type == 'memory':
             return self._init_memory_db()
         else:
-            raise ValueError(f"Unsupported vector_db_type: {self.vector_db_type}")
+            raise ValueError(f"Unsupported vector_db_type: {self.vector_db_type}. Supported types: 'pgvector', 'memory'")
     
     def _init_pgvector(self):
         """Initialize pgvector (PostgreSQL extension)"""
@@ -96,26 +97,6 @@ class VectorIndexingProcessor(BaseProcessor):
         except ImportError:
             raise ValueError("pgvector requires PostgreSQL database")
     
-    def _init_pinecone(self):
-        """Initialize Pinecone"""
-        try:
-            import pinecone
-            api_key = self.vector_db_config.get('api_key') or self.vector_db_config.get('pinecone_api_key')
-            if not api_key:
-                raise ValueError("Pinecone API key is required")
-            
-            pinecone.init(api_key=api_key)
-            index_name = self.vector_db_config.get('index_name', 'docex-documents')
-            
-            # Get or create index
-            if index_name not in pinecone.list_indexes():
-                dimension = self.vector_db_config.get('dimension', 1536)  # OpenAI default
-                pinecone.create_index(index_name, dimension=dimension)
-            
-            index = pinecone.Index(index_name)
-            return {'type': 'pinecone', 'index': index, 'index_name': index_name}
-        except ImportError:
-            raise ValueError("Pinecone requires 'pinecone-client' package. Install with: pip install pinecone-client")
     
     def _init_memory_db(self):
         """Initialize in-memory vector database (for testing/SQLite)"""
@@ -230,8 +211,6 @@ class VectorIndexingProcessor(BaseProcessor):
         """Store embedding in vector database"""
         if self.vector_db_type == 'pgvector':
             return await self._store_pgvector(document, embedding, text)
-        elif self.vector_db_type == 'pinecone':
-            return await self._store_pinecone(document, embedding, text)
         elif self.vector_db_type == 'memory':
             return await self._store_memory(document, embedding, text)
         else:
@@ -267,35 +246,6 @@ class VectorIndexingProcessor(BaseProcessor):
             """), {'embedding': embedding_str, 'doc_id': document.id})
             
             session.commit()
-        
-        return document.id
-    
-    async def _store_pinecone(self, document: Document, embedding: List[float], text: str) -> str:
-        """Store embedding in Pinecone"""
-        index = self.vector_db['index']
-        
-        # Get document metadata
-        metadata_dict = document.get_metadata_dict()
-        
-        # Prepare metadata for Pinecone
-        pinecone_metadata = {
-            'document_id': document.id,
-            'basket_id': document.basket_id,
-            'document_type': document.document_type,
-            'text_preview': text[:1000],  # Store first 1000 chars
-        }
-        
-        # Add custom metadata
-        for key, value in metadata_dict.items():
-            if isinstance(value, (str, int, float, bool)):
-                pinecone_metadata[key] = value
-        
-        # Upsert to Pinecone
-        index.upsert(vectors=[{
-            'id': document.id,
-            'values': embedding,
-            'metadata': pinecone_metadata
-        }])
         
         return document.id
     

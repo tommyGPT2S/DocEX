@@ -69,8 +69,8 @@ class SemanticSearchService:
         Args:
             doc_ex: DocEX instance for document retrieval
             llm_adapter: LLM adapter for generating embeddings
-            vector_db_type: Type of vector database ('pgvector', 'pinecone', 'memory')
-            vector_db_config: Configuration for vector database
+            vector_db_type: Type of vector database ('pgvector' for production, 'memory' for testing)
+            vector_db_config: Configuration for vector database (not needed for memory)
         """
         self.doc_ex = doc_ex
         self.llm_adapter = llm_adapter
@@ -84,12 +84,10 @@ class SemanticSearchService:
         """Initialize vector database based on type"""
         if self.vector_db_type == 'pgvector':
             return self._init_pgvector()
-        elif self.vector_db_type == 'pinecone':
-            return self._init_pinecone()
         elif self.vector_db_type == 'memory':
             return self._init_memory_db()
         else:
-            raise ValueError(f"Unsupported vector_db_type: {self.vector_db_type}")
+            raise ValueError(f"Unsupported vector_db_type: {self.vector_db_type}. Supported types: 'pgvector', 'memory'")
     
     def _init_pgvector(self):
         """Initialize pgvector connection"""
@@ -97,20 +95,6 @@ class SemanticSearchService:
         db = Database()
         return {'type': 'pgvector', 'db': db}
     
-    def _init_pinecone(self):
-        """Initialize Pinecone"""
-        try:
-            import pinecone
-            api_key = self.vector_db_config.get('api_key') or self.vector_db_config.get('pinecone_api_key')
-            if not api_key:
-                raise ValueError("Pinecone API key is required")
-            
-            pinecone.init(api_key=api_key)
-            index_name = self.vector_db_config.get('index_name', 'docex-documents')
-            index = pinecone.Index(index_name)
-            return {'type': 'pinecone', 'index': index, 'index_name': index_name}
-        except ImportError:
-            raise ValueError("Pinecone requires 'pinecone-client' package")
     
     def _init_memory_db(self):
         """Initialize memory database (for testing)"""
@@ -212,8 +196,6 @@ class SemanticSearchService:
         """Search vectors in database"""
         if self.vector_db_type == 'pgvector':
             return await self._search_pgvector(query_embedding, top_k, basket_id, filters)
-        elif self.vector_db_type == 'pinecone':
-            return await self._search_pinecone(query_embedding, top_k, basket_id, filters)
         elif self.vector_db_type == 'memory':
             return await self._search_memory(query_embedding, top_k, basket_id, filters)
         else:
@@ -262,40 +244,6 @@ class SemanticSearchService:
                 }
                 for row in results
             ]
-    
-    async def _search_pinecone(
-        self,
-        query_embedding: List[float],
-        top_k: int,
-        basket_id: Optional[str] = None,
-        filters: Optional[Dict[str, Any]] = None
-    ) -> List[Dict[str, Any]]:
-        """Search using Pinecone"""
-        index = self.vector_db['index']
-        
-        # Build filter
-        pinecone_filter = {}
-        if basket_id:
-            pinecone_filter['basket_id'] = basket_id
-        if filters:
-            pinecone_filter.update(filters)
-        
-        # Query Pinecone
-        results = index.query(
-            vector=query_embedding,
-            top_k=top_k,
-            filter=pinecone_filter if pinecone_filter else None,
-            include_metadata=True
-        )
-        
-        return [
-            {
-                'document_id': match.id,
-                'similarity': match.score,
-                'metadata': match.metadata or {}
-            }
-            for match in results.matches
-        ]
     
     async def _search_memory(
         self,
