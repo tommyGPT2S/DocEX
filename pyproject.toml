@@ -38,6 +38,13 @@ dev = [
     "isort>=5.0.0",
     "mypy>=0.900",
 ]
+vector = [
+    "numpy>=1.24.0",
+    "pgvector>=0.2.0",
+]
+pinecone = [
+    "pinecone-client>=2.2.0",
+]
 
 [tool.setuptools]
 packages = { find = {} }

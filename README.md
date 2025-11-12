@@ -20,7 +20,8 @@
 - 🤖 **LLM adapter integration** - Process documents with OpenAI and other LLM providers
 - 📋 **Prompt management** - YAML-based prompt templates with Jinja2 support
 - 🔍 **Structured data extraction** - Extract structured data from documents using LLMs
-- 📊 **Embedding generation** - Generate vector embeddings for semantic search
+- 📊 **Vector indexing & semantic search** - Generate embeddings and perform similarity search
+- 🔎 **RAG support** - Build retrieval-augmented generation applications
 - ☁️ **S3 storage support** - Store documents in Amazon S3
 
 ## Installation
@@ -139,6 +140,61 @@ user_prompt_template: |
   {{ text }}
 ```
 
+### Vector Indexing and Semantic Search
+
+DocEX 2.1.0+ includes vector indexing and semantic search capabilities:
+
+```python
+from docex import DocEX
+from docex.processors.llm import OpenAIAdapter
+from docex.processors.vector import VectorIndexingProcessor, SemanticSearchService
+import asyncio
+
+# Initialize DocEX
+docEX = DocEX()
+basket = docEX.create_basket('my_basket')
+
+# Add and index documents
+document = basket.add('document.pdf')
+
+# Create vector indexing processor
+llm_adapter = OpenAIAdapter({
+    'api_key': os.getenv('OPENAI_API_KEY'),
+    'model': 'gpt-4o'
+})
+
+vector_processor = VectorIndexingProcessor({
+    'llm_adapter': llm_adapter,
+    'vector_db_type': 'memory'  # or 'pgvector', 'pinecone'
+})
+
+# Index document
+await vector_processor.process(document)
+
+# Perform semantic search
+search_service = SemanticSearchService(
+    doc_ex=docEX,
+    llm_adapter=llm_adapter,
+    vector_db_type='memory',
+    vector_db_config={'vectors': vector_processor.vector_db['vectors']}
+)
+
+results = await search_service.search(
+    query="What is machine learning?",
+    top_k=5
+)
+
+for result in results:
+    print(f"{result.document.name}: {result.similarity_score:.4f}")
+```
+
+**Vector Database Options:**
+- **Memory** - For testing/development (no setup required)
+- **pgvector** - PostgreSQL extension (recommended for production)
+- **Pinecone** - Managed service (for large-scale deployments)
+
+See [Vector Search Guide](docs/VECTOR_SEARCH_GUIDE.md) for detailed documentation.
+
 Additional examples can be found in the `examples/` folder.
 
 ## Configuration
@@ -168,6 +224,7 @@ transport_config:
 - [Design Document](docs/DocEX_Design.md)
 - [LLM Adapter Implementation](docs/LLM_ADAPTER_IMPLEMENTATION.md)
 - [LLM Adapter Proposal](docs/LLM_ADAPTER_PROPOSAL.md)
+- [Vector Search Guide](docs/VECTOR_SEARCH_GUIDE.md)
 - [API Reference](docs/API_Reference.md)
 
 ## Contributing
