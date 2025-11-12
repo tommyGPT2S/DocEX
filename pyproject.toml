@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "docex"
-version = "2.0.3"
+version = "2.1.0"
 description = "A robust, lightweight, and developer friendly document management and transport system for Python"
 readme = "README.md"
 authors = [{ name = "Tommy Jiang", email = "tommySCOS@scos.ai" }]
@@ -27,6 +27,8 @@ dependencies = [
     "aiohttp>=3.9.0",
     "python-dotenv>=1.0.0",
     "click>=8.0.0",
+    "openai>=1.0.0",
+    "jinja2>=3.1.0",
 ]
 
 [project.optional-dependencies]

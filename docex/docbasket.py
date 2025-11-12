@@ -75,8 +75,17 @@ class DocBasket:
         self.db = Database()
         
         # Initialize storage service
-        self.storage_service = StorageService(self.storage_config)
-        self.storage_service.ensure_storage_exists()
+        # Note: S3 storage initialization may fail if credentials are not available
+        # This is acceptable when just listing baskets - storage will be initialized when actually used
+        try:
+            self.storage_service = StorageService(self.storage_config)
+            self.storage_service.ensure_storage_exists()
+        except Exception as e:
+            # If storage initialization fails (e.g., S3 without credentials), log warning but continue
+            # Storage will be re-initialized when actually needed
+            logger.warning(f"Storage initialization failed for basket {self.name} (this is OK if just listing): {e}")
+            # Create a minimal storage service that will fail gracefully when used
+            self.storage_service = None
         
         # Initialize metadata service
         self.metadata_service = MetadataService(self.db)
