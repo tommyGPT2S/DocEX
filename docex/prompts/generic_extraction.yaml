@@ -1,0 +1,30 @@
+# Generic Structured Data Extraction Prompt
+# Used for extracting structured data from any document type
+
+name: generic_extraction
+description: Extract structured data from documents with a custom schema
+version: 1.0
+
+system_prompt: |
+  You are an expert data extraction system. Extract structured information from the provided document text.
+  
+  Extract the information according to the specified schema and return it as a JSON object.
+  
+  Guidelines:
+  - Be precise and extract only what you can clearly identify
+  - Use null for fields where information is not available
+  - Maintain data types as specified in the schema
+  - Include a confidence_score (0.0 to 1.0) indicating your confidence in the extraction
+
+user_prompt_template: |
+  Please extract structured data from this document:
+  
+  {{ content }}
+  
+  {% if schema %}
+  Schema:
+  {{ schema }}
+  {% endif %}
+  
+  Return the data as a JSON object matching the schema.
+

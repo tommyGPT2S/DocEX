@@ -115,17 +115,40 @@ class BaseProcessor(ABC):
         Returns:
             Created processing operation
         """
-        operation = ProcessingOperation(
-            id=f"pop_{uuid4().hex}",
-            document_id=document.id,
-            processor_id=self.__class__.__name__,
-            status=status,
-            input_metadata=input_metadata,
-            output_metadata=output_metadata,
-            error=error
-        )
+        from docex.db.models import Processor
+        from sqlalchemy import select
+        
+        processor_name = self.__class__.__name__
         
         with self.db.session() as session:
+            # Get or create processor in database
+            processor = session.execute(
+                select(Processor).where(Processor.name == processor_name)
+            ).scalar_one_or_none()
+            
+            if not processor:
+                # Create processor if it doesn't exist
+                processor = Processor(
+                    name=processor_name,
+                    type='custom',
+                    description=f'Auto-registered processor: {processor_name}',
+                    config=self.config,
+                    enabled=True
+                )
+                session.add(processor)
+                session.flush()  # Flush to get the ID
+            
+            # Create processing operation
+            operation = ProcessingOperation(
+                id=f"pop_{uuid4().hex}",
+                document_id=document.id,
+                processor_id=processor.id,  # Use database ID, not class name
+                status=status,
+                input_metadata=input_metadata,
+                output_metadata=output_metadata,
+                error=error
+            )
+            
             session.add(operation)
             session.commit()
             session.refresh(operation)
