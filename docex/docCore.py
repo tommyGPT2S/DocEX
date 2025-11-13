@@ -104,12 +104,27 @@ class DocEX:
         Initialize DocEX instance
         
         Args:
-            user_context: Optional user context for user-aware operations and auditing
+            user_context: Optional user context for user-aware operations and auditing.
+                         If database-level multi-tenancy is enabled, tenant_id from
+                         user_context is used for database routing.
         """
         if not hasattr(self, 'initialized'):
             if not self.is_initialized():
                 raise RuntimeError("DocEX not initialized. Call 'docex init' to setup first.")
-            self.db = Database()
+            
+            # Get tenant_id for database routing if multi-tenancy is enabled
+            tenant_id = None
+            if user_context and user_context.tenant_id:
+                # Check if database-level multi-tenancy is enabled
+                config = DocEXConfig()
+                security_config = config.get('security', {})
+                multi_tenancy_model = security_config.get('multi_tenancy_model', 'row_level')
+                if multi_tenancy_model == 'database_level':
+                    tenant_id = user_context.tenant_id
+                    logger.info(f"Database-level multi-tenancy: routing to tenant {tenant_id}")
+            
+            # Initialize database with tenant routing if applicable
+            self.db = Database(tenant_id=tenant_id)
             self.user_context = user_context
             self.initialized = True
             if user_context:

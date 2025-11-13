@@ -5,6 +5,8 @@ database:
   # SQLite configuration
   sqlite:
     path: docex.db
+    # For database-level multi-tenancy (Model B):
+    # path_template: "storage/tenant_{tenant_id}/docex.db"
     
   # PostgreSQL configuration
   postgres:
@@ -13,6 +15,8 @@ database:
     database: docex
     user: postgres
     password: postgres
+    # For database-level multi-tenancy (Model B):
+    # schema_template: "tenant_{tenant_id}"  # Schema name pattern per tenant
     
   # Common settings
   echo: true  # Enable SQL query logging
@@ -20,6 +24,19 @@ database:
   max_overflow: 10
   pool_timeout: 30
   pool_recycle: 3600
+
+# Security and multi-tenancy configuration
+security:
+  # Multi-tenancy model: "row_level" (Model A) or "database_level" (Model B)
+  multi_tenancy_model: row_level
+  
+  # Enable automatic database routing based on tenant_id (for database_level model)
+  tenant_database_routing: false
+  
+  # User context enforcement (for row_level model)
+  enforce_user_context: false
+  context_match_fields:
+    - tenant_id
 
 # Application settings
 app:

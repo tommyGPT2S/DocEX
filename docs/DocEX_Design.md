@@ -863,15 +863,18 @@ logging:
 
 DocEX follows a **tenant-agnostic, composable security model** where:
 - **Core Security**: DocEX provides audit logging and operation tracking infrastructure
-- **Access Control**: Enforced at the application/orchestration layer (not in DocEX core)
+- **Access Control**: Enforced at the application/orchestration layer by default (not in DocEX core)
+- **Optional Enforcement**: Can be configured to enforce user context matching for multi-tenant safety
 - **Data Protection**: Relies on underlying storage and transport layer security
-- **Multi-tenancy**: Handled by the application layer using basket-based organization
+- **Multi-tenancy**: Handled by the application layer using basket-based organization (with optional enforcement)
 
-This design allows DocEX to be integrated into any security model (RBAC, ABAC, etc.) without imposing specific access control mechanisms.
+This design allows DocEX to be integrated into any security model (RBAC, ABAC, etc.) without imposing specific access control mechanisms, while optionally providing a safety net for tenant isolation when needed.
 
-### 11.2 Access Control (Application Layer Responsibility)
+### 11.2 Access Control
 
-**Current Status**: Access control is **not implemented in DocEX core**. This is an intentional design decision to keep DocEX composable and flexible.
+#### 11.2.1 Application Layer Responsibility (Default)
+
+**Current Status**: Access control is **not enforced in DocEX core by default**. This is an intentional design decision to keep DocEX composable and flexible.
 
 **Implementation Approach**:
 - **Document-level access**: Enforced by application layer before calling DocEX APIs
@@ -897,6 +900,226 @@ basket = docEX.get_basket(basket_id)
 - No security logic embedded in document management core
 - Clear separation of concerns
 - Easy integration with existing IAM/RBAC systems
+
+#### 11.2.2 Multi-Tenancy Models
+
+DocEX supports two multi-tenancy models, each with different trade-offs. Choose based on your security, compliance, and scalability requirements.
+
+##### Model A: Row-Level Isolation (Shared Database)
+
+**Description**: All tenants share the same database/schema, with `tenant_id` columns providing logical isolation.
+
+**Configuration**:
+```yaml
+# ~/.docex/config.yaml
+security:
+  multi_tenancy_model: row_level  # or "database_level"
+  enforce_user_context: true       # Enable user context enforcement
+  context_match_fields:           # Fields to match for enforcement
+    - tenant_id                    # Require matching tenant_id
+    # - user_id                    # Optional: require matching user_id
+```
+
+**How It Works**:
+
+1. **When Creating Resources** (if `enforce_user_context: true`):
+   - Basket creation stores `tenant_id` and `created_by_user_id` in the database
+   - Document creation stores `tenant_id` and `created_by_user_id` in the database
+   - If `UserContext` is not provided, creation fails with `ValueError`
+
+2. **When Retrieving Resources** (if `enforce_user_context: true`):
+   - `get_basket()` checks if current `UserContext.tenant_id` matches basket's `tenant_id`
+   - `get_document()` checks if current `UserContext.tenant_id` matches document's `tenant_id`
+   - `list_baskets()` filters results to only show baskets matching current `tenant_id`
+   - If context doesn't match, raises `PermissionError` or returns empty results
+
+3. **Database Schema Changes**:
+```sql
+-- Add tenant context to baskets
+ALTER TABLE docbasket ADD COLUMN tenant_id VARCHAR(255);
+ALTER TABLE docbasket ADD COLUMN created_by_user_id VARCHAR(255);
+CREATE INDEX idx_docbasket_tenant_id ON docbasket(tenant_id);
+
+-- Add tenant context to documents
+ALTER TABLE document ADD COLUMN tenant_id VARCHAR(255);
+ALTER TABLE document ADD COLUMN created_by_user_id VARCHAR(255);
+CREATE INDEX idx_document_tenant_id ON document(tenant_id);
+```
+
+**Pros**:
+- ✅ Simple connection management (single database)
+- ✅ Easy cross-tenant analytics and reporting
+- ✅ Single schema to manage and migrate
+- ✅ Efficient for many small tenants
+- ✅ Lower database overhead
+
+**Cons**:
+- ❌ Risk of cross-tenant data leaks (if code bug)
+- ❌ Harder to scale individual tenants
+- ❌ All tenants share database performance
+- ❌ Less suitable for strict compliance (HIPAA, GDPR)
+
+**When to Use**:
+- Multi-tenant SaaS with many small tenants
+- Applications where cross-tenant analytics are important
+- Cost-sensitive deployments
+- Applications with moderate compliance requirements
+
+##### Model B: Database/Schema-Level Isolation (Per-Tenant Database)
+
+**Description**: Each tenant has its own database (SQLite) or schema (PostgreSQL), providing physical data isolation.
+
+**Configuration**:
+```yaml
+# ~/.docex/config.yaml
+security:
+  multi_tenancy_model: database_level  # or "row_level"
+  tenant_database_routing: true        # Enable automatic database routing
+  # For PostgreSQL with schemas:
+  postgres:
+    schema_template: "tenant_{tenant_id}"  # Schema name pattern
+  # For SQLite with separate databases:
+  sqlite:
+    path_template: "storage/tenant_{tenant_id}/docex.db"
+```
+
+**How It Works**:
+
+1. **Database Routing**:
+   - DocEX automatically routes to tenant-specific database/schema based on `UserContext.tenant_id`
+   - Each tenant gets isolated database connection
+   - No `tenant_id` columns needed (physical isolation)
+
+2. **Connection Management**:
+   ```python
+   # DocEX automatically routes to tenant database
+   user_context = UserContext(user_id="alice", tenant_id="tenant1")
+   docEX = DocEX(user_context=user_context)
+   
+   # Automatically connects to tenant1 database/schema
+   basket = docEX.create_basket("invoices")
+   
+   # Different tenant gets different database
+   user_context2 = UserContext(user_id="bob", tenant_id="tenant2")
+   docEX2 = DocEX(user_context=user_context2)
+   # Automatically connects to tenant2 database/schema
+   ```
+
+3. **PostgreSQL Schema Example**:
+   ```sql
+   -- Each tenant has its own schema
+   CREATE SCHEMA tenant_tenant1;
+   CREATE SCHEMA tenant_tenant2;
+   
+   -- Tables created in each schema automatically
+   -- No tenant_id columns needed
+   ```
+
+4. **SQLite Database Example**:
+   ```
+   storage/
+     tenant_tenant1/
+       docex.db  # Complete database for tenant1
+     tenant_tenant2/
+       docex.db  # Complete database for tenant2
+   ```
+
+**Pros**:
+- ✅ **Strongest Isolation**: Physical data separation
+- ✅ **Best for Compliance**: HIPAA, GDPR, SOX requirements
+- ✅ **Independent Scaling**: Scale tenants individually
+- ✅ **No Cross-Tenant Leaks**: Impossible to query wrong tenant
+- ✅ **Independent Backups**: Backup/restore per tenant
+- ✅ **Schema Customization**: Different schemas per tenant if needed
+
+**Cons**:
+- ❌ More complex connection management
+- ❌ Harder cross-tenant analytics (requires federation)
+- ❌ More database connections (connection pool per tenant)
+- ❌ Schema migrations more complex (migrate all tenant schemas)
+- ❌ Higher operational overhead
+
+**When to Use**:
+- Strict compliance requirements (HIPAA, GDPR, financial)
+- Large enterprise tenants requiring isolation
+- Applications with regulatory requirements
+- Tenants with different schema needs
+- High-security environments
+
+##### Comparison Matrix
+
+| Feature | Row-Level Isolation | Database-Level Isolation |
+|---------|-------------------|------------------------|
+| **Data Isolation** | Logical (tenant_id) | Physical (separate DB/schema) |
+| **Security** | Good (code-dependent) | Excellent (impossible to leak) |
+| **Compliance** | Moderate | Strong (HIPAA, GDPR) |
+| **Connection Management** | Simple (1 DB) | Complex (N DBs) |
+| **Cross-Tenant Analytics** | Easy | Hard (federation) |
+| **Scalability** | Shared resources | Per-tenant scaling |
+| **Schema Migrations** | Single migration | N migrations |
+| **Operational Overhead** | Low | High |
+| **Best For** | Many small tenants | Few large tenants |
+
+##### Implementation Status
+
+**Row-Level Isolation**: **Proposed** - Not yet implemented. Requires:
+1. Configuration option in `default_config.yaml`
+2. Database schema migration (add `tenant_id` columns)
+3. Enforcement logic in retrieval methods
+4. Context storage in creation methods
+
+**Database-Level Isolation**: **✅ Implemented** (Version 2.2.0+). Features:
+1. ✅ Configuration option for `multi_tenancy_model: database_level`
+2. ✅ Database routing logic based on `UserContext.tenant_id`
+3. ✅ Connection pool management per tenant (`TenantDatabaseManager`)
+4. ✅ Automatic schema/database creation for new tenants
+5. ✅ Support for both SQLite (separate DB files) and PostgreSQL (separate schemas)
+6. ✅ Thread-safe connection management
+7. ⚠️ Migration tooling for multi-tenant deployments (planned)
+
+**Implementation Details**:
+
+The database-level isolation is implemented through `TenantDatabaseManager`, which:
+- Maintains a connection pool per tenant
+- Automatically creates tenant schemas/databases on first access
+- Routes database operations to the correct tenant database/schema
+- Provides thread-safe connection management
+
+**Configuration Example**:
+```yaml
+# ~/.docex/config.yaml
+security:
+  multi_tenancy_model: database_level
+  tenant_database_routing: true
+
+database:
+  type: postgresql
+  postgres:
+    host: localhost
+    port: 5432
+    database: docex
+    user: postgres
+    password: postgres
+    schema_template: "tenant_{tenant_id}"  # Schema per tenant
+```
+
+**Usage**:
+```python
+from docex import DocEX
+from docex.context import UserContext
+
+# Tenant 1 - automatically routes to tenant1 schema
+user_context1 = UserContext(user_id="alice", tenant_id="tenant1")
+docEX1 = DocEX(user_context=user_context1)
+basket1 = docEX1.create_basket("invoices")  # Created in tenant1 schema
+
+# Tenant 2 - automatically routes to tenant2 schema (isolated)
+user_context2 = UserContext(user_id="bob", tenant_id="tenant2")
+docEX2 = DocEX(user_context=user_context2)
+basket2 = docEX2.create_basket("invoices")  # Created in tenant2 schema
+```
+
+**Recommendation**: Start with **row-level isolation** for most use cases, migrate to **database-level isolation** if compliance or security requirements demand it. Database-level isolation is now available and ready for production use.
 
 ### 11.3 Data Protection
 
