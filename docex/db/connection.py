@@ -38,19 +38,49 @@ class Database:
     
     Handles both SQLite and PostgreSQL connections with proper configuration
     and connection pooling.
+    
+    Supports both single-tenant and multi-tenant (database-level) modes.
+    When multi-tenancy is enabled, uses TenantDatabaseManager for tenant routing.
     """
     
-    def __init__(self, config: Optional[DocEXConfig] = None):
+    def __init__(self, config: Optional[DocEXConfig] = None, tenant_id: Optional[str] = None):
         """
         Initialize database connection
         
         Args:
             config: DocEXConfig instance. If None, uses default configuration.
+            tenant_id: Optional tenant identifier for database-level multi-tenancy.
         """
         self.config = config or DocEXConfig()
+        self.tenant_id = tenant_id
         self.engine = None
         self.Session = None
-        self._initialize()
+        
+        # Check if database-level multi-tenancy is enabled
+        security_config = self.config.get('security', {})
+        self.multi_tenancy_model = security_config.get('multi_tenancy_model', 'row_level')
+        self.tenant_database_routing = security_config.get('tenant_database_routing', False)
+        
+        if self.multi_tenancy_model == 'database_level' and tenant_id:
+            # Use tenant-aware database manager
+            from docex.db.tenant_database_manager import TenantDatabaseManager
+            self.tenant_manager = TenantDatabaseManager()
+            self.engine = self.tenant_manager.get_tenant_engine(tenant_id)
+            # Get session factory from tenant manager
+            session_factory = self.tenant_manager._tenant_sessions.get(tenant_id)
+            if session_factory:
+                self.Session = session_factory
+            else:
+                # Create session factory if not already created
+                self.Session = sessionmaker(
+                    bind=self.engine,
+                    expire_on_commit=False,
+                    autocommit=False,
+                    autoflush=False
+                )
+        else:
+            # Use standard single-tenant initialization
+            self._initialize()
     
     def _initialize(self):
         """Initialize database connection and session"""
@@ -177,7 +207,11 @@ class Database:
             SQLAlchemy session
         """
         if self.Session is None:
-            self._initialize()
+            if self.multi_tenancy_model == 'database_level' and self.tenant_id:
+                # For tenant-aware mode, get session from tenant manager
+                return self.tenant_manager.get_tenant_session(self.tenant_id)
+            else:
+                self._initialize()
         return self.Session()
     
     def transaction(self):
@@ -205,16 +239,22 @@ class Database:
         Yields:
             SQLAlchemy session
         """
-        session = self.Session()
-        try:
-            yield session
-            session.commit()
-        except Exception as e:
-            session.rollback()
-            logger.error(f"Database transaction error: {str(e)}")
-            raise
-        finally:
-            session.close()
+        if self.multi_tenancy_model == 'database_level' and self.tenant_id:
+            # Use tenant-aware transaction
+            with self.tenant_manager.tenant_transaction(self.tenant_id) as session:
+                yield session
+        else:
+            # Use standard transaction
+            session = self.Session()
+            try:
+                yield session
+                session.commit()
+            except Exception as e:
+                session.rollback()
+                logger.error(f"Database transaction error: {str(e)}")
+                raise
+            finally:
+                session.close()
     
     def execute(self, query: Union[str, Any], params: Optional[Dict] = None) -> Any:
         """

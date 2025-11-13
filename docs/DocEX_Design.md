@@ -859,23 +859,496 @@ logging:
 
 ## 11. Security
 
-### 11.1 Access Control
-- Document-level access control
-- Basket-level access control
-- Operation-level permissions
-- Route-level access control
+### 11.1 Security Design Philosophy
 
-### 11.2 Data Protection
-- Content encryption
-- Secure storage
-- Secure transmission
-- Configuration encryption
+DocEX follows a **tenant-agnostic, composable security model** where:
+- **Core Security**: DocEX provides audit logging and operation tracking infrastructure
+- **Access Control**: Enforced at the application/orchestration layer by default (not in DocEX core)
+- **Optional Enforcement**: Can be configured to enforce user context matching for multi-tenant safety
+- **Data Protection**: Relies on underlying storage and transport layer security
+- **Multi-tenancy**: Handled by the application layer using basket-based organization (with optional enforcement)
 
-### 11.3 Audit Trail
-- Operation logging
-- Access logging
-- Change tracking
-- Route operation tracking
+This design allows DocEX to be integrated into any security model (RBAC, ABAC, etc.) without imposing specific access control mechanisms, while optionally providing a safety net for tenant isolation when needed.
+
+### 11.2 Access Control
+
+#### 11.2.1 Application Layer Responsibility (Default)
+
+**Current Status**: Access control is **not enforced in DocEX core by default**. This is an intentional design decision to keep DocEX composable and flexible.
+
+**Implementation Approach**:
+- **Document-level access**: Enforced by application layer before calling DocEX APIs
+- **Basket-level access**: Managed through basket organization and application-layer filtering
+- **Operation-level permissions**: Controlled by application layer based on `UserContext` roles
+- **Route-level access**: Managed through route configuration and application-layer authorization
+
+**Example Pattern**:
+```python
+# Application layer enforces access control
+user_context = UserContext(user_id="alice", tenant_id="tenant1", roles=["admin"])
+
+if not user_has_permission(user_context, "read", basket_id):
+    raise PermissionError("Access denied")
+
+# Then call DocEX (which logs the operation)
+docEX = DocEX(user_context=user_context)
+basket = docEX.get_basket(basket_id)
+```
+
+**Benefits**:
+- Flexibility to implement any access control model
+- No security logic embedded in document management core
+- Clear separation of concerns
+- Easy integration with existing IAM/RBAC systems
+
+#### 11.2.2 Multi-Tenancy Models
+
+DocEX supports two multi-tenancy models, each with different trade-offs. Choose based on your security, compliance, and scalability requirements.
+
+##### Model A: Row-Level Isolation (Shared Database)
+
+**Description**: All tenants share the same database/schema, with `tenant_id` columns providing logical isolation.
+
+**Configuration**:
+```yaml
+# ~/.docex/config.yaml
+security:
+  multi_tenancy_model: row_level  # or "database_level"
+  enforce_user_context: true       # Enable user context enforcement
+  context_match_fields:           # Fields to match for enforcement
+    - tenant_id                    # Require matching tenant_id
+    # - user_id                    # Optional: require matching user_id
+```
+
+**How It Works**:
+
+1. **When Creating Resources** (if `enforce_user_context: true`):
+   - Basket creation stores `tenant_id` and `created_by_user_id` in the database
+   - Document creation stores `tenant_id` and `created_by_user_id` in the database
+   - If `UserContext` is not provided, creation fails with `ValueError`
+
+2. **When Retrieving Resources** (if `enforce_user_context: true`):
+   - `get_basket()` checks if current `UserContext.tenant_id` matches basket's `tenant_id`
+   - `get_document()` checks if current `UserContext.tenant_id` matches document's `tenant_id`
+   - `list_baskets()` filters results to only show baskets matching current `tenant_id`
+   - If context doesn't match, raises `PermissionError` or returns empty results
+
+3. **Database Schema Changes**:
+```sql
+-- Add tenant context to baskets
+ALTER TABLE docbasket ADD COLUMN tenant_id VARCHAR(255);
+ALTER TABLE docbasket ADD COLUMN created_by_user_id VARCHAR(255);
+CREATE INDEX idx_docbasket_tenant_id ON docbasket(tenant_id);
+
+-- Add tenant context to documents
+ALTER TABLE document ADD COLUMN tenant_id VARCHAR(255);
+ALTER TABLE document ADD COLUMN created_by_user_id VARCHAR(255);
+CREATE INDEX idx_document_tenant_id ON document(tenant_id);
+```
+
+**Pros**:
+- ✅ Simple connection management (single database)
+- ✅ Easy cross-tenant analytics and reporting
+- ✅ Single schema to manage and migrate
+- ✅ Efficient for many small tenants
+- ✅ Lower database overhead
+
+**Cons**:
+- ❌ Risk of cross-tenant data leaks (if code bug)
+- ❌ Harder to scale individual tenants
+- ❌ All tenants share database performance
+- ❌ Less suitable for strict compliance (HIPAA, GDPR)
+
+**When to Use**:
+- Multi-tenant SaaS with many small tenants
+- Applications where cross-tenant analytics are important
+- Cost-sensitive deployments
+- Applications with moderate compliance requirements
+
+##### Model B: Database/Schema-Level Isolation (Per-Tenant Database)
+
+**Description**: Each tenant has its own database (SQLite) or schema (PostgreSQL), providing physical data isolation.
+
+**Configuration**:
+```yaml
+# ~/.docex/config.yaml
+security:
+  multi_tenancy_model: database_level  # or "row_level"
+  tenant_database_routing: true        # Enable automatic database routing
+  # For PostgreSQL with schemas:
+  postgres:
+    schema_template: "tenant_{tenant_id}"  # Schema name pattern
+  # For SQLite with separate databases:
+  sqlite:
+    path_template: "storage/tenant_{tenant_id}/docex.db"
+```
+
+**How It Works**:
+
+1. **Database Routing**:
+   - DocEX automatically routes to tenant-specific database/schema based on `UserContext.tenant_id`
+   - Each tenant gets isolated database connection
+   - No `tenant_id` columns needed (physical isolation)
+
+2. **Connection Management**:
+   ```python
+   # DocEX automatically routes to tenant database
+   user_context = UserContext(user_id="alice", tenant_id="tenant1")
+   docEX = DocEX(user_context=user_context)
+   
+   # Automatically connects to tenant1 database/schema
+   basket = docEX.create_basket("invoices")
+   
+   # Different tenant gets different database
+   user_context2 = UserContext(user_id="bob", tenant_id="tenant2")
+   docEX2 = DocEX(user_context=user_context2)
+   # Automatically connects to tenant2 database/schema
+   ```
+
+3. **PostgreSQL Schema Example**:
+   ```sql
+   -- Each tenant has its own schema
+   CREATE SCHEMA tenant_tenant1;
+   CREATE SCHEMA tenant_tenant2;
+   
+   -- Tables created in each schema automatically
+   -- No tenant_id columns needed
+   ```
+
+4. **SQLite Database Example**:
+   ```
+   storage/
+     tenant_tenant1/
+       docex.db  # Complete database for tenant1
+     tenant_tenant2/
+       docex.db  # Complete database for tenant2
+   ```
+
+**Pros**:
+- ✅ **Strongest Isolation**: Physical data separation
+- ✅ **Best for Compliance**: HIPAA, GDPR, SOX requirements
+- ✅ **Independent Scaling**: Scale tenants individually
+- ✅ **No Cross-Tenant Leaks**: Impossible to query wrong tenant
+- ✅ **Independent Backups**: Backup/restore per tenant
+- ✅ **Schema Customization**: Different schemas per tenant if needed
+
+**Cons**:
+- ❌ More complex connection management
+- ❌ Harder cross-tenant analytics (requires federation)
+- ❌ More database connections (connection pool per tenant)
+- ❌ Schema migrations more complex (migrate all tenant schemas)
+- ❌ Higher operational overhead
+
+**When to Use**:
+- Strict compliance requirements (HIPAA, GDPR, financial)
+- Large enterprise tenants requiring isolation
+- Applications with regulatory requirements
+- Tenants with different schema needs
+- High-security environments
+
+##### Comparison Matrix
+
+| Feature | Row-Level Isolation | Database-Level Isolation |
+|---------|-------------------|------------------------|
+| **Data Isolation** | Logical (tenant_id) | Physical (separate DB/schema) |
+| **Security** | Good (code-dependent) | Excellent (impossible to leak) |
+| **Compliance** | Moderate | Strong (HIPAA, GDPR) |
+| **Connection Management** | Simple (1 DB) | Complex (N DBs) |
+| **Cross-Tenant Analytics** | Easy | Hard (federation) |
+| **Scalability** | Shared resources | Per-tenant scaling |
+| **Schema Migrations** | Single migration | N migrations |
+| **Operational Overhead** | Low | High |
+| **Best For** | Many small tenants | Few large tenants |
+
+##### Implementation Status
+
+**Row-Level Isolation**: **Proposed** - Not yet implemented. Requires:
+1. Configuration option in `default_config.yaml`
+2. Database schema migration (add `tenant_id` columns)
+3. Enforcement logic in retrieval methods
+4. Context storage in creation methods
+
+**Database-Level Isolation**: **✅ Implemented** (Version 2.2.0+). Features:
+1. ✅ Configuration option for `multi_tenancy_model: database_level`
+2. ✅ Database routing logic based on `UserContext.tenant_id`
+3. ✅ Connection pool management per tenant (`TenantDatabaseManager`)
+4. ✅ Automatic schema/database creation for new tenants
+5. ✅ Support for both SQLite (separate DB files) and PostgreSQL (separate schemas)
+6. ✅ Thread-safe connection management
+7. ⚠️ Migration tooling for multi-tenant deployments (planned)
+
+**Implementation Details**:
+
+The database-level isolation is implemented through `TenantDatabaseManager`, which:
+- Maintains a connection pool per tenant
+- Automatically creates tenant schemas/databases on first access
+- Routes database operations to the correct tenant database/schema
+- Provides thread-safe connection management
+
+**Configuration Example**:
+```yaml
+# ~/.docex/config.yaml
+security:
+  multi_tenancy_model: database_level
+  tenant_database_routing: true
+
+database:
+  type: postgresql
+  postgres:
+    host: localhost
+    port: 5432
+    database: docex
+    user: postgres
+    password: postgres
+    schema_template: "tenant_{tenant_id}"  # Schema per tenant
+```
+
+**Usage**:
+```python
+from docex import DocEX
+from docex.context import UserContext
+
+# Tenant 1 - automatically routes to tenant1 schema
+user_context1 = UserContext(user_id="alice", tenant_id="tenant1")
+docEX1 = DocEX(user_context=user_context1)
+basket1 = docEX1.create_basket("invoices")  # Created in tenant1 schema
+
+# Tenant 2 - automatically routes to tenant2 schema (isolated)
+user_context2 = UserContext(user_id="bob", tenant_id="tenant2")
+docEX2 = DocEX(user_context=user_context2)
+basket2 = docEX2.create_basket("invoices")  # Created in tenant2 schema
+```
+
+**Recommendation**: Start with **row-level isolation** for most use cases, migrate to **database-level isolation** if compliance or security requirements demand it. Database-level isolation is now available and ready for production use.
+
+### 11.3 Data Protection
+
+**Current Implementation**:
+
+1. **Secure Storage**
+   - **Filesystem**: Relies on OS-level file permissions and encryption (if configured)
+   - **S3**: Uses AWS IAM policies, bucket encryption, and TLS for data in transit
+   - **Storage Credentials**: Managed through configuration (environment variables, IAM roles)
+
+2. **Secure Transmission**
+   - **SFTP**: Uses SSH encryption for file transfers
+   - **HTTP/HTTPS**: Relies on transport layer security (TLS/SSL)
+   - **S3**: All operations use HTTPS by default
+
+3. **Configuration Security**
+   - **Current**: Configuration stored in plain text (`~/.docex/config.yaml`)
+   - **Credentials**: Should be provided via environment variables or secret management systems
+   - **Best Practice**: Use environment variables for sensitive credentials:
+     ```bash
+     export AWS_ACCESS_KEY_ID=...
+     export AWS_SECRET_ACCESS_KEY=...
+     export OPENAI_API_KEY=...
+     ```
+
+**Not Yet Implemented**:
+- Content encryption at rest (relies on storage backend)
+- Configuration file encryption
+- Automatic credential rotation
+- Key management integration
+
+**Recommendations**:
+- Use environment variables or secret management (AWS Secrets Manager, HashiCorp Vault) for credentials
+- Enable encryption at rest on storage backends (S3 bucket encryption, encrypted filesystems)
+- Use IAM roles instead of access keys when possible (AWS, GCP)
+- Implement TLS/SSL for all network communications
+
+### 11.4 Audit Trail (Implemented)
+
+DocEX provides comprehensive audit logging infrastructure:
+
+#### 11.4.1 User Context Tracking
+
+**Implemented**: `UserContext` class tracks user identity for audit logging:
+
+```python
+from docex.context import UserContext
+from docex import DocEX
+
+user_context = UserContext(
+    user_id="alice",
+    user_email="alice@example.com",
+    tenant_id="tenant1",
+    roles=["admin", "user"]
+)
+
+docEX = DocEX(user_context=user_context)
+# All operations are logged with user context
+```
+
+**What's Tracked**:
+- User ID for all operations
+- Tenant ID for multi-tenant scenarios
+- User roles (for application-layer access control)
+- Operation timestamps
+
+#### 11.4.2 Operation Tracking
+
+**Implemented**: Complete operation history stored in database:
+
+1. **Document Operations** (`operations` table):
+   - Operation type (e.g., "document_created", "document_updated", "document_deleted")
+   - Status (pending, in_progress, success, failed)
+   - Timestamps (created_at, completed_at)
+   - Error details
+   - Operation dependencies
+
+2. **Processing Operations** (`processing_operations` table):
+   - Processor used
+   - Input/output metadata
+   - Processing status
+   - Error information
+   - Timestamps
+
+3. **Route Operations** (`route_operations` table):
+   - Transport route used
+   - Operation type (upload, download, list, delete)
+   - Status and error details
+   - Document references
+   - Timestamps
+
+4. **Document Events** (`doc_events` table):
+   - Lifecycle events (created, updated, deleted, processed)
+   - Event type and timestamp
+   - Event data (JSON)
+   - Source system
+   - Status and error messages
+
+**Query Examples**:
+```python
+# Get all operations for a document
+operations = document.get_operations()
+
+# Get all processing operations
+from docex.db.models import ProcessingOperation
+from sqlalchemy import select
+
+with db.session() as session:
+    query = select(ProcessingOperation).where(
+        ProcessingOperation.document_id == document.id
+    )
+    operations = session.execute(query).scalars().all()
+```
+
+#### 11.4.3 Access Logging
+
+**Implemented**: User context is logged for key operations:
+
+- Basket creation: `"Basket {name} created by user {user_id}"`
+- Basket access: `"Basket {basket_id} accessed by user {user_id}"`
+- Document operations: Tracked via `operations` table with user context
+
+**Logging Infrastructure**:
+- Python `logging` module used throughout
+- Log levels: DEBUG, INFO, WARNING, ERROR, CRITICAL
+- Configurable log output (file, console, syslog)
+
+#### 11.4.4 Change Tracking
+
+**Implemented**: Metadata versioning and change history:
+
+1. **Metadata Changes**: `document_metadata` table tracks:
+   - Metadata key-value pairs
+   - Creation and update timestamps
+   - Metadata type
+
+2. **File History**: `file_history` table tracks:
+   - Original file paths
+   - Internal storage paths
+   - Path changes over time
+
+3. **Document Status**: Document status changes tracked via:
+   - `document.status` field
+   - `operations` table for status change operations
+   - `doc_events` table for lifecycle events
+
+### 11.5 Security Best Practices
+
+#### 11.5.1 For Application Developers
+
+1. **Always Use UserContext**: Pass `UserContext` to DocEX for audit logging:
+   ```python
+   docEX = DocEX(user_context=user_context)
+   ```
+
+2. **Enforce Access Control**: Implement access control before calling DocEX:
+   ```python
+   if not check_permission(user, "read", resource):
+       raise PermissionError()
+   doc = basket.get_document(doc_id)
+   ```
+
+3. **Secure Credentials**: Never hardcode credentials:
+   ```python
+   # Good: Use environment variables
+   api_key = os.getenv('OPENAI_API_KEY')
+   
+   # Bad: Hardcoded credentials
+   api_key = "sk-..."
+   ```
+
+4. **Validate Input**: Validate all inputs before passing to DocEX:
+   ```python
+   if not is_valid_basket_name(name):
+       raise ValueError("Invalid basket name")
+   basket = docEX.create_basket(name)
+   ```
+
+#### 11.5.2 For System Administrators
+
+1. **Storage Security**:
+   - Enable encryption at rest on S3 buckets
+   - Use IAM roles instead of access keys
+   - Restrict bucket policies to least privilege
+   - Enable S3 access logging
+
+2. **Database Security**:
+   - Use strong database passwords
+   - Enable SSL/TLS for database connections
+   - Restrict database access by IP
+   - Regular database backups
+
+3. **Configuration Security**:
+   - Restrict file permissions on `~/.docex/config.yaml`:
+     ```bash
+     chmod 600 ~/.docex/config.yaml
+     ```
+   - Use environment variables for sensitive values
+   - Rotate credentials regularly
+
+4. **Network Security**:
+   - Use HTTPS for all HTTP transports
+   - Use SFTP (not FTP) for file transfers
+   - Enable firewall rules to restrict access
+
+### 11.6 Security Roadmap
+
+**Planned Enhancements**:
+1. **Enhanced Audit Logging**:
+   - Structured audit log format
+   - Integration with SIEM systems
+   - Audit log retention policies
+
+2. **Security Metadata**:
+   - Document classification levels
+   - Retention policies
+   - Data sensitivity tags
+
+3. **Compliance Features**:
+   - GDPR compliance tools (data export, deletion)
+   - SOX compliance reporting
+   - HIPAA compliance features (if needed)
+
+4. **Security Integrations**:
+   - OAuth2/OIDC integration
+   - LDAP/Active Directory integration
+   - Secret management system integration (Vault, AWS Secrets Manager)
+
+**Note**: Access control enforcement will remain at the application layer to maintain flexibility and composability.
 
 ## 12. Future Enhancements
 

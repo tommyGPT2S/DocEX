@@ -7,11 +7,18 @@ This example demonstrates:
 3. Adding and updating documents
 4. Working with document metadata
 5. Getting basket statistics
+6. Using UserContext for audit logging and security
 
-Note: DocEX must be initialized first using the CLI command 'DocEX init'
+Note: DocEX must be initialized first using the CLI command 'docex init'
+
+Security Best Practices:
+- Always use UserContext for audit logging
+- UserContext enables operation tracking and multi-tenant support
+- For multi-tenant applications, provide tenant_id in UserContext
 """
 
 from docex import DocEX
+from docex.context import UserContext
 from pathlib import Path
 import json
 import yaml
@@ -19,9 +26,17 @@ import sys
 
 def main():
     try:
+        # Create UserContext for audit logging and security
+        # In production, this would come from your authentication system
+        user_context = UserContext(
+            user_id="example_user",
+            user_email="user@example.com",
+            tenant_id="example_tenant",  # Optional: for multi-tenant applications
+            roles=["user"]  # Optional: for application-layer access control
+        )
         
-        # Create DocEX instance (will check initialization internally)
-        docEX = DocEX()
+        # Create DocEX instance with UserContext (enables audit logging)
+        docEX = DocEX(user_context=user_context)
         
         # Create or get a document basket (uses default storage config)
         basket_name = 'example_basket'

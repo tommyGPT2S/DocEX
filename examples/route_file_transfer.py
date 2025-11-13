@@ -7,13 +7,19 @@ This example demonstrates:
 3. Adding downloaded files to a basket
 4. Uploading documents using a route
 5. Tracking document operations and status
+6. Using UserContext for audit logging
 
 Note: 
-1. DocEX must be initialized first using the CLI command 'DocEX init'
+1. DocEX must be initialized first using the CLI command 'docex init'
 2. Routes must be created first by running 'python examples/route_management.py'
+
+Security Best Practices:
+- Always use UserContext for audit logging
+- UserContext enables operation tracking and multi-tenant support
 """
 
 from docex import DocEX
+from docex.context import UserContext
 from docex.transport.config import RouteConfig, TransportType
 from pathlib import Path
 import json
@@ -62,8 +68,16 @@ def print_document_info(doc):
 
 async def main():
     try:
-        # Create DocEX instance (will check initialization internally)
-        docEX = DocEX()
+        # Create UserContext for audit logging
+        user_context = UserContext(
+            user_id="route_user",
+            user_email="route@example.com",
+            tenant_id="example_tenant",  # Optional: for multi-tenant applications
+            roles=["user"]
+        )
+        
+        # Create DocEX instance with UserContext (enables audit logging)
+        docEX = DocEX(user_context=user_context)
         
         # Create test directories
         test_dir = Path("test_data")

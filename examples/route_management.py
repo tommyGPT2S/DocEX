@@ -7,11 +7,17 @@ This example demonstrates:
 3. Listing and retrieving routes
 4. Deleting routes
 5. Working with route operations
+6. Using UserContext for audit logging
 
-Note: DocEX must be initialized first using the CLI command 'DocEX init'
+Note: DocEX must be initialized first using the CLI command 'docex init'
+
+Security Best Practices:
+- Always use UserContext for audit logging
+- UserContext enables operation tracking and multi-tenant support
 """
 
 from docex import DocEX
+from docex.context import UserContext
 from docex.transport.config import TransportType, LocalTransportConfig
 from pathlib import Path
 import json
@@ -40,8 +46,16 @@ def print_route_info(route):
 
 def main():
     try:
-        # Create DocEX instance (will check initialization internally)
-        docEX = DocEX()
+        # Create UserContext for audit logging
+        user_context = UserContext(
+            user_id="route_manager",
+            user_email="routes@example.com",
+            tenant_id="example_tenant",  # Optional: for multi-tenant applications
+            roles=["admin"]
+        )
+        
+        # Create DocEX instance with UserContext (enables audit logging)
+        docEX = DocEX(user_context=user_context)
         
         # Create test directory for local routes
         test_dir = Path("test_data")

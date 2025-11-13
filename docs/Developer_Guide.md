@@ -348,7 +348,67 @@ The user context is used for:
 - User-aware logging
 
 ### Multi-tenancy
-DocEX is designed to be tenant-agnostic, focusing on its core document management responsibilities. Tenant management should be handled at the upper layer:
+
+DocEX supports two multi-tenancy models:
+
+#### Model A: Row-Level Isolation (Shared Database)
+
+All tenants share the same database/schema, with `tenant_id` columns providing logical isolation. This model is **proposed** but not yet implemented.
+
+#### Model B: Database-Level Isolation (Per-Tenant Database) ✅ Implemented
+
+Each tenant has its own database (SQLite) or schema (PostgreSQL), providing physical data isolation. This model is **fully implemented** and ready for production use.
+
+**Configuration**:
+```yaml
+# ~/.docex/config.yaml
+security:
+  multi_tenancy_model: database_level
+  tenant_database_routing: true
+
+database:
+  type: postgresql
+  postgres:
+    host: localhost
+    port: 5432
+    database: docex
+    user: postgres
+    password: postgres
+    schema_template: "tenant_{tenant_id}"  # Schema per tenant
+```
+
+**Usage**:
+```python
+from docex import DocEX
+from docex.context import UserContext
+
+# Tenant 1
+user_context1 = UserContext(user_id="alice", tenant_id="tenant1")
+docEX1 = DocEX(user_context=user_context1)
+basket1 = docEX1.create_basket("invoices")  # Uses tenant1 schema
+
+# Tenant 2 (isolated)
+user_context2 = UserContext(user_id="bob", tenant_id="tenant2")
+docEX2 = DocEX(user_context=user_context2)
+basket2 = docEX2.create_basket("invoices")  # Uses tenant2 schema
+```
+
+**Features**:
+- ✅ Automatic database/schema routing based on `UserContext.tenant_id`
+- ✅ Connection pooling per tenant
+- ✅ Automatic schema/database creation for new tenants
+- ✅ Thread-safe connection management
+- ✅ Support for SQLite (separate DB files) and PostgreSQL (separate schemas)
+
+**Benefits**:
+- Strongest data isolation (physical separation)
+- Best for compliance (HIPAA, GDPR, SOX)
+- Independent scaling per tenant
+- No risk of cross-tenant data leaks
+
+#### Application Layer Tenant Management
+
+For applications using row-level isolation or custom tenant management, tenant logic should be handled at the upper layer:
 
 1. **Database Configuration**
    - Configure separate databases or schemas per tenant
