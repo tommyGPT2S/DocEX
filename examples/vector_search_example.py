@@ -5,6 +5,12 @@ This example demonstrates:
 1. Indexing documents with vector embeddings
 2. Performing semantic search queries
 3. Using different vector database backends (memory for testing, pgvector for production)
+4. Using UserContext for audit logging and security
+
+Security Best Practices:
+- Always use UserContext for audit logging
+- UserContext enables operation tracking and multi-tenant support
+- For multi-tenant applications, provide tenant_id in UserContext
 """
 
 import asyncio
@@ -16,6 +22,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from docex import DocEX
+from docex.context import UserContext
 from docex.processors.llm import OpenAIAdapter
 from docex.processors.vector import VectorIndexingProcessor, SemanticSearchService
 
@@ -36,8 +43,16 @@ async def main():
     logger.info("Vector Indexing and Semantic Search Example")
     logger.info("=" * 60)
     
-    # Initialize DocEX
-    docEX = DocEX()
+    # Create UserContext for audit logging
+    user_context = UserContext(
+        user_id="vector_user",
+        user_email="vector@example.com",
+        tenant_id="example_tenant",  # Optional: for multi-tenant applications
+        roles=["user"]
+    )
+    
+    # Initialize DocEX with UserContext (enables audit logging)
+    docEX = DocEX(user_context=user_context)
     
     # Create a basket for testing
     import uuid

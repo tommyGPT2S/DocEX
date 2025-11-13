@@ -94,7 +94,7 @@ class DocEX:
             logger.error(f"Failed to initialize DocEX configuration: {str(e)}")
             return False
     
-    def __new__(cls):
+    def __new__(cls, *args, **kwargs):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
         return cls._instance
@@ -129,6 +129,25 @@ class DocEX:
             self.initialized = True
             if user_context:
                 logger.info(f"DocEX initialized for user {user_context.user_id}")
+        else:
+            # Update user_context if provided (for singleton pattern)
+            if user_context is not None:
+                # Check if we need to switch tenant database
+                config = DocEXConfig()
+                security_config = config.get('security', {})
+                multi_tenancy_model = security_config.get('multi_tenancy_model', 'row_level')
+                
+                if multi_tenancy_model == 'database_level' and user_context.tenant_id:
+                    new_tenant_id = user_context.tenant_id
+                    current_tenant_id = getattr(self.user_context, 'tenant_id', None) if self.user_context else None
+                    
+                    # If tenant changed, update database connection
+                    if new_tenant_id != current_tenant_id:
+                        logger.info(f"Switching tenant database from {current_tenant_id} to {new_tenant_id}")
+                        self.db = Database(tenant_id=new_tenant_id)
+                
+                self.user_context = user_context
+                logger.info(f"UserContext updated for user {user_context.user_id}")
     
     @classmethod
     def setup(cls, **config) -> None:

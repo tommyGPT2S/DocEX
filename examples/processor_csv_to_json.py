@@ -6,12 +6,18 @@ This example:
 2. Creates a document from the CSV file
 3. Processes the document using the CSV to JSON processor
 4. Displays the processing results
+5. Uses UserContext for audit logging
+
+Security Best Practices:
+- Always use UserContext for audit logging
+- UserContext enables operation tracking
 """
 
 import os
 import csv
 from pathlib import Path
 from docex import DocEX
+from docex.context import UserContext
 from docex.processors.factory import factory
 from docex.processors.csv_to_json import CSVToJSONProcessor
 import shutil
@@ -32,8 +38,16 @@ def create_test_csv(file_path: Path) -> Path:
 
 def main():
     """Run the example"""
-    # Initialize DocEX
-    docEX = DocEX()
+    # Create UserContext for audit logging
+    user_context = UserContext(
+        user_id="csv_processor",
+        user_email="processor@example.com",
+        tenant_id="example_tenant",  # Optional: for multi-tenant applications
+        roles=["user"]
+    )
+    
+    # Initialize DocEX with UserContext (enables audit logging)
+    docEX = DocEX(user_context=user_context)
     
     # Create test directory
     test_dir = Path("test_data")
@@ -60,13 +74,18 @@ def main():
         document = basket.add(str(csv_file))
         print(f"Added document to basket: {document.name}")
         
-        # Register the processor before getting it
+        # Register the processor class in the factory
         factory.register(CSVToJSONProcessor)
-        # Get CSV to JSON processor using the factory
-        processor = factory.get_processor("CSVToJSONProcessor")
-        if not processor:
-            print("Error: CSVToJSONProcessor not found")
-            return
+        
+        # Create processor instance directly (since it may not be in database yet)
+        # In production, processors should be registered via CLI: docex processor register
+        processor = CSVToJSONProcessor(config={
+            'delimiter': ',',
+            'quotechar': '"',
+            'encoding': 'utf-8',
+            'include_header': True,
+            'output_format': 'records'
+        })
         
         # Process document
         result = processor.process(document)

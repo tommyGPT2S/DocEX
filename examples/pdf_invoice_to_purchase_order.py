@@ -1,4 +1,5 @@
 from docex import DocEX
+from docex.context import UserContext
 from docex.processors.factory import factory
 from pathlib import Path
 import sys
@@ -22,39 +23,47 @@ def process_invoice(pdf_path: str):
         pdf_path (str): Path to the PDF invoice file
     """
     try:
-        # 1. Create DocEX instance
-        docEX = DocEX()
+        # 1. Create UserContext for audit logging
+        user_context = UserContext(
+            user_id="invoice_processor",
+            user_email="processor@example.com",
+            tenant_id="example_tenant",  # Optional: for multi-tenant applications
+            roles=["processor"]
+        )
+        
+        # 2. Create DocEX instance with UserContext (enables audit logging)
+        docEX = DocEX(user_context=user_context)
 
-        # 2. Create or get the 'invoice' basket
+        # 3. Create or get the 'invoice' basket
         basket = docEX.basket('invoice')
 
-        # 3. Add the PDF document with custom metadata
+        # 4. Add the PDF document with custom metadata
         metadata = {'biz_doc_type': 'invoice'}
         doc = basket.add(pdf_path, metadata=metadata)
 
-        # 4. Get the processor for this document
+        # 5. Get the processor for this document
         processor_cls = factory.map_document_to_processor(doc)
         if not processor_cls:
             logger.error('No processor found for this document.')
             return None
         processor = processor_cls(config={})
 
-        # 5. Run the processor
+        # 6. Run the processor
         result = processor.process(doc)
 
-        # 6. Print the output
+        # 7. Print the output
         if result.success:
             logger.info('Extracted Text:')
             logger.info(result.content)
             logger.info('\nMetadata:')
             logger.info(result.metadata)
             
-            # 7. Print the document's metadata
+            # 8. Print the document's metadata
             logger.info('\nDocument Metadata:')
             doc_metadata = doc.get_metadata()
             logger.info(doc_metadata)
             
-            # 8. Find documents with the same PO number
+            # 9. Find documents with the same PO number
             if 'cus_PO' in doc_metadata:
                 try:
                     # Get PO number from metadata

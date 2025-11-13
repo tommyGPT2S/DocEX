@@ -3,6 +3,11 @@ Example: Using LLM Adapter with External Prompts
 
 This example demonstrates how to use the OpenAI adapter with prompts
 stored in external YAML files.
+
+Security Best Practices:
+- Always use UserContext for audit logging
+- UserContext enables operation tracking and multi-tenant support
+- For multi-tenant applications, provide tenant_id in UserContext
 """
 
 import asyncio
@@ -11,6 +16,7 @@ import logging
 from pathlib import Path
 
 from docex import DocEX
+from docex.context import UserContext
 from docex.processors.llm import OpenAIAdapter
 
 # Set up logging
@@ -25,8 +31,16 @@ async def example_invoice_extraction():
     logger.info("Example: Invoice Data Extraction with External Prompts")
     logger.info("=" * 60)
     
-    # Initialize DocEX
-    docEX = DocEX()
+    # Create UserContext for audit logging
+    user_context = UserContext(
+        user_id="llm_user",
+        user_email="llm@example.com",
+        tenant_id="example_tenant",  # Optional: for multi-tenant applications
+        roles=["user"]
+    )
+    
+    # Initialize DocEX with UserContext (enables audit logging)
+    docEX = DocEX(user_context=user_context)
     
     # Create a basket for invoices
     basket = docEX.basket('invoices')
@@ -116,8 +130,16 @@ async def example_product_extraction():
     logger.info("Example: Product Data Extraction with External Prompts")
     logger.info("=" * 60)
     
-    # Initialize DocEX
-    docEX = DocEX()
+    # Create UserContext for audit logging
+    user_context = UserContext(
+        user_id="llm_user",
+        user_email="llm@example.com",
+        tenant_id="example_tenant",
+        roles=["user"]
+    )
+    
+    # Initialize DocEX with UserContext
+    docEX = DocEX(user_context=user_context)
     
     # Create a basket for products
     basket = docEX.basket('products')
@@ -182,8 +204,16 @@ async def example_with_summary_and_embedding():
     logger.info("Example: Summary and Embedding Generation")
     logger.info("=" * 60)
     
-    # Initialize DocEX
-    docEX = DocEX()
+    # Create UserContext for audit logging
+    user_context = UserContext(
+        user_id="llm_user",
+        user_email="llm@example.com",
+        tenant_id="example_tenant",
+        roles=["user"]
+    )
+    
+    # Initialize DocEX with UserContext
+    docEX = DocEX(user_context=user_context)
     
     # Create a basket for documents
     basket = docEX.basket('documents')
