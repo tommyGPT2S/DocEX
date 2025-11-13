@@ -2,7 +2,7 @@
 
 ## Overview
 
-DocEX 2.1.0+ includes vector indexing and semantic search capabilities, enabling you to:
+DocEX 2.2.0+ includes vector indexing and semantic search capabilities, enabling you to:
 - Generate embeddings for documents using LLM adapters
 - Store embeddings in vector databases (pgvector, Pinecone, or in-memory)
 - Perform semantic search to find similar documents
@@ -334,5 +334,5 @@ See `examples/vector_search_example.py` for a complete working example.
 ---
 
 **Last Updated**: 2024-11-12  
-**Version**: 2.1.0
+**Version**: 2.2.0
 

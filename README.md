@@ -8,7 +8,7 @@
 
 ![DocEX Architecture](docs/DocEX_Architecture.jpeg)
 
-**DocEX** is a robust, extensible document management and transport system for Python. It supports multiple storage backends, metadata management, and operation tracking, with a unified API for local, SFTP, HTTP, and other protocols. **Version 2.1.0** introduces LLM-powered document processing capabilities.
+**DocEX** is a robust, extensible document management and transport system for Python. It supports multiple storage backends, metadata management, and operation tracking, with a unified API for local, SFTP, HTTP, and other protocols. **Version 2.2.0** introduces database-level multi-tenancy, enhanced security with UserContext, and LLM-powered document processing capabilities.
 
 ## Features
 
@@ -23,6 +23,8 @@
 - 📊 **Vector indexing & semantic search** - Generate embeddings and perform similarity search
 - 🔎 **RAG support** - Build retrieval-augmented generation applications
 - ☁️ **S3 storage support** - Store documents in Amazon S3
+- 🏢 **Multi-tenancy support** - Database-level isolation for secure multi-tenant deployments
+- 🔐 **Enhanced security** - UserContext for audit logging and tenant routing
 
 ## Installation
 
@@ -39,7 +41,7 @@ For PDF processing features:
 pip install pdfminer.six
 ```
 
-For LLM features (included by default in 2.1.0+):
+For LLM features (included by default in 2.2.0+):
 - `openai>=1.0.0` - OpenAI API integration
 - `jinja2>=3.1.0` - Prompt templating
 
@@ -77,9 +79,38 @@ print(doc.get_details())
 hello_file.unlink()
 ```
 
+### Security and Multi-Tenancy
+
+DocEX 2.2.0+ includes enhanced security features and multi-tenancy support:
+
+```python
+from docex import DocEX
+from docex.context import UserContext
+
+# Create UserContext for audit logging and multi-tenancy
+user_context = UserContext(
+    user_id="alice",
+    user_email="alice@example.com",
+    tenant_id="tenant1",  # For multi-tenant applications
+    roles=["admin"]
+)
+
+# Initialize DocEX with UserContext (enables audit logging)
+docEX = DocEX(user_context=user_context)
+
+# All operations are logged with user context
+basket = docEX.create_basket("invoices")
+```
+
+**Multi-Tenancy Models:**
+- **Database-Level Isolation** (Model B) - Each tenant has separate database/schema (✅ Implemented in 2.2.0)
+- **Row-Level Isolation** (Model A) - Shared database with tenant_id columns (Proposed)
+
+See [Multi-Tenancy Guide](docs/MULTI_TENANCY_GUIDE.md) and [Security Best Practices](examples/SECURITY_BEST_PRACTICES.md) for details.
+
 ### LLM-Powered Document Processing
 
-DocEX 2.1.0+ includes LLM adapters for intelligent document processing:
+DocEX 2.2.0+ includes LLM adapters for intelligent document processing:
 
 ```python
 from docex import DocEX
@@ -142,7 +173,7 @@ user_prompt_template: |
 
 ### Vector Indexing and Semantic Search
 
-DocEX 2.1.0+ includes vector indexing and semantic search capabilities:
+DocEX 2.2.0+ includes vector indexing and semantic search capabilities:
 
 ```python
 from docex import DocEX
@@ -221,6 +252,8 @@ transport_config:
 
 - [Developer Guide](docs/Developer_Guide.md)
 - [Design Document](docs/DocEX_Design.md)
+- [Multi-Tenancy Guide](docs/MULTI_TENANCY_GUIDE.md)
+- [Security Best Practices](examples/SECURITY_BEST_PRACTICES.md)
 - [LLM Adapter Implementation](docs/LLM_ADAPTER_IMPLEMENTATION.md)
 - [LLM Adapter Proposal](docs/LLM_ADAPTER_PROPOSAL.md)
 - [Vector Search Guide](docs/VECTOR_SEARCH_GUIDE.md)

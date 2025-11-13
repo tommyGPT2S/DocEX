@@ -246,5 +246,5 @@ We've completed **Phase 1** (Core LLM Adapters) and made significant progress, b
 ---
 
 **Last Updated**: 2024-11-12  
-**Version**: 2.1.0
+**Version**: 2.2.0
 

@@ -22,7 +22,7 @@ DocEX provides a single, consistent interface for managing all types of unstruct
 
 ### 2. **Intelligent Document Processing with LLM Integration**
 
-DocEX 2.1.0+ includes built-in LLM adapters that enable AI-powered document understanding:
+DocEX 2.2.0+ includes built-in LLM adapters, multi-tenancy support, and enhanced security features that enable AI-powered document understanding:
 
 #### **Structured Data Extraction**
 - Extract invoice numbers, amounts, dates, line items with 98%+ accuracy
@@ -334,7 +334,7 @@ The **Invoice Reconciliation System** demonstrates DocEX's real-world value: a p
 
 ---
 
-**Version**: 2.1.0  
+**Version**: 2.2.0  
 **Last Updated**: 2024-11-12  
 **Documentation**: See `docs/` directory for detailed guides
 
