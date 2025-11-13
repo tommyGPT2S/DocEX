@@ -39,10 +39,15 @@ class VectorIndexingProcessor(BaseProcessor):
                 - vector_db_config: Configuration for vector database (not needed for memory)
                 - store_in_metadata: Whether to store embeddings in DocEX metadata (default: True)
         """
-        super().__init__(config)
+        # Store original config for serialization (without llm_adapter object)
+        # Remove llm_adapter object from config before passing to super()
+        # This prevents JSON serialization errors when storing processor config
+        serializable_config = {k: v for k, v in config.items() if k != 'llm_adapter'}
+        llm_adapter_config = config.get('llm_adapter')
+        
+        super().__init__(serializable_config)
         
         # Initialize LLM adapter for generating embeddings
-        llm_adapter_config = config.get('llm_adapter')
         if isinstance(llm_adapter_config, BaseLLMProcessor):
             self.llm_adapter = llm_adapter_config
         else:

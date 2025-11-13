@@ -17,9 +17,12 @@ class TestVectorIndexingProcessor:
     @pytest.fixture
     def mock_llm_adapter(self):
         """Create a mock LLM adapter"""
+        async def mock_generate_embedding(text):
+            return [0.1] * 1536
+        
         adapter = Mock(spec=OpenAIAdapter)
         adapter.llm_service = Mock()
-        adapter.llm_service.generate_embedding = Mock(return_value=[0.1] * 1536)
+        adapter.llm_service.generate_embedding = mock_generate_embedding
         return adapter
     
     @pytest.fixture
@@ -67,27 +70,36 @@ class TestVectorIndexingProcessor:
         # Mock get_document_text
         processor.get_document_text = Mock(return_value="Test document content")
         
-        # Mock metadata service
-        with patch('docex.processors.vector.vector_indexing_processor.MetadataService') as mock_meta:
-            mock_service = Mock()
-            mock_meta.return_value = mock_service
-            
-            result = await processor.process(mock_document)
-            
-            assert result.success is True
-            assert 'vector_indexed' in result.metadata
-            assert result.metadata['vector_indexed'] is True
-            mock_service.update_metadata.assert_called_once()
+        # Mock the database operations to avoid needing real document
+        with patch.object(processor, '_record_operation') as mock_record:
+            # Mock metadata service (it's imported inside the method)
+            with patch('docex.services.metadata_service.MetadataService') as mock_meta:
+                mock_service = Mock()
+                mock_meta.return_value = mock_service
+                
+                result = await processor.process(mock_document)
+                
+                assert result.success is True
+                assert 'vector_indexed' in result.metadata
+                # Extract value from DocumentMetadata object if needed
+                vector_indexed = result.metadata['vector_indexed']
+                if hasattr(vector_indexed, 'extra') and 'value' in vector_indexed.extra:
+                    assert vector_indexed.extra['value'] is True
+                else:
+                    assert vector_indexed is True
+                mock_service.update_metadata.assert_called_once()
     
     @pytest.mark.asyncio
     async def test_process_no_text(self, processor, mock_document):
         """Test processing document with no text"""
         processor.get_document_text = Mock(return_value="")
         
-        result = await processor.process(mock_document)
-        
-        assert result.success is False
-        assert "No text content" in result.error
+        # Mock the database operations to avoid needing real document
+        with patch.object(processor, '_record_operation') as mock_record:
+            result = await processor.process(mock_document)
+            
+            assert result.success is False
+            assert "No text content" in result.error
 
 
 class TestSemanticSearchService:
@@ -101,9 +113,12 @@ class TestSemanticSearchService:
     @pytest.fixture
     def mock_llm_adapter(self):
         """Create a mock LLM adapter"""
+        async def mock_generate_embedding(text):
+            return [0.1] * 1536
+        
         adapter = Mock()
         adapter.llm_service = Mock()
-        adapter.llm_service.generate_embedding = Mock(return_value=[0.1] * 1536)
+        adapter.llm_service.generate_embedding = mock_generate_embedding
         return adapter
     
     @pytest.fixture

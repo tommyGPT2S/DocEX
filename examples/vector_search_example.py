@@ -4,7 +4,7 @@ Example: Vector Indexing and Semantic Search with DocEX
 This example demonstrates:
 1. Indexing documents with vector embeddings
 2. Performing semantic search queries
-3. Using different vector database backends (memory, pgvector, Pinecone)
+3. Using different vector database backends (memory for testing, pgvector for production)
 """
 
 import asyncio
