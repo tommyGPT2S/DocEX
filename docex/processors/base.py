@@ -37,9 +37,16 @@ class ProcessingResult:
 class BaseProcessor(ABC):
     """Base class for document processors"""
     
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Dict[str, Any], db: Optional[Database] = None):
+        """
+        Initialize processor
+        
+        Args:
+            config: Processor configuration dictionary
+            db: Optional tenant-aware database instance (for multi-tenancy support)
+        """
         self.config = config
-        self.db = Database()
+        self.db = db or Database()  # Use tenant-aware database if provided, otherwise create new one
     
     @abstractmethod
     async def process(self, document: Document) -> ProcessingResult:

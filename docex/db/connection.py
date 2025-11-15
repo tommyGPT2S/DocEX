@@ -129,17 +129,25 @@ class Database:
                         cursor.close()
                     
                     
-                elif db_type == 'postgresql':
+                elif db_type in ['postgresql', 'postgres']:
                     # PostgreSQL configuration
+                    from urllib.parse import quote_plus
+                    
                     host = db_config.get('host', 'localhost')
                     port = db_config.get('port', 5432)
                     database = db_config.get('database', 'docex')
                     user = db_config.get('user', 'postgres')
                     password = db_config.get('password', '')
                     
-                    # Create PostgreSQL engine
+                    # URL-encode user and password to handle special characters
+                    user_encoded = quote_plus(user)
+                    password_encoded = quote_plus(password)
+                    
+                    # Create PostgreSQL engine with properly encoded credentials
+                    # Add SSL mode for RDS connections (required for AWS RDS)
+                    connection_url = f'postgresql://{user_encoded}:{password_encoded}@{host}:{port}/{database}?sslmode=require'
                     self.engine = create_engine(
-                        f'postgresql://{user}:{password}@{host}:{port}/{database}',
+                        connection_url,
                         poolclass=QueuePool,
                         pool_size=5,
                         max_overflow=10,

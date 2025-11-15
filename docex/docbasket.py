@@ -49,7 +49,8 @@ class DocBasket:
         storage_config: Optional[Dict[str, Any]] = None,
         created_at: Optional[datetime] = None,
         updated_at: Optional[datetime] = None,
-        model: Any = None  # Reference to database model
+        model: Any = None,  # Reference to database model
+        db: Optional[Database] = None  # Optional tenant-aware database instance
     ):
         """
         Initialize document basket
@@ -62,6 +63,7 @@ class DocBasket:
             created_at: Creation timestamp
             updated_at: Last update timestamp
             model: Reference to database model
+            db: Optional tenant-aware database instance (for multi-tenancy support)
         """
         self.id = id
         self.name = name
@@ -71,8 +73,9 @@ class DocBasket:
         self.updated_at = updated_at
         self.model = model
         
-        # Initialize database connection
-        self.db = Database()
+        # Initialize database connection - use provided db or create new one
+        # If db is provided, it should be tenant-aware (from DocEX instance)
+        self.db = db or Database()
         
         # Initialize storage service
         # Note: S3 storage initialization may fail if credentials are not available
@@ -101,7 +104,7 @@ class DocBasket:
         return self.storage_config.get('path', '')
     
     @classmethod
-    def create(cls, name: str, description: Optional[str] = None, storage_config: Optional[Dict[str, Any]] = None) -> 'DocBasket':
+    def create(cls, name: str, description: Optional[str] = None, storage_config: Optional[Dict[str, Any]] = None, db: Optional[Database] = None) -> 'DocBasket':
         """
         Create a new document basket
         
@@ -128,9 +131,10 @@ class DocBasket:
             storage_config['type'] = 'filesystem'
         
         # Create basket in database first to get the ID
-        db = Database()
+        # Use provided db (tenant-aware) or create new one
+        basket_db = db or Database()
         try:
-            with db.transaction() as session:
+            with basket_db.transaction() as session:
                 # Check if basket with same name exists
                 existing = session.execute(
                     select(DocBasketModel).where(DocBasketModel.name == name)
@@ -190,7 +194,8 @@ class DocBasket:
                     storage_config=json.loads(basket_model.storage_config),
                     created_at=basket_model.created_at,
                     updated_at=basket_model.updated_at,
-                    model=basket_model
+                    model=basket_model,
+                    db=basket_db  # Pass tenant-aware database to basket instance
                 )
         except Exception as e:
             # If any error occurs, rollback the transaction
@@ -198,18 +203,19 @@ class DocBasket:
             raise ValueError(f"Failed to create basket: {str(e)}")
     
     @classmethod
-    def get(cls, basket_id: int) -> Optional['DocBasket']:
+    def get(cls, basket_id: int, db: Optional[Database] = None) -> Optional['DocBasket']:
         """
         Get a document basket by ID
         
         Args:
             basket_id: Basket ID
+            db: Optional tenant-aware database instance (for multi-tenancy support)
             
         Returns:
             Document basket or None if not found
         """
-        db = Database()
-        with db.session() as session:
+        basket_db = db or Database()
+        with basket_db.session() as session:
             basket = session.get(DocBasketModel, basket_id)
             if basket is None:
                 return None
@@ -220,22 +226,24 @@ class DocBasket:
                 storage_config=json.loads(basket.storage_config),
                 created_at=basket.created_at,
                 updated_at=basket.updated_at,
-                model=basket
+                model=basket,
+                db=basket_db  # Pass tenant-aware database to basket instance
             )
     
     @classmethod
-    def find_by_name(cls, name: str) -> Optional['DocBasket']:
+    def find_by_name(cls, name: str, db: Optional[Database] = None) -> Optional['DocBasket']:
         """
         Find a basket by name
         
         Args:
             name: Basket name
+            db: Optional tenant-aware database instance (for multi-tenancy support)
             
         Returns:
             DocBasket instance or None if not found
         """
-        db = Database()
-        with db.session() as session:
+        basket_db = db or Database()
+        with basket_db.session() as session:
             basket = session.execute(
                 select(DocBasketModel).where(DocBasketModel.name == name)
             ).scalar_one_or_none()
@@ -248,7 +256,8 @@ class DocBasket:
                 storage_config=json.loads(basket.storage_config),
                 created_at=basket.created_at,
                 updated_at=basket.updated_at,
-                model=basket
+                model=basket,
+                db=basket_db  # Pass tenant-aware database to basket instance
             )
     
     def find_documents_by_metadata(self, metadata: Union[Dict[str, Any], str]) -> List[Document]:
@@ -289,19 +298,37 @@ class DocBasket:
                 created_at=doc.created_at,
                 updated_at=doc.updated_at,
                 model=doc,
-                storage_service=self.storage_service
+                storage_service=self.storage_service,
+                db=self.db  # Pass tenant-aware database to document
             ) for doc in documents]
     
-    @classmethod
-    def list(cls) -> List['DocBasket']:
+    @classmethod  
+    def list(cls, db: Optional[Database] = None) -> List['DocBasket']:
         """
-        List all document baskets
+        List all document baskets (class method)
+        
+        Args:
+            db: Optional tenant-aware database instance (for multi-tenancy support)
         
         Returns:
             List of document baskets
         """
-        db = Database()
-        with db.session() as session:
+        return cls._list_all_baskets(db=db)
+    
+    @classmethod
+    def _list_all_baskets(cls, db: Optional[Database] = None) -> List['DocBasket']:
+        """
+        Internal method to list all document baskets (class method)
+        This is separated to avoid name conflict with instance method list()
+        
+        Args:
+            db: Optional tenant-aware database instance (for multi-tenancy support)
+        
+        Returns:
+            List of document baskets
+        """
+        basket_db = db or Database()
+        with basket_db.session() as session:
             baskets = session.execute(select(DocBasketModel)).scalars().all()
             return [cls(
                 id=basket.id,
@@ -310,7 +337,8 @@ class DocBasket:
                 storage_config=json.loads(basket.storage_config),
                 created_at=basket.created_at,
                 updated_at=basket.updated_at,
-                model=basket
+                model=basket,
+                db=basket_db  # Pass tenant-aware database to basket instance
             ) for basket in baskets]
     
     def _get_content_type(self, file_path: Path) -> str:
@@ -328,8 +356,8 @@ class DocBasket:
         Returns:
             Document instance
         """
-        db = Database()
-        with db.session() as session:
+        # Use tenant-aware database from basket instance
+        with self.db.session() as session:
             file_path = Path(file_path)
             if is_binary_file(file_path):
                 content = file_path.read_bytes()
@@ -370,7 +398,8 @@ class DocBasket:
                     created_at=existing.created_at,
                     updated_at=existing.updated_at,
                     model=existing,
-                    storage_service=self.storage_service
+                    storage_service=self.storage_service,
+                    db=self.db  # Pass tenant-aware database to document
                 )
             document = DocumentModel(
                 basket_id=self.id,
@@ -429,8 +458,79 @@ class DocBasket:
                 created_at=document.created_at,
                 updated_at=document.updated_at,
                 model=document,
-                storage_service=self.storage_service
+                storage_service=self.storage_service,
+                db=self.db  # Pass tenant-aware database to document
             )
+    
+    def list_documents(self) -> List[Document]:
+        """
+        List all documents in this basket
+        
+        Returns:
+            List of Document instances
+        """
+        with self.db.session() as session:
+            documents = session.execute(
+                select(DocumentModel).where(DocumentModel.basket_id == self.id)
+            ).scalars().all()
+            return [Document(
+                id=doc.id,
+                name=doc.name,
+                path=doc.path,
+                content_type=doc.content_type,
+                document_type=doc.document_type,
+                size=doc.size,
+                checksum=doc.checksum,
+                status=doc.status,
+                created_at=doc.created_at,
+                updated_at=doc.updated_at,
+                model=doc,
+                storage_service=self.storage_service,
+                db=self.db  # Pass tenant-aware database to document
+            ) for doc in documents]
+    
+    def list_documents(self) -> List[Document]:
+        """
+        List all documents in this basket
+        
+        Returns:
+            List of Document instances
+        """
+        with self.db.session() as session:
+            documents = session.execute(
+                select(DocumentModel).where(DocumentModel.basket_id == self.id)
+            ).scalars().all()
+            return [Document(
+                id=doc.id,
+                name=doc.name,
+                path=doc.path,
+                content_type=doc.content_type,
+                document_type=doc.document_type,
+                size=doc.size,
+                checksum=doc.checksum,
+                status=doc.status,
+                created_at=doc.created_at,
+                updated_at=doc.updated_at,
+                model=doc,
+                storage_service=self.storage_service,
+                db=self.db  # Pass tenant-aware database to document
+            ) for doc in documents]
+    
+    # Instance method list() for listing documents - this shadows the classmethod
+    # but Python's method resolution will use the classmethod when called on the class
+    # and the instance method when called on an instance
+    def list(self) -> List[Document]:
+        """
+        List all documents in this basket (alias for list_documents for backward compatibility)
+        
+        Note: This instance method shadows the classmethod list() that lists all baskets.
+        When called on an instance (basket.list()), it lists documents.
+        When called on the class (DocBasket.list()), it lists baskets.
+        
+        Returns:
+            List of Document instances
+        """
+        return self.list_documents()
     
     def get_document(self, document_id: int) -> Optional[Document]:
         """
@@ -458,7 +558,8 @@ class DocBasket:
                 created_at=document.created_at,
                 updated_at=document.updated_at,
                 model=document,
-                storage_service=self.storage_service
+                storage_service=self.storage_service,
+                db=self.db  # Pass tenant-aware database to document
             )
     
     def update_document(self, document_id: int, file_path: str) -> Document:
@@ -533,7 +634,8 @@ class DocBasket:
                 created_at=document.created_at,
                 updated_at=document.updated_at,
                 model=document,
-                storage_service=self.storage_service
+                storage_service=self.storage_service,
+                db=self.db  # Pass tenant-aware database to document
             )
     
     def delete_document(self, document_id: int) -> None:
@@ -552,8 +654,8 @@ class DocBasket:
     
     def delete(self) -> None:
         """Delete the basket and all its documents"""
-        db = Database()
-        with db.session() as session:
+        # Use tenant-aware database from basket instance
+        with self.db.session() as session:
             # Delete all documents
             documents = session.execute(
                 select(DocumentModel).where(DocumentModel.basket_id == self.id)

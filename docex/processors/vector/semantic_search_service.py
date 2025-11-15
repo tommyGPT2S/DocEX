@@ -92,7 +92,11 @@ class SemanticSearchService:
     def _init_pgvector(self):
         """Initialize pgvector connection"""
         from docex.db.connection import Database
-        db = Database()
+        # Try to get tenant_id from doc_ex context if available
+        tenant_id = None
+        if hasattr(self.doc_ex, 'user_context') and self.doc_ex.user_context:
+            tenant_id = getattr(self.doc_ex.user_context, 'tenant_id', None)
+        db = Database(tenant_id=tenant_id) if tenant_id else Database()
         return {'type': 'pgvector', 'db': db}
     
     
@@ -154,9 +158,12 @@ class SemanticSearchService:
                 try:
                     # Try to get basket first
                     if basket_id:
-                        basket = self.doc_ex.get_basket(basket_id)
+                        try:
+                            basket = self.doc_ex.get_basket(basket_id)
+                        except Exception:
+                            basket = None
                     else:
-                        # Find basket by document ID (would need a helper method)
+                        # Find basket by searching all baskets
                         basket = self._find_basket_for_document(doc_id)
                     
                     if basket:
@@ -217,21 +224,31 @@ class SemanticSearchService:
             # Convert embedding to PostgreSQL vector format
             embedding_str = '[' + ','.join(map(str, query_embedding)) + ']'
             
-            # Build query
-            query_sql = """
+            # Ensure search_path includes public where pgvector types are
+            try:
+                current_schema = session.execute(text("SELECT current_schema()")).scalar()
+                # Quote schema name in case it contains special characters (like hyphens)
+                session.execute(text(f'SET search_path TO "{current_schema}", public, pg_catalog'))
+            except Exception as e:
+                logger.debug(f"Could not set search_path: {e}")
+            
+            # Build query using string formatting for vector cast (same approach as VectorIndexingProcessor)
+            # Use fully qualified type name public.vector for multi-tenant schemas
+            # Note: We use string formatting for the embedding literal to avoid SQLAlchemy parameter binding issues
+            query_sql = f"""
                 SELECT 
                     id,
-                    1 - (embedding <=> :embedding::vector) AS similarity
+                    1 - (embedding <=> '{embedding_str}'::public.vector) AS similarity
                 FROM document
                 WHERE embedding IS NOT NULL
             """
-            params = {'embedding': embedding_str}
+            params = {}
             
             if basket_id:
                 query_sql += " AND basket_id = :basket_id"
                 params['basket_id'] = basket_id
             
-            query_sql += " ORDER BY embedding <=> :embedding::vector LIMIT :limit"
+            query_sql += f" ORDER BY embedding <=> '{embedding_str}'::public.vector LIMIT :limit"
             params['limit'] = top_k
             
             results = session.execute(text(query_sql), params).fetchall()

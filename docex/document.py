@@ -28,7 +28,8 @@ class Document:
         created_at: datetime,
         updated_at: datetime,
         model: Any = None,  # Reference to database model
-        storage_service: Optional[StorageService] = None  # Allow passing storage service directly
+        storage_service: Optional[StorageService] = None,  # Allow passing storage service directly
+        db: Optional[Database] = None  # Optional tenant-aware database instance
     ):
         self.id = id
         self.name = name
@@ -51,6 +52,9 @@ class Document:
             # Fallback to default storage config
             config_manager = ConfigManager()
             self.storage_service = StorageService(config_manager.get_storage_config())
+        
+        # Store tenant-aware database if provided (for multi-tenancy support)
+        self.db = db
     
     @staticmethod
     def _get_content_static(document: 'Document', mode: str = 'bytes') -> Union[bytes, str, Dict[str, Any]]:
@@ -116,19 +120,32 @@ class Document:
 
     def get_metadata(self) -> Dict[str, MetaModel]:
         """Get all metadata for this document from the database as DocumentMetadata models."""
-        db = Database()
-        service = MetadataService(db)
+        # Use tenant-aware database if available, otherwise create new one
+        doc_db = self.db or Database()
+        service = MetadataService(doc_db)
         return service.get_metadata(self.id)
 
     def get_metadata_dict(self) -> Dict[str, Any]:
         """Get all metadata as a plain dict (for backward compatibility)."""
         meta = self.get_metadata()
         return {k: v.to_dict() for k, v in meta.items()}
+    
+    def update_metadata(self, metadata: Dict[str, Any]) -> None:
+        """Update metadata for this document.
+        
+        Args:
+            metadata: Dictionary of metadata key-value pairs to update
+        """
+        # Use tenant-aware database if available, otherwise create new one
+        doc_db = self.db or Database()
+        service = MetadataService(doc_db)
+        service.update_metadata(self.id, metadata)
 
     def create_operation(self, operation_type: str, status: str, details: Optional[Dict] = None) -> Any:
         """Create an operation record for this document."""
-        db = Database()
-        with db.transaction() as session:
+        # Use tenant-aware database if available, otherwise create new one
+        doc_db = self.db or Database()
+        with doc_db.transaction() as session:
             operation = Operation(
                 document_id=self.id,
                 operation_type=operation_type,
@@ -144,8 +161,9 @@ class Document:
 
     def remove_from_basket(self) -> None:
         """Remove this document from its basket. This deletes the document from the database and cleans up its storage."""
-        db = Database()
-        with db.transaction() as session:
+        # Use tenant-aware database if available, otherwise create new one
+        doc_db = self.db or Database()
+        with doc_db.transaction() as session:
             if self.model:
                 session.delete(self.model)
             else:
@@ -157,14 +175,16 @@ class Document:
 
     def get_operations(self) -> List[Dict[str, Any]]:
         """Retrieve all operations associated with this document from the database."""
-        db = Database()
-        with db.session() as session:
+        # Use tenant-aware database if available, otherwise create new one
+        doc_db = self.db or Database()
+        with doc_db.session() as session:
             operations = session.query(Operation).filter(Operation.document_id == self.id).all()
             return [{"type": op.operation_type, "status": op.status, "created_at": op.created_at, "completed_at": op.completed_at, "error": op.error, "details": op.details} for op in operations]
 
     def get_route_operations(self) -> List[Dict[str, Any]]:
         """Retrieve all route operations associated with this document from the database."""
-        db = Database()
-        with db.session() as session:
+        # Use tenant-aware database if available, otherwise create new one
+        doc_db = self.db or Database()
+        with doc_db.session() as session:
             route_operations = session.query(RouteOperation).filter(RouteOperation.document_id == self.id).all()
             return [{"type": op.operation_type, "status": op.status, "created_at": op.created_at, "completed_at": op.completed_at, "error": op.error, "details": op.details} for op in route_operations] 

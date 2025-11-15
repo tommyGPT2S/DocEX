@@ -251,7 +251,52 @@ docex document add --basket BASKET --file FILE [--document-type TYPE] [--metadat
 docex document list --basket BASKET
 docex document get --id ID
 docex document delete --id ID
+
+# Vector Indexing (Embeddings)
+docex embed --tenant-id TENANT_ID [--all | --basket BASKET | --basket-id BASKET_ID] [--document-type TYPE] [--force] [--model MODEL] [--include-metadata/--no-include-metadata] [--batch-size SIZE] [--dry-run] [--vector-db-type {pgvector|memory}] [--limit LIMIT] [--skip SKIP] [--log-level LEVEL]
 ```
+
+#### Vector Indexing Command (`docex embed`)
+
+The `embed` command generates vector embeddings for documents to enable semantic search capabilities.
+
+**Required Options (one of):**
+- `--all` - Index all documents across all baskets
+- `--basket BASKET` - Index documents in a specific basket (by name)
+- `--basket-id BASKET_ID` - Index documents in a specific basket (by ID)
+
+**Common Options:**
+- `--tenant-id TENANT_ID` - Tenant ID for multi-tenant setups (required for multi-tenant deployments)
+- `--document-type TYPE` - Filter documents by document type (e.g., `purchase_order`, `invoice`)
+- `--force` - Force re-indexing of already indexed documents
+- `--model MODEL` - Embedding model to use (default: `all-mpnet-base-v2`)
+- `--include-metadata / --no-include-metadata` - Include metadata in embeddings (default: `True`)
+- `--batch-size SIZE` - Number of documents to process in each batch (default: 10)
+- `--dry-run` - Show what would be indexed without actually indexing
+- `--vector-db-type {pgvector|memory}` - Vector database type (default: `pgvector`)
+- `--limit LIMIT` - Maximum number of documents to index
+- `--skip SKIP` - Number of documents to skip (for pagination)
+- `--log-level LEVEL` - Logging level (`DEBUG`, `INFO`, `WARNING`, `ERROR`)
+
+**Examples:**
+```bash
+# Index all documents for a tenant
+docex embed --tenant-id my-tenant --all
+
+# Index documents in a specific basket
+docex embed --tenant-id my-tenant --basket my_basket_name
+
+# Index only purchase orders
+docex embed --tenant-id my-tenant --all --document-type purchase_order
+
+# Dry run to preview
+docex embed --tenant-id my-tenant --all --dry-run
+
+# Force re-indexing with different model
+docex embed --tenant-id my-tenant --all --force --model all-MiniLM-L6-v2
+```
+
+For detailed documentation, see [Vector Indexing CLI Documentation](../../LlamaSee-Document-Processing/docs/Implementation_Design/VECTOR_INDEXING_CLI.md).
 
 ### 2.2 Database Schema
 
