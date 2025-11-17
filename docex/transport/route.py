@@ -31,6 +31,7 @@ class Route:
     can_list: bool = False
     can_delete: bool = False
     other_party: Optional[OtherParty] = None  # The business entity this route connects to
+    db: Optional[Database] = None  # Optional tenant-aware database instance (for multi-tenancy support)
     
     @classmethod
     def from_model(cls, model: 'Route') -> 'Route':
@@ -46,17 +47,20 @@ class Route:
         from .config import RouteConfig, OtherParty
         
         # Create transport config based on protocol
-        if model.protocol == TransportType.LOCAL:
+        # Convert string protocol to TransportType enum for comparison
+        protocol_enum = TransportType(model.protocol) if isinstance(model.protocol, str) else model.protocol
+        
+        if protocol_enum == TransportType.LOCAL:
             from .local import LocalTransportConfig
             transport_config = LocalTransportConfig(
-                type=model.protocol,
+                type=protocol_enum,
                 name=f"{model.name}_transport",
                 base_path=model.config.get("base_path"),
                 create_dirs=model.config.get("create_dirs", True)
             )
         else:
             transport_config = {
-                "type": model.protocol,
+                "type": protocol_enum.value if hasattr(protocol_enum, 'value') else str(protocol_enum),
                 "name": f"{model.name}_transport",
                 **model.config
             }
@@ -74,7 +78,7 @@ class Route:
         route_config = RouteConfig(
             name=model.name,
             purpose=model.purpose,
-            protocol=model.protocol,
+            protocol=protocol_enum,
             config=transport_config,
             can_upload=model.can_upload,
             can_download=model.can_download,
@@ -146,7 +150,8 @@ class Route:
             )
             
         # Record operation start
-        db = Database()
+        # Use tenant-aware database if available, otherwise create new one
+        route_db = self.db or Database()
         operation_id = f"op_{uuid4().hex}"
         operation = RouteOperation(
             id=operation_id,
@@ -159,7 +164,7 @@ class Route:
                 "document_source": document.model.source
             }
         )
-        with db.session() as session:
+        with route_db.session() as session:
             session.add(operation)
             session.commit()
             
@@ -182,7 +187,7 @@ class Route:
             result = await self.transporter.upload(content, destination)
             
             # Update operation status and document status
-            with db.session() as session:
+            with route_db.session() as session:
                 # Get operation from database
                 operation = session.query(RouteOperation).filter_by(id=operation_id).first()
                 
@@ -218,7 +223,7 @@ class Route:
             return result
         except Exception as e:
             # Update operation status on error
-            with db.session() as session:
+            with route_db.session() as session:
                 # Get operation from database
                 operation = session.query(RouteOperation).filter_by(id=operation_id).first()
                 
@@ -288,7 +293,8 @@ class Route:
             )
             
         # Record operation start
-        db = Database()
+        # Use tenant-aware database if available, otherwise create new one
+        route_db = self.db or Database()
         operation_id = f"op_{uuid4().hex}"
         operation = RouteOperation(
             id=operation_id,
@@ -297,7 +303,7 @@ class Route:
             status="in_progress",
             details={"file_path": file_path, "destination": str(destination_path)}
         )
-        with db.session() as session:
+        with route_db.session() as session:
             session.add(operation)
             session.commit()
             
@@ -306,7 +312,7 @@ class Route:
             result = await self.transporter.download(file_path, destination_path)
             
             # Update operation status
-            with db.session() as session:
+            with route_db.session() as session:
                 # Get operation from database
                 operation = session.query(RouteOperation).filter_by(id=operation_id).first()
                 
@@ -324,7 +330,7 @@ class Route:
             return result
         except Exception as e:
             # Update operation status on error
-            with db.session() as session:
+            with route_db.session() as session:
                 # Get operation from database
                 operation = session.query(RouteOperation).filter_by(id=operation_id).first()
                 

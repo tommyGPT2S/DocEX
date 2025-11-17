@@ -284,5 +284,313 @@ def list_processors():
         for p in processors:
             click.echo(f"- {p.name} | Type: {p.type} | Enabled: {p.enabled} | Description: {p.description}")
 
+@cli.command('embed')
+@click.option('--tenant-id', help='Tenant ID for multi-tenant setups')
+@click.option('--all', 'index_all', is_flag=True, help='Index all documents across all baskets')
+@click.option('--basket', 'basket_name', help='Index documents in a specific basket (by name)')
+@click.option('--basket-id', help='Index documents in a specific basket (by ID)')
+@click.option('--document-type', help='Filter documents by document type')
+@click.option('--force', is_flag=True, help='Force re-indexing of already indexed documents')
+@click.option('--model', default='all-mpnet-base-v2', help='Embedding model to use (default: all-mpnet-base-v2)')
+@click.option('--include-metadata/--no-include-metadata', default=True, help='Include metadata in embeddings (default: True)')
+@click.option('--batch-size', type=int, default=10, help='Number of documents to process in each batch (default: 10)')
+@click.option('--dry-run', is_flag=True, help='Show what would be indexed without actually indexing')
+@click.option('--vector-db-type', type=click.Choice(['pgvector', 'memory']), default='pgvector', help='Vector database type (default: pgvector)')
+@click.option('--limit', type=int, help='Maximum number of documents to index')
+@click.option('--skip', type=int, default=0, help='Number of documents to skip (for pagination)')
+@click.option('--log-level', type=click.Choice(['DEBUG', 'INFO', 'WARNING', 'ERROR']), default='INFO', help='Logging level')
+def embed(tenant_id, index_all, basket_name, basket_id, document_type, force, model, include_metadata, batch_size, dry_run, vector_db_type, limit, skip, log_level):
+    """
+    Generate vector embeddings for documents.
+    
+    This command indexes documents for semantic search by generating embeddings
+    using sentence-transformers or other LLM adapters.
+    
+    Examples:
+    
+    \b
+    # Index all documents for a tenant
+    docex embed --tenant-id my-tenant --all
+    
+    \b
+    # Index documents in a specific basket
+    docex embed --tenant-id my-tenant --basket my_basket_name
+    
+    \b
+    # Index only purchase orders
+    docex embed --tenant-id my-tenant --all --document-type purchase_order
+    
+    \b
+    # Force re-indexing with a different model
+    docex embed --tenant-id my-tenant --all --force --model all-MiniLM-L6-v2
+    
+    \b
+    # Dry run to see what would be indexed
+    docex embed --tenant-id my-tenant --all --dry-run
+    """
+    import asyncio
+    import logging
+    import sys
+    from pathlib import Path
+    
+    # Configure logging
+    logging.basicConfig(
+        level=getattr(logging, log_level),
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    logger = logging.getLogger(__name__)
+    
+    try:
+        # Create user context if tenant_id provided
+        user_context = None
+        if tenant_id:
+            from docex.context import UserContext
+            user_context = UserContext(
+                user_id='cli_user',
+                tenant_id=tenant_id,
+                user_email='cli@example.com',
+                roles=['admin'],
+            )
+        
+        # Initialize DocEX
+        doc_ex = DocEX(user_context=user_context)
+        
+        # Get tenant-aware database
+        tenant_db = Database(tenant_id=tenant_id) if tenant_id else Database()
+        
+        # Initialize embedding adapter
+        click.echo(f"Loading embedding model: {model}...")
+        adapter = None
+        
+        # Try sentence-transformers adapter first (open source)
+        try:
+            # Try multiple import paths
+            import_paths = [
+                'src.processors.llm.sentence_transformers_adapter',
+                'docex.processors.llm.sentence_transformers_adapter',
+            ]
+            
+            # Also try adding LlamaSee-Document-Processing to path if it exists
+            llamasee_dp_path = Path(__file__).parent.parent.parent / 'LlamaSee-Document-Processing'
+            if llamasee_dp_path.exists():
+                sys.path.insert(0, str(llamasee_dp_path))
+                import_paths.insert(0, 'src.processors.llm.sentence_transformers_adapter')
+            
+            SentenceTransformersAdapter = None
+            for import_path in import_paths:
+                try:
+                    module = __import__(import_path, fromlist=['SentenceTransformersAdapter'])
+                    SentenceTransformersAdapter = getattr(module, 'SentenceTransformersAdapter', None)
+                    if SentenceTransformersAdapter:
+                        break
+                except ImportError:
+                    continue
+            
+            if SentenceTransformersAdapter:
+                adapter = SentenceTransformersAdapter({
+                    'model_name': model
+                }, db=tenant_db)
+                click.echo(f"✅ Model '{model}' loaded successfully (sentence-transformers)")
+            else:
+                raise ImportError("SentenceTransformersAdapter not found")
+        except (ImportError, AttributeError) as e:
+            # Fallback to OpenAI if sentence-transformers not available
+            click.echo(f"⚠️  sentence-transformers not available ({e}), trying OpenAI adapter...")
+            try:
+                from docex.processors.llm import OpenAIAdapter
+                adapter = OpenAIAdapter({
+                    'model': 'text-embedding-ada-002'
+                })
+                click.echo("✅ Using OpenAI adapter")
+            except ImportError:
+                click.echo("❌ Error: Neither sentence-transformers nor OpenAI adapter available", err=True)
+                click.echo("   Please install: pip install sentence-transformers", err=True)
+                raise click.Abort()
+        
+        # Initialize vector indexing processor
+        from docex.processors.vector import VectorIndexingProcessor
+        vector_processor = VectorIndexingProcessor({
+            'llm_adapter': adapter,
+            'vector_db_type': vector_db_type,
+            'include_metadata': include_metadata,
+            'force_reindex': force,
+        }, db=tenant_db)
+        
+        # Determine which documents to index
+        documents_to_index = []
+        
+        if index_all:
+            # Get all baskets
+            baskets = doc_ex.list_baskets()
+            click.echo(f"Found {len(baskets)} basket(s)")
+            
+            for basket in baskets:
+                try:
+                    docs = basket.list()
+                    for doc in docs:
+                        # Apply filters
+                        if document_type:
+                            metadata = doc.get_metadata_dict()
+                            doc_type = metadata.get('document_type')
+                            if hasattr(doc_type, 'value'):
+                                doc_type = doc_type.value
+                            elif isinstance(doc_type, dict):
+                                doc_type = doc_type.get('value') or doc_type.get('extra', {}).get('value') if isinstance(doc_type.get('extra'), dict) else doc_type
+                            
+                            if doc_type != document_type:
+                                continue
+                        
+                        # Check if already indexed (unless force)
+                        if not force:
+                            metadata = doc.get_metadata_dict()
+                            if metadata.get('vector_indexed'):
+                                continue
+                        
+                        documents_to_index.append((basket, doc))
+                except Exception as e:
+                    logger.warning(f"Error listing documents in basket {basket.name}: {e}")
+                    continue
+        
+        elif basket_name:
+            # Get specific basket by name
+            basket = doc_ex.basket(basket_name)
+            docs = basket.list()
+            for doc in docs:
+                if document_type:
+                    metadata = doc.get_metadata_dict()
+                    doc_type = metadata.get('document_type')
+                    if hasattr(doc_type, 'value'):
+                        doc_type = doc_type.value
+                    elif isinstance(doc_type, dict):
+                        doc_type = doc_type.get('value') or doc_type.get('extra', {}).get('value') if isinstance(doc_type.get('extra'), dict) else doc_type
+                    
+                    if doc_type != document_type:
+                        continue
+                
+                if not force:
+                    metadata = doc.get_metadata_dict()
+                    if metadata.get('vector_indexed'):
+                        continue
+                
+                documents_to_index.append((basket, doc))
+        
+        elif basket_id:
+            # Get specific basket by ID
+            basket = doc_ex.get_basket(basket_id)
+            if not basket:
+                click.echo(f"❌ Basket with ID '{basket_id}' not found", err=True)
+                return
+            
+            docs = basket.list()
+            for doc in docs:
+                if document_type:
+                    metadata = doc.get_metadata_dict()
+                    doc_type = metadata.get('document_type')
+                    if hasattr(doc_type, 'value'):
+                        doc_type = doc_type.value
+                    elif isinstance(doc_type, dict):
+                        doc_type = doc_type.get('value') or doc_type.get('extra', {}).get('value') if isinstance(doc_type.get('extra'), dict) else doc_type
+                    
+                    if doc_type != document_type:
+                        continue
+                
+                if not force:
+                    metadata = doc.get_metadata_dict()
+                    if metadata.get('vector_indexed'):
+                        continue
+                
+                documents_to_index.append((basket, doc))
+        
+        else:
+            click.echo("❌ Error: Must specify --all, --basket, or --basket-id", err=True)
+            return
+        
+        # Apply pagination
+        total_documents = len(documents_to_index)
+        if skip > 0:
+            documents_to_index = documents_to_index[skip:]
+        if limit:
+            documents_to_index = documents_to_index[:limit]
+        
+        click.echo(f"\n📊 Indexing Summary:")
+        click.echo(f"   Total documents found: {total_documents}")
+        click.echo(f"   Documents to index: {len(documents_to_index)}")
+        click.echo(f"   Model: {model}")
+        click.echo(f"   Include metadata: {include_metadata}")
+        click.echo(f"   Vector DB type: {vector_db_type}")
+        click.echo(f"   Force re-index: {force}")
+        
+        if dry_run:
+            click.echo("\n🔍 Dry run mode - showing documents that would be indexed:")
+            for i, (basket, doc) in enumerate(documents_to_index[:10], 1):
+                metadata = doc.get_metadata_dict()
+                doc_type = metadata.get('document_type')
+                if hasattr(doc_type, 'value'):
+                    doc_type = doc_type.value
+                elif isinstance(doc_type, dict):
+                    doc_type = doc_type.get('value') or doc_type.get('extra', {}).get('value') if isinstance(doc_type.get('extra'), dict) else doc_type
+                
+                click.echo(f"   {i}. {doc.id[:30]}... (Basket: {basket.name}, Type: {doc_type})")
+            if len(documents_to_index) > 10:
+                click.echo(f"   ... and {len(documents_to_index) - 10} more")
+            click.echo("\n✅ Dry run complete. Use without --dry-run to actually index.")
+            return
+        
+        if not documents_to_index:
+            click.echo("⚠️  No documents to index.")
+            return
+        
+        # Process documents in batches
+        click.echo(f"\n🚀 Starting vector indexing...")
+        
+        async def index_documents():
+            indexed = 0
+            failed = 0
+            
+            for i in range(0, len(documents_to_index), batch_size):
+                batch = documents_to_index[i:i + batch_size]
+                batch_num = (i // batch_size) + 1
+                total_batches = (len(documents_to_index) + batch_size - 1) // batch_size
+                
+                click.echo(f"\n📦 Processing batch {batch_num}/{total_batches} ({len(batch)} documents)...")
+                
+                for basket, doc in batch:
+                    try:
+                        result = await vector_processor.process(doc)
+                        if result.success:
+                            indexed += 1
+                            metadata = doc.get_metadata_dict()
+                            doc_type = metadata.get('document_type')
+                            if hasattr(doc_type, 'value'):
+                                doc_type = doc_type.value
+                            elif isinstance(doc_type, dict):
+                                doc_type = doc_type.get('value') or doc_type.get('extra', {}).get('value') if isinstance(doc_type.get('extra'), dict) else doc_type
+                            
+                            click.echo(f"   ✅ {doc.id[:30]}... (Type: {doc_type})")
+                        else:
+                            failed += 1
+                            click.echo(f"   ❌ {doc.id[:30]}... - {result.error}", err=True)
+                    except Exception as e:
+                        failed += 1
+                        click.echo(f"   ❌ {doc.id[:30]}... - {str(e)}", err=True)
+                        logger.exception(f"Error indexing document {doc.id}")
+            
+            return indexed, failed
+        
+        # Run async indexing
+        indexed, failed = asyncio.run(index_documents())
+        
+        # Summary
+        click.echo(f"\n✅ Vector indexing complete!")
+        click.echo(f"   ✅ Successfully indexed: {indexed}")
+        if failed > 0:
+            click.echo(f"   ❌ Failed: {failed}")
+        click.echo(f"   📊 Total processed: {indexed + failed}")
+        
+    except Exception as e:
+        click.echo(f"❌ Error: {str(e)}", err=True)
+        logger.exception("Vector indexing failed")
+        raise click.Abort()
+
 if __name__ == '__main__':
     cli() 

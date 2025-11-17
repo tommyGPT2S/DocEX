@@ -61,7 +61,14 @@ class Database:
         self.multi_tenancy_model = security_config.get('multi_tenancy_model', 'row_level')
         self.tenant_database_routing = security_config.get('tenant_database_routing', False)
         
-        if self.multi_tenancy_model == 'database_level' and tenant_id:
+        # In database-level multi-tenancy mode, tenant_id is required
+        if self.multi_tenancy_model == 'database_level':
+            if not tenant_id:
+                raise ValueError(
+                    "tenant_id is required when database-level multi-tenancy is enabled. "
+                    "Please provide tenant_id when creating Database instance, or ensure "
+                    "processors are created with tenant-aware database connections."
+                )
             # Use tenant-aware database manager
             from docex.db.tenant_database_manager import TenantDatabaseManager
             self.tenant_manager = TenantDatabaseManager()
@@ -129,17 +136,25 @@ class Database:
                         cursor.close()
                     
                     
-                elif db_type == 'postgresql':
+                elif db_type in ['postgresql', 'postgres']:
                     # PostgreSQL configuration
+                    from urllib.parse import quote_plus
+                    
                     host = db_config.get('host', 'localhost')
                     port = db_config.get('port', 5432)
                     database = db_config.get('database', 'docex')
                     user = db_config.get('user', 'postgres')
                     password = db_config.get('password', '')
                     
-                    # Create PostgreSQL engine
+                    # URL-encode user and password to handle special characters
+                    user_encoded = quote_plus(user)
+                    password_encoded = quote_plus(password)
+                    
+                    # Create PostgreSQL engine with properly encoded credentials
+                    # Add SSL mode for RDS connections (required for AWS RDS)
+                    connection_url = f'postgresql://{user_encoded}:{password_encoded}@{host}:{port}/{database}?sslmode=require'
                     self.engine = create_engine(
-                        f'postgresql://{user}:{password}@{host}:{port}/{database}',
+                        connection_url,
                         poolclass=QueuePool,
                         pool_size=5,
                         max_overflow=10,
@@ -158,6 +173,13 @@ class Database:
                     autocommit=False,
                     autoflush=False
                 )
+                
+                # Skip table creation if database-level multi-tenancy is enabled
+                # In multi-tenant mode, tables should only exist in tenant schemas, not default schema
+                if self.multi_tenancy_model == 'database_level':
+                    logger.info("Database-level multi-tenancy enabled - skipping table creation in default schema")
+                    logger.info("Tables will be created in tenant schemas on first access")
+                    return
                 
                 # Create all tables
                 Base.metadata.create_all(self.engine)

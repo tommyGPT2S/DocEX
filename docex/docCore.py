@@ -228,55 +228,63 @@ class DocEX:
                 raise RuntimeError(f"Failed to initialize configuration: {str(e)}")
             
             # Initialize database and create tables
+            # Skip table creation for database-level multi-tenancy (tables created per tenant)
             try:
-                # Ensure all models are imported
-                import docex.db.models
-                import docex.transport.models
-                db = Database()
+                security_config = merged_config.get('security', {})
+                multi_tenancy_model = security_config.get('multi_tenancy_model', 'row_level')
                 
-                # Drop all tables first
-                Base.metadata.drop_all(db.get_engine())
-                TransportBase.metadata.drop_all(db.get_engine())
-                
-                # Create tables in order
-                logger.info("Creating database tables...")
-                
-                # Create tables in dependency order
-                tables_to_create = [
-                    'docbasket',
-                    'document',
-                    'document_metadata',
-                    'file_history',
-                    'operations',
-                    'operation_dependencies',
-                    'doc_events',
-                    'processors',
-                    'processing_operations',
-                    'transport_routes',
-                    'route_operations'
-                ]
-                
-                for table_name in tables_to_create:
-                    try:
-                        if table_name in Base.metadata.tables:
-                            Base.metadata.tables[table_name].create(db.get_engine())
-                        elif table_name in TransportBase.metadata.tables:
-                            TransportBase.metadata.tables[table_name].create(db.get_engine())
-                        logger.info(f"Created table: {table_name}")
-                    except Exception as e:
-                        logger.error(f"Failed to create table {table_name}: {str(e)}")
-                        raise
-                
-                # Verify table creation
-                inspector = inspect(db.get_engine())
-                tables = inspector.get_table_names()
-                logger.info(f"Created tables: {', '.join(tables)}")
-                
-                missing_tables = [table for table in tables_to_create if table not in tables]
-                if missing_tables:
-                    raise RuntimeError(f"Failed to create required tables: {', '.join(missing_tables)}")
-                
-                logger.info("Database tables initialized successfully")
+                if multi_tenancy_model == 'database_level':
+                    logger.info("Database-level multi-tenancy enabled - tables will be created per tenant schema")
+                    # Don't create tables here - they'll be created in tenant schemas on first access
+                else:
+                    # Ensure all models are imported
+                    import docex.db.models
+                    import docex.transport.models
+                    db = Database()
+                    
+                    # Drop all tables first
+                    Base.metadata.drop_all(db.get_engine())
+                    TransportBase.metadata.drop_all(db.get_engine())
+                    
+                    # Create tables in order
+                    logger.info("Creating database tables...")
+                    
+                    # Create tables in dependency order
+                    tables_to_create = [
+                        'docbasket',
+                        'document',
+                        'document_metadata',
+                        'file_history',
+                        'operations',
+                        'operation_dependencies',
+                        'doc_events',
+                        'processors',
+                        'processing_operations',
+                        'transport_routes',
+                        'route_operations'
+                    ]
+                    
+                    for table_name in tables_to_create:
+                        try:
+                            if table_name in Base.metadata.tables:
+                                Base.metadata.tables[table_name].create(db.get_engine())
+                            elif table_name in TransportBase.metadata.tables:
+                                TransportBase.metadata.tables[table_name].create(db.get_engine())
+                            logger.info(f"Created table: {table_name}")
+                        except Exception as e:
+                            logger.error(f"Failed to create table {table_name}: {str(e)}")
+                            raise
+                    
+                    # Verify table creation
+                    inspector = inspect(db.get_engine())
+                    tables = inspector.get_table_names()
+                    logger.info(f"Created tables: {', '.join(tables)}")
+                    
+                    missing_tables = [table for table in tables_to_create if table not in tables]
+                    if missing_tables:
+                        raise RuntimeError(f"Failed to create required tables: {', '.join(missing_tables)}")
+                    
+                    logger.info("Database tables initialized successfully")
             except Exception as e:
                 logger.error(f"Failed to initialize database: {str(e)}")
                 raise RuntimeError(f"Failed to initialize database: {str(e)}")
@@ -320,7 +328,8 @@ class DocEX:
         if storage_config is None:
             storage_config = self._config.get('storage', {})
             
-        basket = DocBasket.create(name, description, storage_config)
+        # Pass tenant-aware database to create operation
+        basket = DocBasket.create(name, description, storage_config, db=self.db)
         
         if self.user_context:
             # Log creation with user context for auditing
@@ -328,17 +337,18 @@ class DocEX:
             
         return basket
     
-    def get_basket(self, basket_id: int) -> Optional[DocBasket]:
+    def get_basket(self, basket_id: str) -> Optional[DocBasket]:
         """
         Get a document basket by ID
         
         Args:
-            basket_id: Basket ID
+            basket_id: Basket ID (string)
             
         Returns:
             Basket if found, None otherwise
         """
-        basket = super().get_basket(basket_id)
+        # Use DocBasket.get() with tenant-aware database
+        basket = DocBasket.get(basket_id, db=self.db)
         
         if basket and self.user_context:
             # Log access for auditing
@@ -353,7 +363,9 @@ class DocEX:
         Returns:
             List of document baskets
         """
-        return DocBasket.list()
+        # Pass tenant-aware database to list operation
+        # Use the internal _list_all_baskets method to avoid instance method shadowing
+        return DocBasket._list_all_baskets(db=self.db)
     
     @classmethod
     def setup_database(cls, db_type: str, is_default_db: bool = False, **config) -> None:
@@ -483,11 +495,13 @@ class DocEX:
         )
         
         # Create route model
+        # Convert TransportType enum to string value for storage
+        protocol_value = transport_type_enum.value if hasattr(transport_type_enum, 'value') else str(transport_type_enum)
         route_model = RouteModel(
             id=str(uuid4()),
             name=name,
             purpose=purpose,
-            protocol=transport_type_enum,
+            protocol=protocol_value,
             config=transport_config.model_dump() if hasattr(transport_config, 'model_dump') else transport_config,
             can_upload=can_upload,
             can_download=can_download,
@@ -501,15 +515,17 @@ class DocEX:
             tags=[]
         )
         
-        # Save route to database
-        db = Database()
-        with db.transaction() as session:
+        # Save route to database using tenant-aware database
+        with self.db.transaction() as session:
             session.add(route_model)
             session.commit()
             session.refresh(route_model)
         
         # Create and return route instance
-        return TransporterFactory.create_route(route_config)
+        route = TransporterFactory.create_route(route_config)
+        # Pass tenant-aware database to route for multi-tenancy support
+        route.db = self.db
+        return route
     
     def get_route(self, name: str) -> Optional['Route']:
         """Get a route by name
@@ -522,15 +538,16 @@ class DocEX:
         """
         from docex.transport.models import Route as RouteModel
         from docex.transport.route import Route
-        from docex.db.connection import Database
         
-        db = Database()
-        with db.session() as session:
+        # Use tenant-aware database from DocEX instance
+        with self.db.session() as session:
             route_model = session.query(RouteModel).filter_by(name=name).first()
             if not route_model:
                 return None
             route = Route.from_model(route_model)
             route.route_id = route_model.id  # Ensure we use the database ID
+            # Pass tenant-aware database to route for multi-tenancy support
+            route.db = self.db
             return route
     
     def list_routes(
@@ -550,10 +567,11 @@ class DocEX:
             List of matching routes
         """
         from docex.transport.models import Route
-        from docex.db.connection import Database
         
-        db = Database()
-        with db.session() as session:
+        # Use tenant-aware database from DocEX instance
+        from docex.transport.route import Route as RouteInstance
+        
+        with self.db.session() as session:
             query = session.query(Route)
             
             if purpose:
@@ -562,8 +580,18 @@ class DocEX:
                 query = query.filter_by(protocol=transport_type)
             if enabled is not None:
                 query = query.filter_by(enabled=enabled)
-                
-            return query.all()
+            
+            # Convert models to Route instances and set tenant-aware database
+            route_models = query.all()
+            routes = []
+            for route_model in route_models:
+                route = RouteInstance.from_model(route_model)
+                route.route_id = route_model.id
+                # Pass tenant-aware database to route for multi-tenancy support
+                route.db = self.db
+                routes.append(route)
+            
+            return routes
     
     def delete_route(self, name: str) -> bool:
         """Delete a route by name
@@ -575,10 +603,9 @@ class DocEX:
             True if route was deleted, False if not found
         """
         from docex.transport.models import Route
-        from docex.db.connection import Database
         
-        db = Database()
-        with db.transaction() as session:
+        # Use tenant-aware database from DocEX instance
+        with self.db.transaction() as session:
             route = session.query(Route).filter_by(name=name).first()
             if route:
                 session.delete(route)
@@ -642,8 +669,8 @@ class DocEX:
         
         # Update document status if sent successfully
         if result.success:
-            db = Database()
-            with db.transaction() as session:
+            # Use tenant-aware database from DocEX instance
+            with self.db.transaction() as session:
                 document.model.status = "SENT"
                 session.commit()
         
@@ -660,7 +687,8 @@ class DocEX:
         Returns:
             DocBasket instance
         """
-        basket = DocBasket.find_by_name(basket_name)
+        # Pass tenant-aware database to find_by_name operation
+        basket = DocBasket.find_by_name(basket_name, db=self.db)
         if basket:
             return basket
         return self.create_basket(basket_name, description, storage_config)

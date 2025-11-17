@@ -24,8 +24,13 @@ class ProcessorFactory:
         
         self._processors[processor_name] = processor_class
     
-    def get_processor(self, name: str) -> Optional[BaseProcessor]:
-        """Get a processor instance by name"""
+    def get_processor(self, name: str, db: Optional[Database] = None) -> Optional[BaseProcessor]:
+        """Get a processor instance by name
+        
+        Args:
+            name: Processor name
+            db: Optional tenant-aware database instance (for multi-tenancy support)
+        """
         if name in self._instances:
             return self._instances[name]
         
@@ -33,15 +38,16 @@ class ProcessorFactory:
             return None
         
         # Get processor configuration from database
-        db = Database()
-        with db.session() as session:
+        # Use tenant-aware database if provided, otherwise create new one
+        processor_db = db or Database()
+        with processor_db.session() as session:
             processor_model = session.query(Processor).filter_by(name=name).first()
             if not processor_model or not processor_model.enabled:
                 return None
             
-            # Create processor instance with configuration
+            # Create processor instance with configuration and tenant-aware database
             processor_class = self._processors[name]
-            processor = processor_class(processor_model.config)
+            processor = processor_class(processor_model.config, db=processor_db)
             self._instances[name] = processor
             return processor
     
@@ -53,8 +59,15 @@ class ProcessorFactory:
         """Clear all processor instances"""
         self._instances.clear()
 
-    def map_document_to_processor(self, document):
-        return self.mapper.get_processor(document)
+    def map_document_to_processor(self, document, db: Optional[Database] = None):
+        """
+        Map a document to an appropriate processor
+        
+        Args:
+            document: Document to map
+            db: Optional tenant-aware database instance (for multi-tenancy support)
+        """
+        return self.mapper.get_processor(document, db=db)
 
 # Global factory instance
 factory = ProcessorFactory() 

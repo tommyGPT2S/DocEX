@@ -22,9 +22,10 @@ class MatchingInvoiceToPOProcessor(BaseProcessor):
             po_match = re.search(r'PO[-\s]?([0-9]{6,})', text, re.IGNORECASE)
             po_number = po_match.group(0) if po_match else None
             # Add PO number to document metadata if found
+            # Use tenant-aware database from processor instance
             if po_number:
-                db = Database()
-                service = MetadataService(db)
+                from docex.services.metadata_service import MetadataService
+                service = MetadataService(self.db)
                 service.update_metadata(document.id, {'cus_PO': po_number})
             return ProcessingResult(
                 success=True,

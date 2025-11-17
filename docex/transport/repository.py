@@ -16,10 +16,12 @@ class RouteRepository(BaseRepository[Route]):
         
     async def create_route(self, config: RouteConfig) -> Route:
         """Create a new route"""
+        # Convert TransportType enum to string value for storage
+        protocol_value = config.protocol.value if hasattr(config.protocol, 'value') else str(config.protocol)
         route = Route(
             name=config.name,
             purpose=config.purpose,
-            protocol=config.protocol,
+            protocol=protocol_value,
             config=config.config.dict(),
             # Method permissions
             can_upload=config.get('can_upload', False),

@@ -5,13 +5,14 @@ from pathlib import Path
 from io import StringIO
 from docex.processors.base import BaseProcessor, ProcessingResult
 from docex.document import Document
+from docex.db.connection import Database
 import io
 
 class CSVToJSONProcessor(BaseProcessor):
     """Processor that converts CSV files to JSON format"""
     
-    def __init__(self, config: Dict[str, Any]):
-        super().__init__(config)
+    def __init__(self, config: Dict[str, Any], db: Optional[Database] = None):
+        super().__init__(config, db=db)
         self.delimiter = config.get('delimiter', ',')
         self.quotechar = config.get('quotechar', '"')
         self.encoding = config.get('encoding', 'utf-8')

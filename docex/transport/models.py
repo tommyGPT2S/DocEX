@@ -1,8 +1,9 @@
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Dict, Any, Optional, List
-from sqlalchemy import Column, String, Integer, DateTime, JSON, ForeignKey, Text, Boolean, Enum as SQLEnum
+from sqlalchemy import Column, String, Integer, DateTime, JSON, ForeignKey, Text, Boolean
 from sqlalchemy.orm import relationship, declarative_base
+from sqlalchemy.ext.hybrid import hybrid_property
 from uuid import uuid4
 from docex.db.connection import get_base
 from .config import TransportType, RouteMethod
@@ -17,8 +18,20 @@ class Route(Base):
     id = Column(String(36), primary_key=True, default=lambda: f"rt_{uuid4().hex}")
     name = Column(String(255), unique=True, nullable=False)
     purpose = Column(String(50), nullable=False)
-    protocol = Column(SQLEnum(TransportType), nullable=False)
+    # Changed from SQLEnum to String - store enum value as string
+    # This avoids PostgreSQL ENUM type creation issues in multi-tenant schemas
+    protocol = Column(String(50), nullable=False)  # Stores TransportType enum value as string
     config = Column(JSON, nullable=False)  # Stores protocol-specific configuration
+    
+    @hybrid_property
+    def protocol_enum(self) -> TransportType:
+        """Get protocol as TransportType enum."""
+        return TransportType(self.protocol) if self.protocol else None
+    
+    @protocol_enum.setter
+    def protocol_enum(self, value: TransportType):
+        """Set protocol from TransportType enum."""
+        self.protocol = value.value if isinstance(value, TransportType) else str(value)
     
     # Method permissions
     can_upload = Column(Boolean, nullable=False, default=False)
@@ -82,7 +95,9 @@ class RouteOperation(Base):
 
     id = Column(String(36), primary_key=True, default=lambda: f"ro_{uuid4().hex}")
     route_id = Column(String(36), ForeignKey('transport_routes.id', ondelete='CASCADE'), nullable=False)
-    operation_type = Column(SQLEnum(RouteMethod), nullable=False)  # upload, download, list, delete
+    # Changed from SQLEnum to String - store enum value as string
+    # This avoids PostgreSQL ENUM type creation issues in multi-tenant schemas
+    operation_type = Column(String(50), nullable=False)  # Stores RouteMethod enum value as string
     status = Column(String(20), nullable=False)  # success, failed, in_progress
     document_id = Column(String(255), nullable=True)  # Reference to document if applicable
     details = Column(JSON, nullable=True)  # Additional operation details
@@ -92,3 +107,13 @@ class RouteOperation(Base):
 
     # Relationships
     route = relationship("Route", back_populates="operations")
+    
+    @hybrid_property
+    def operation_type_enum(self) -> RouteMethod:
+        """Get operation_type as RouteMethod enum."""
+        return RouteMethod(self.operation_type) if self.operation_type else None
+    
+    @operation_type_enum.setter
+    def operation_type_enum(self, value: RouteMethod):
+        """Set operation_type from RouteMethod enum."""
+        self.operation_type = value.value if isinstance(value, RouteMethod) else str(value)

@@ -20,26 +20,52 @@ class ProcessingResult:
     ):
         self.success = success
         self.content = content
-        # Accept metadata as dict of DocumentMetadata or dict
-        if metadata and all(isinstance(v, MetaModel) for v in metadata.values()):
-            self.metadata = metadata
-        elif metadata:
-            self.metadata = {k: MetaModel.from_dict(v) if isinstance(v, dict) else MetaModel(extra={"value": v}) for k, v in metadata.items()}
+        # Store metadata as plain dict (no DocumentMetadata wrapping)
+        # Extract values from DocumentMetadata objects if passed in
+        if metadata:
+            self.metadata = {}
+            for k, v in metadata.items():
+                # Handle DocumentMetadata objects (extract value)
+                if hasattr(v, 'extra') and hasattr(v.extra, 'get'):
+                    self.metadata[k] = v.extra.get('value', v)
+                elif hasattr(v, 'value'):
+                    self.metadata[k] = v.value
+                elif isinstance(v, dict) and 'extra' in v:
+                    self.metadata[k] = v['extra'].get('value', v)
+                else:
+                    self.metadata[k] = v
         else:
             self.metadata = {}
         self.error = error
         self.timestamp = datetime.now()
 
     def metadata_dict(self) -> Dict[str, Any]:
-        """Return metadata as plain dict for compatibility."""
-        return {k: v.to_dict() for k, v in self.metadata.items()}
+        """Return metadata as plain dict (already plain, just return as-is)."""
+        return self.metadata
 
 class BaseProcessor(ABC):
     """Base class for document processors"""
     
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Dict[str, Any], db: Optional[Database] = None):
+        """
+        Initialize processor
+        
+        Args:
+            config: Processor configuration dictionary
+            db: Optional tenant-aware database instance (for multi-tenancy support)
+        """
         self.config = config
-        self.db = Database()
+        
+        # If db is not provided, try to extract tenant_id from config and create tenant-aware database
+        if db is None:
+            tenant_id = config.get('tenant_id')
+            if tenant_id:
+                db = Database(tenant_id=tenant_id)
+            else:
+                # Fallback to default database (will fail if multi-tenancy is enabled)
+                db = Database()
+        
+        self.db = db
     
     @abstractmethod
     async def process(self, document: Document) -> ProcessingResult:

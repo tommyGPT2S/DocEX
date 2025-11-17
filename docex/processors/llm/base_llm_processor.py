@@ -11,6 +11,7 @@ import logging
 
 from docex.processors.base import BaseProcessor, ProcessingResult
 from docex.document import Document
+from docex.db.connection import Database
 from docex.processors.llm.prompt_manager import PromptManager, get_prompt_manager
 
 logger = logging.getLogger(__name__)
@@ -19,14 +20,15 @@ logger = logging.getLogger(__name__)
 class BaseLLMProcessor(BaseProcessor):
     """Base class for LLM-powered DocEX processors"""
     
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Dict[str, Any], db: Optional[Database] = None):
         """
         Initialize base LLM processor
         
         Args:
             config: Configuration dictionary
+            db: Optional tenant-aware database instance (for multi-tenancy support)
         """
-        super().__init__(config)
+        super().__init__(config, db=db)
         self.llm_service = self._initialize_llm_service(config)
         
         # Initialize prompt manager
@@ -99,9 +101,10 @@ class BaseLLMProcessor(BaseProcessor):
             result = await self._process_with_llm(document, text_content)
             
             # Store results as DocEX metadata
+            # Use tenant-aware database from processor instance
             if result.metadata:
                 from docex.services.metadata_service import MetadataService
-                metadata_service = MetadataService()
+                metadata_service = MetadataService(self.db)
                 metadata_service.update_metadata(document.id, result.metadata)
             
             # DocEX tracks operation success

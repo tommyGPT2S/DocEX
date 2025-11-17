@@ -207,8 +207,11 @@ class TenantDatabaseManager:
         schema_template = postgres_config.get('schema_template', 'tenant_{tenant_id}')
         schema_name = schema_template.format(tenant_id=tenant_id)
         
-        # Create connection URL
-        connection_url = f'postgresql://{user}:{password}@{host}:{port}/{database}'
+        # Create connection URL with URL-encoded credentials
+        from urllib.parse import quote_plus
+        user_encoded = quote_plus(user)
+        password_encoded = quote_plus(password)
+        connection_url = f'postgresql://{user_encoded}:{password_encoded}@{host}:{port}/{database}?sslmode=require'
         
         # Create engine with schema in search_path
         engine = create_engine(
@@ -224,14 +227,16 @@ class TenantDatabaseManager:
         )
         
         # Set search path on connection
+        # Quote schema name to handle special characters (e.g., hyphens)
         @event.listens_for(engine, "connect")
         def set_search_path(dbapi_connection, connection_record):
             with dbapi_connection.cursor() as cursor:
-                cursor.execute(f"SET search_path TO {schema_name}")
+                # Use parameterized query to safely handle schema name with special characters
+                cursor.execute('SET search_path TO %s', (schema_name,))
         
         # Create schema and initialize for tenant
         self._create_postgres_schema(engine, schema_name, tenant_id)
-        self._initialize_tenant_schema(engine, tenant_id)
+        self._initialize_tenant_schema(engine, tenant_id, schema_name)
         
         return engine
     
@@ -247,24 +252,76 @@ class TenantDatabaseManager:
         try:
             with engine.connect() as conn:
                 # Create schema if it doesn't exist
-                conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {schema_name}"))
+                # Quote schema name to handle special characters (e.g., hyphens)
+                conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{schema_name}"'))
                 conn.commit()
                 logger.info(f"Created PostgreSQL schema for tenant {tenant_id}: {schema_name}")
         except SQLAlchemyError as e:
             logger.error(f"Failed to create schema {schema_name} for tenant {tenant_id}: {e}")
             raise
     
-    def _initialize_tenant_schema(self, engine: Any, tenant_id: str) -> None:
+    def _initialize_tenant_schema(self, engine: Any, tenant_id: str, schema_name: Optional[str] = None) -> None:
         """
         Initialize database schema for tenant (create tables).
         
         Args:
             engine: SQLAlchemy engine
             tenant_id: Tenant identifier
+            schema_name: Schema name for tenant (e.g., "tenant_tenant1")
         """
         try:
+            # For PostgreSQL, set schema on all tables and ENUM types before creating
+            # This ensures ENUM types and tables are created in the tenant schema, not public
+            if schema_name:
+                # Set schema on all Base tables
+                for table in Base.metadata.tables.values():
+                    table.schema = schema_name
+                
+                # Set schema on all TransportBase tables if available
+                try:
+                    from docex.transport.models import TransportBase
+                    for table in TransportBase.metadata.tables.values():
+                        table.schema = schema_name
+                except ImportError:
+                    pass
+                
+                # Set schema on ENUM types - SQLAlchemy ENUM types need explicit schema
+                # PostgreSQL ENUM types must have schema set explicitly
+                from sqlalchemy.dialects.postgresql import ENUM
+                
+                # Collect all tables (Base + TransportBase)
+                all_tables = list(Base.metadata.tables.values())
+                try:
+                    from docex.transport.models import TransportBase
+                    all_tables.extend(list(TransportBase.metadata.tables.values()))
+                except ImportError:
+                    pass
+                
+                # Iterate through all tables and set schema on ENUM columns
+                for table in all_tables:
+                    for column in table.columns:
+                        if isinstance(column.type, ENUM):
+                            # Set schema on ENUM type - this is critical for PostgreSQL
+                            # PostgreSQL ENUM types are database-level, but SQLAlchemy
+                            # can create them with schema qualification
+                            column.type.schema = schema_name
+                            # Also set name_with_schema to ensure it's created in the right place
+                            if hasattr(column.type, 'name'):
+                                # Create ENUM type name with schema qualification
+                                enum_name = column.type.name
+                                if enum_name and not enum_name.startswith(f'"{schema_name}".'):
+                                    column.type.name = f'"{schema_name}".{enum_name}'
+            
             # Create all tables in tenant's database/schema
+            # With schema set on tables and ENUM types, SQLAlchemy will create them in the correct schema
             Base.metadata.create_all(engine)
+            
+            # Also create TransportBase tables if available
+            try:
+                from docex.transport.models import TransportBase
+                TransportBase.metadata.create_all(engine)
+            except ImportError:
+                pass
             
             # Verify table creation
             inspector = inspect(engine)
@@ -275,14 +332,136 @@ class TenantDatabaseManager:
                 'transport_routes', 'route_operations', 'processors', 'processing_operations'
             ]
             missing_tables = [table for table in required_tables if table not in tables]
-            
+
             if missing_tables:
                 logger.warning(f"Some tables missing for tenant {tenant_id}: {missing_tables}")
             else:
                 logger.info(f"Schema initialized for tenant {tenant_id}")
+            
+            # Create performance indexes from schema.sql
+            # SQLAlchemy only creates primary key and unique indexes, not performance indexes
+            # This ensures all tenants have optimal query performance
+            self._create_performance_indexes(engine, schema_name)
         except Exception as e:
             logger.error(f"Failed to initialize schema for tenant {tenant_id}: {e}")
             raise
+    
+    def _create_performance_indexes(self, engine: Any, schema_name: str) -> None:
+        """
+        Create performance indexes from schema.sql for tenant schema.
+        
+        SQLAlchemy's create_all() only creates primary key and unique indexes.
+        This method creates the additional performance indexes defined in schema.sql.
+        
+        Args:
+            engine: SQLAlchemy engine
+            schema_name: Schema name for tenant
+        """
+        try:
+            from pathlib import Path
+            import re
+            
+            # Find schema.sql file (try multiple locations)
+            possible_paths = [
+                Path(__file__).parent / "schema.sql",
+                Path(__file__).parent.parent.parent / "docex" / "db" / "schema.sql",
+            ]
+            
+            schema_sql_path = None
+            for path in possible_paths:
+                if path.exists():
+                    schema_sql_path = path
+                    break
+            
+            if not schema_sql_path:
+                logger.warning("schema.sql not found - skipping performance index creation")
+                return
+            
+            with open(schema_sql_path, 'r') as f:
+                schema_sql = f.read()
+            
+            # Extract CREATE INDEX statements
+            lines = schema_sql.split('\n')
+            index_statements = []
+            
+            for line in lines:
+                # Skip empty lines and comments
+                stripped = line.strip()
+                if not stripped or stripped.startswith('--'):
+                    continue
+                
+                # Look for CREATE INDEX statements (case-insensitive)
+                if 'CREATE INDEX' in stripped.upper():
+                    index_stmt = stripped
+                    # Remove trailing semicolon if present
+                    if index_stmt.endswith(';'):
+                        index_stmt = index_stmt[:-1]
+                    
+                    # Map schema.sql table names (plural) to actual SQLAlchemy table names (singular)
+                    # schema.sql uses: documents, but SQLAlchemy creates: document
+                    table_name_mapping = {
+                        'documents': 'document',  # schema.sql uses plural, SQLAlchemy uses singular
+                    }
+                    
+                    # Replace table names using mapping
+                    for old_name, new_name in table_name_mapping.items():
+                        # Pattern: ON old_name( -> ON new_name(
+                        pattern = rf'ON\s+{old_name}\s*\('
+                        index_stmt = re.sub(pattern, f'ON {new_name}(', index_stmt, flags=re.IGNORECASE)
+                    
+                    index_statements.append(index_stmt)
+            
+            # Execute index creation
+            if not index_statements:
+                logger.warning(f"No index statements found in schema.sql")
+                return
+                
+            logger.info(f"Creating {len(index_statements)} performance indexes in schema '{schema_name}'")
+            
+            # Set search_path to tenant schema so we can use unqualified table names
+            # Use individual transactions (savepoints) so one failure doesn't abort all
+            with engine.connect() as conn:
+                # Set search path to tenant schema
+                conn.execute(text(f'SET search_path TO "{schema_name}"'))
+                conn.commit()
+                
+                indexes_created = 0
+                indexes_skipped = 0
+                indexes_failed = 0
+                
+                for index_stmt in index_statements:
+                    # Use a savepoint for each index so failures don't abort the transaction
+                    savepoint = conn.begin_nested()
+                    try:
+                        conn.execute(text(index_stmt))
+                        savepoint.commit()
+                        indexes_created += 1
+                    except Exception as e:
+                        savepoint.rollback()
+                        error_msg = str(e).lower()
+                        # Ignore errors for indexes that already exist or columns that don't exist
+                        if 'already exists' in error_msg or 'duplicate' in error_msg:
+                            indexes_created += 1  # Count as success
+                        elif 'does not exist' in error_msg or 'undefined column' in error_msg:
+                            indexes_skipped += 1
+                            logger.debug(f"Skipping index (column/table doesn't exist): {index_stmt[:80]}")
+                        else:
+                            indexes_failed += 1
+                            logger.warning(f"Failed to create index: {str(e)[:100]}")
+                            logger.debug(f"  Statement: {index_stmt[:100]}")
+                
+                conn.commit()
+                
+                if indexes_created > 0:
+                    logger.info(f"✅ Created {indexes_created} performance indexes in schema '{schema_name}'")
+                if indexes_skipped > 0:
+                    logger.info(f"⏭️  Skipped {indexes_skipped} indexes (columns/tables don't exist)")
+                if indexes_failed > 0:
+                    logger.warning(f"⚠️  Failed to create {indexes_failed} indexes (out of {len(index_statements)} total)")
+                    
+        except Exception as e:
+            logger.warning(f"Failed to create performance indexes for schema {schema_name}: {e}")
+            # Don't raise - indexes are optional, tables are required
     
     def get_tenant_session(self, tenant_id: Optional[str] = None) -> Session:
         """
