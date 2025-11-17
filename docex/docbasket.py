@@ -369,11 +369,15 @@ class DocBasket:
                 checksum = hashlib.sha256(content.encode()).hexdigest()
                 size = len(content.encode())
                 raw_content = content
+            # Check for duplicates: same checksum AND same source/filename
+            # This allows same file content with different names to be treated as different documents
+            file_name = file_path.name if hasattr(file_path, 'name') else str(file_path)
             existing = session.execute(
                 select(DocumentModel).where(
                     and_(
                         DocumentModel.basket_id == self.id,
-                        DocumentModel.checksum == checksum
+                        DocumentModel.checksum == checksum,
+                        DocumentModel.source == str(file_path)  # Also check source/filename
                     )
                 )
             ).scalar_one_or_none()
@@ -420,12 +424,18 @@ class DocBasket:
             stored_path = self.storage_service.store_document(str(file_path), document_path)
             document.path = stored_path
             if metadata:
+                # Store metadata in same session - serialize values to JSON
+                import json
                 for key, value in metadata.items():
-                    print(f"Storing metadata: {key} = {value}")  # Debug log
+                    # Serialize value to JSON string
+                    try:
+                        value_json = json.dumps(value, default=str)
+                    except (TypeError, ValueError):
+                        value_json = json.dumps(str(value))
                     meta = DocumentMetadata(
                         document_id=document.id,
                         key=key,
-                        value=value,
+                        value=value_json,
                         created_at=datetime.now(timezone.utc),
                         updated_at=datetime.now(timezone.utc)
                     )

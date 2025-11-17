@@ -1,6 +1,6 @@
 from typing import Dict, Any, Optional, Union, List
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, UTC
 import json
 
 from docex.services.storage_service import StorageService
