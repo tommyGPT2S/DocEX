@@ -235,20 +235,53 @@ class SemanticSearchService:
             # Build query using string formatting for vector cast (same approach as VectorIndexingProcessor)
             # Use fully qualified type name public.vector for multi-tenant schemas
             # Note: We use string formatting for the embedding literal to avoid SQLAlchemy parameter binding issues
-            query_sql = f"""
-                SELECT 
-                    id,
-                    1 - (embedding <=> '{embedding_str}'::public.vector) AS similarity
-                FROM document
-                WHERE embedding IS NOT NULL
-            """
+            
+            # Check if we need to filter by metadata
+            needs_metadata_join = filters and any(key in filters for key in ['document_type'])
+            
+            if needs_metadata_join:
+                # Join with document_metadata table for filtering
+                query_sql = f"""
+                    SELECT DISTINCT
+                        d.id,
+                        1 - (d.embedding <=> '{embedding_str}'::public.vector) AS similarity
+                    FROM document d
+                    INNER JOIN document_metadata dm ON dm.document_id = d.id
+                    WHERE d.embedding IS NOT NULL
+                """
+                table_alias = "d"
+            else:
+                query_sql = f"""
+                    SELECT 
+                        id,
+                        1 - (embedding <=> '{embedding_str}'::public.vector) AS similarity
+                    FROM document
+                    WHERE embedding IS NOT NULL
+                """
+                table_alias = ""
+            
             params = {}
             
             if basket_id:
-                query_sql += " AND basket_id = :basket_id"
+                if table_alias:
+                    query_sql += f" AND {table_alias}.basket_id = :basket_id"
+                else:
+                    query_sql += " AND basket_id = :basket_id"
                 params['basket_id'] = basket_id
             
-            query_sql += f" ORDER BY embedding <=> '{embedding_str}'::public.vector LIMIT :limit"
+            # Add metadata filters
+            if filters:
+                for key, value in filters.items():
+                    if key == 'document_type':
+                        # Filter by document_type metadata
+                        query_sql += " AND dm.key = 'document_type' AND dm.value = :document_type"
+                        params['document_type'] = str(value)
+                    # Add other metadata filters as needed
+            
+            if table_alias:
+                query_sql += f" ORDER BY {table_alias}.embedding <=> '{embedding_str}'::public.vector LIMIT :limit"
+            else:
+                query_sql += f" ORDER BY embedding <=> '{embedding_str}'::public.vector LIMIT :limit"
             params['limit'] = top_k
             
             results = session.execute(text(query_sql), params).fetchall()
