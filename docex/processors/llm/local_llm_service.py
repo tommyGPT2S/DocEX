@@ -14,14 +14,54 @@ logger = logging.getLogger(__name__)
 
 
 def clean_json_response(content: str) -> str:
-    """Remove markdown code blocks from LLM response"""
+    """
+    Remove markdown code blocks and extract pure JSON from local LLM response
+    
+    Local LLMs (especially instruction-tuned models) often wrap JSON in markdown 
+    code blocks or add explanatory text. This function intelligently extracts 
+    just the JSON portion for reliable parsing.
+    
+    Args:
+        content: Raw response content from local LLM
+        
+    Returns:
+        Cleaned JSON string ready for parsing
+    """
     content = content.strip()
+    
+    # Handle various markdown code block formats
     if content.startswith('```json'):
         content = content[7:]
-    if content.startswith('```'):
+    elif content.startswith('```JSON'):
+        content = content[7:]
+    elif content.startswith('```'):
         content = content[3:]
+    
+    # Remove trailing code blocks
     if content.endswith('```'):
         content = content[:-3]
+    
+    # Handle cases where there's text before/after JSON
+    lines = content.split('\n')
+    json_start = -1
+    json_end = -1
+    
+    # Find the start of JSON (look for opening brace)
+    for i, line in enumerate(lines):
+        if line.strip().startswith('{'):
+            json_start = i
+            break
+    
+    # Find the end of JSON (look for closing brace)
+    for i in range(len(lines) - 1, -1, -1):
+        if lines[i].strip().endswith('}'):
+            json_end = i
+            break
+    
+    # Extract just the JSON portion if found
+    if json_start >= 0 and json_end >= 0 and json_end >= json_start:
+        content = '\n'.join(lines[json_start:json_end + 1])
+    
     return content.strip()
 
 
