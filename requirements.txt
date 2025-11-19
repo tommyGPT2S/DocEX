@@ -10,4 +10,12 @@ aiohttp>=3.9.0
 python-dotenv>=1.0.0
 jinja2>=3.1.0
 openai>=1.0.0
-anthropic>=0.34.0 
+anthropic>=0.34.0
+
+# RAG and Vector Database Dependencies
+numpy>=1.24.0
+faiss-cpu>=1.7.0
+pinecone-client>=3.0.0
+
+# Optional: GPU acceleration for FAISS
+# faiss-gpu>=1.7.0  # Uncomment if you have GPU support 
