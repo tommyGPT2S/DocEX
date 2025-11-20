@@ -1,0 +1,56 @@
+SOFTWARE LICENSING AGREEMENT
+Contract ID: SLA-2024-ENTERPRISE-001
+Execution Date: November 18, 2024
+
+CONTRACTING PARTIES:
+===================
+LICENSOR: DocEX Technologies Inc.
+          Delaware Corporation
+          1000 Innovation Drive
+          San Francisco, CA 94105
+          Tax ID: 12-3456789
+
+LICENSEE: Global Solutions Enterprise Ltd.
+          UK Private Limited Company  
+          100 London Bridge Street
+          London SE1 9SG, United Kingdom
+          Company Number: GB987654321
+
+SOFTWARE LICENSED:
+==================
+Product: DocEX Enterprise Platform v2.5
+License Type: Enterprise Multi-Tenant
+User Limit: 1,000 concurrent users
+Geographic Scope: Worldwide
+Term: 3 years (Nov 18, 2024 - Nov 17, 2027)
+
+FINANCIAL TERMS:
+===============
+Year 1: $120,000 (due upon execution)
+Year 2: $130,000 (due Nov 18, 2025)
+Year 3: $140,000 (due Nov 18, 2026)
+Total Contract Value: $390,000
+
+Implementation Services: $45,000
+Training Package: $25,000
+Premium Support (3 years): $60,000
+TOTAL DEAL VALUE: $520,000
+
+TECHNICAL SPECIFICATIONS:
+========================
+- Cloud deployment on AWS/Azure
+- SSO integration (SAML 2.0, OAuth 2.0)
+- API rate limits: 10,000 requests/hour
+- Data residency: EU-compliant
+- SLA: 99.9% uptime guarantee
+- Support: 24/7 technical assistance
+
+RENEWAL TERMS:
+=============
+- Automatic renewal for 1-year terms
+- 90-day termination notice required
+- Price increase cap: 5% annually
+- Volume discounts available for user expansion
+
+Governing Law: Delaware, USA
+Dispute Resolution: Binding arbitration

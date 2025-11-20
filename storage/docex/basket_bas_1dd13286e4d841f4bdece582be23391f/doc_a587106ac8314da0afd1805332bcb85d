@@ -1,0 +1,12 @@
+
+        def calculate_fibonacci(n):
+            '''Calculate the nth Fibonacci number'''
+            if n <= 1:
+                return n
+            else:
+                return calculate_fibonacci(n-1) + calculate_fibonacci(n-2)
+        
+        # Example usage
+        result = calculate_fibonacci(10)
+        print(f"The 10th Fibonacci number is: {result}")
+        

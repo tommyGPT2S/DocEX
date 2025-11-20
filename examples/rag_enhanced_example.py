@@ -7,6 +7,10 @@ This example demonstrates the advanced RAG service with vector database integrat
 import asyncio
 import logging
 import os
+import tempfile
+import numpy as np
+import hashlib
+from typing import List
 from docex.docbasket import DocBasket
 from docex.processors.llm.claude_adapter import ClaudeAdapter
 from docex.processors.vector.semantic_search_service import SemanticSearchService
@@ -17,7 +21,181 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+class EmbeddingService:
+    """Unified embedding service with automatic provider detection.
+    
+    Automatically detects and initializes the best available embedding provider:
+    1. OpenAI (if API key available)
+    2. Ollama (if server running locally)
+    3. Mock embeddings (fallback for testing)
+    
+    Supports different embedding dimensions and models for optimal performance.
+    """
+    """Embedding service supporting multiple providers"""
+    
+    def __init__(self, provider: str = "auto", **kwargs):
+        self.provider = provider
+        self.client = None
+        self.model_name = None
+        self.dimension = 1536  # Default OpenAI dimension
+        
+        if provider == "auto":
+            self._auto_detect_provider(**kwargs)
+        elif provider == "openai":
+            self._init_openai(**kwargs)
+        elif provider == "ollama":
+            self._init_ollama(**kwargs)
+        elif provider == "mock":
+            self._init_mock(**kwargs)
+        else:
+            raise ValueError(f"Unsupported embedding provider: {provider}")
+    
+    def _auto_detect_provider(self, **kwargs):
+        """Auto-detect the best available embedding provider"""
+        # Try OpenAI first
+        try:
+            import openai
+            if os.getenv('OPENAI_API_KEY'):
+                self._init_openai(**kwargs)
+                return
+        except ImportError:
+            pass
+        
+        # Try Ollama
+        try:
+            import ollama
+            # Test if Ollama is running
+            ollama.list()
+            self._init_ollama(**kwargs)
+            return
+        except (ImportError, Exception):
+            pass
+        
+        # Fallback to mock
+        logger.warning("No embedding provider available, using mock embeddings")
+        self._init_mock(**kwargs)
+    
+    def _init_openai(self, **kwargs):
+        """Initialize OpenAI embedding service"""
+        try:
+            import openai
+            self.client = openai.OpenAI()
+            self.model_name = kwargs.get('model', 'text-embedding-3-small')
+            self.dimension = 1536  # text-embedding-3-small dimension
+            self.provider = "openai"
+            logger.info(f"Initialized OpenAI embeddings with model: {self.model_name}")
+        except Exception as e:
+            logger.error(f"Failed to initialize OpenAI: {e}")
+            self._init_mock(**kwargs)
+    
+    def _init_ollama(self, **kwargs):
+        """Initialize Ollama embedding service"""
+        try:
+            import ollama
+            self.client = ollama
+            # Use a common embedding model for Ollama
+            self.model_name = kwargs.get('model', 'nomic-embed-text')
+            self.dimension = 768  # Common dimension for nomic-embed-text
+            self.provider = "ollama"
+            
+            # Test the model
+            try:
+                test_result = self.client.embeddings(model=self.model_name, prompt="test")
+                if 'embedding' in test_result:
+                    self.dimension = len(test_result['embedding'])
+                    logger.info(f"Initialized Ollama embeddings with model: {self.model_name}, dimension: {self.dimension}")
+                else:
+                    raise Exception("Model test failed")
+            except Exception:
+                logger.warning(f"Model {self.model_name} not available, trying to pull...")
+                try:
+                    self.client.pull(self.model_name)
+                    logger.info(f"Successfully pulled {self.model_name}")
+                except Exception as pull_error:
+                    logger.error(f"Failed to pull model: {pull_error}")
+                    self._init_mock(**kwargs)
+                    return
+                    
+        except Exception as e:
+            logger.error(f"Failed to initialize Ollama: {e}")
+            self._init_mock(**kwargs)
+    
+    def _init_mock(self, **kwargs):
+        """Initialize mock embedding service"""
+        self.provider = "mock"
+        self.model_name = "mock-embeddings"
+        self.dimension = kwargs.get('dimension', 1536)
+        logger.info(f"Initialized mock embeddings with dimension: {self.dimension}")
+    
+    async def get_embeddings(self, texts: List[str]) -> List[np.ndarray]:
+        """Get embeddings for a list of texts"""
+        if self.provider == "openai":
+            return await self._get_openai_embeddings(texts)
+        elif self.provider == "ollama":
+            return await self._get_ollama_embeddings(texts)
+        else:
+            return await self._get_mock_embeddings(texts)
+    
+    async def _get_openai_embeddings(self, texts: List[str]) -> List[np.ndarray]:
+        """Get embeddings from OpenAI"""
+        try:
+            response = self.client.embeddings.create(
+                input=texts,
+                model=self.model_name
+            )
+            embeddings = [np.array(data.embedding, dtype=np.float32) for data in response.data]
+            return embeddings
+        except Exception as e:
+            logger.error(f"OpenAI embedding error: {e}")
+            return await self._get_mock_embeddings(texts)
+    
+    async def _get_ollama_embeddings(self, texts: List[str]) -> List[np.ndarray]:
+        """Get embeddings from Ollama"""
+        try:
+            embeddings = []
+            for text in texts:
+                response = self.client.embeddings(
+                    model=self.model_name,
+                    prompt=text
+                )
+                embedding = np.array(response['embedding'], dtype=np.float32)
+                embeddings.append(embedding)
+            return embeddings
+        except Exception as e:
+            logger.error(f"Ollama embedding error: {e}")
+            return await self._get_mock_embeddings(texts)
+    
+    async def _get_mock_embeddings(self, texts: List[str]) -> List[np.ndarray]:
+        """Generate mock embeddings based on text hash"""
+        embeddings = []
+        for text in texts:
+            # Create deterministic embedding based on text hash
+            hash_obj = hashlib.md5(text.encode())
+            seed = int(hash_obj.hexdigest()[:8], 16)
+            np.random.seed(seed)
+            embedding = np.random.rand(self.dimension).astype(np.float32)
+            # Normalize the embedding
+            embedding = embedding / np.linalg.norm(embedding)
+            embeddings.append(embedding)
+        return embeddings
+
+
 async def faiss_rag_example():
+    """Demonstrate RAG with FAISS vector database.
+    
+    This example shows:
+    - Local document processing and storage
+    - FAISS vector indexing with cosine similarity
+    - Ollama embeddings for semantic representation
+    - Query processing with similarity search
+    - Persistent storage for vector index
+    
+    FAISS is ideal for:
+    - Local development and testing
+    - Privacy-sensitive applications
+    - Offline processing
+    - Cost-effective vector search
+    """
     """Demonstrate RAG with FAISS vector database"""
     
     print("🔬 DocEX Enhanced RAG with FAISS")
@@ -26,7 +204,16 @@ async def faiss_rag_example():
     try:
         # Step 1: Create documents
         print("📁 Creating sample document collection...")
-        basket = DocBasket()
+        
+        # Create basket using the proper create method with unique name
+        import datetime
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        basket_name = f"Tech_Docs_FAISS_{timestamp}"
+        
+        basket = DocBasket.create(
+            name=basket_name,
+            description="Sample technology documentation for FAISS RAG testing"
+        )
         
         # More comprehensive document set for vector search
         documents = [
@@ -83,59 +270,95 @@ async def faiss_rag_example():
         ]
         
         for doc_info in documents:
-            doc = basket.create_document()
-            doc.name = doc_info['name']
-            doc.content = doc_info['content']
-            doc.metadata = {'category': 'technology', 'type': 'guide', 'added_by': 'example'}
-            await basket.add_document(doc)
+            # Create temporary file with the document content
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as tmp_file:
+                tmp_file.write(doc_info['content'])
+                tmp_file_path = tmp_file.name
+            
+            try:
+                # Add document to basket using file path
+                doc = basket.add(
+                    file_path=tmp_file_path,
+                    document_type='file',
+                    metadata={
+                        'category': 'technology',
+                        'type': 'guide', 
+                        'added_by': 'example',
+                        'original_name': doc_info['name']
+                    }
+                )
+                
+                # Update document name to be more descriptive
+                doc.name = doc_info['name']
+                
+            finally:
+                # Clean up temporary file
+                try:
+                    os.unlink(tmp_file_path)
+                except OSError:
+                    pass
         
         print(f"✅ Created {len(documents)} documents")
         
-        # Step 2: Initialize semantic search (for hybrid search)
-        print("🔍 Initializing semantic search service...")
-        
-        semantic_search = SemanticSearchService(config={
-            'db_type': 'memory',
-            'embedding_model': 'text-embedding-ada-002',
-            'max_results': 10
-        })
-        
-        await semantic_search.initialize()
-        await semantic_search.index_documents(basket.get_all_documents(), basket.id)
-        
-        print("✅ Semantic search initialized")
+        # Step 2: Initialize embedding service
+        print("🔍 Initializing embedding service...")
+        embedding_service = EmbeddingService(provider="auto")
         
         # Step 3: Initialize LLM adapter
-        print("🤖 Initializing Claude adapter...")
-        claude_adapter = ClaudeAdapter()
-        print("✅ Claude adapter ready")
+        print("🤖 Initializing Ollama LLM adapter...")
+        try:
+            from docex.processors.llm.ollama_adapter import OllamaAdapter
+            ollama_config = {
+                'base_url': 'http://127.0.0.1:11434',
+                'model': 'llama3.2',  # Use available model
+                'max_tokens': 4000
+            }
+            llm_adapter = OllamaAdapter(ollama_config)
+        except ImportError:
+            # Fallback to Claude if Ollama adapter doesn't exist
+            print("   Ollama adapter not found, using Claude...")
+            claude_config = {
+                'api_key': os.getenv('ANTHROPIC_API_KEY'),  # Use environment variable
+            'model': 'claude-3-sonnet-20240229',
+            'max_tokens': 4000
+            }
+            llm_adapter = ClaudeAdapter(claude_config)
         
-        # Step 4: Configure enhanced RAG with FAISS
+        # Add embedding capability to LLM adapter
+        llm_adapter.generate_embeddings = embedding_service.get_embeddings
+        print(f"✅ LLM adapter ready with {embedding_service.provider} embeddings (dim: {embedding_service.dimension})")
+        
+        # Step 3: For this demo, we'll skip semantic search initialization
+        # as it requires more complex setup. We'll focus on vector database RAG.
+        print("🔍 Skipping semantic search for this FAISS demo...")
+        semantic_search = None
+        
+        # Step 4: Configure enhanced RAG with FAISS (vector-only mode)
         print("⚡ Configuring enhanced RAG with FAISS...")
         
-        # FAISS configuration
+        # FAISS configuration (use embedding service dimension)
         faiss_config = {
-            'dimension': 1536,  # OpenAI embedding dimension
+            'dimension': embedding_service.dimension,
             'index_type': 'flat',  # Simple flat index for demo
             'metric': 'cosine',
-            'storage_path': './storage/faiss_index.bin'  # Persist index
+            'storage_path': f'./storage/faiss_index_{embedding_service.provider}.bin'  # Provider-specific index
         }
         
         enhanced_config = EnhancedRAGConfig(
             vector_db_type='faiss',
             vector_db_config=faiss_config,
-            enable_hybrid_search=True,
-            semantic_weight=0.6,
-            vector_weight=0.4,
+            enable_hybrid_search=False,  # Vector-only for demo
+            semantic_weight=0.0,
+            vector_weight=1.0,
             enable_caching=True,
             top_k_documents=5,
-            min_similarity=0.75
+            min_similarity=0.3  # Lower threshold for demo (was 0.75)
         )
         
         # Create enhanced RAG service
         rag_service = EnhancedRAGService(
             semantic_search_service=semantic_search,
-            llm_adapter=claude_adapter,
+            llm_adapter=llm_adapter,
             config=enhanced_config
         )
         
@@ -152,7 +375,8 @@ async def faiss_rag_example():
         # Step 5: Add documents to vector database
         print("📊 Adding documents to FAISS vector database...")
         
-        docs_added = await rag_service.add_documents_to_vector_db(basket.get_all_documents())
+        basket_docs = basket.list()
+        docs_added = await rag_service.add_documents_to_vector_db(basket_docs)
         
         if docs_added:
             print("✅ Documents added to vector database")
@@ -211,20 +435,44 @@ async def faiss_rag_example():
 
 
 async def pinecone_rag_example():
+    """Demonstrate RAG with Pinecone cloud vector database.
+    
+    This example shows:
+    - Cloud-based vector storage and retrieval
+    - Scalable indexing for large document collections
+    - Ollama LLM integration for local text generation
+    - Enhanced RAG service with confidence scoring
+    - Proper DocBasket integration
+    
+    Pinecone is ideal for:
+    - Production applications
+    - Large-scale document collections
+    - Multi-user systems
+    - Hybrid cloud architectures
+    """
     """Demonstrate RAG with Pinecone vector database"""
     
     print("\n☁️  DocEX Enhanced RAG with Pinecone")
     print("=" * 50)
     
-    # Check for Pinecone configuration
-    if not os.getenv('PINECONE_API_KEY') or not os.getenv('PINECONE_ENVIRONMENT'):
-        print("⚠️  Pinecone example requires PINECONE_API_KEY and PINECONE_ENVIRONMENT environment variables")
-        print("   Set these variables to run the Pinecone example")
-        return
+    # We'll set up to use environment variables that you can provide
+    print("🔑 Pinecone Configuration:")
+    print("   PINECONE_API_KEY: [To be provided]")
+    print("   PINECONE_ENVIRONMENT: [To be provided]")
+    print("   INDEX_NAME: docex-demo")
     
     try:
-        print("📁 Setting up documents for Pinecone...")
-        basket = DocBasket()
+        print("📊 Setting up documents for Pinecone...")
+        
+        # Create basket with unique name
+        import datetime
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        basket_name = f"Pinecone_Demo_{timestamp}"
+        
+        basket = DocBasket.create(
+            name=basket_name,
+            description="Pinecone vector database demo documents"
+        )
         
         # Create sample documents
         tech_docs = [
@@ -249,41 +497,99 @@ async def pinecone_rag_example():
         ]
         
         for doc_info in tech_docs:
-            doc = basket.create_document()
-            doc.name = doc_info['name']
-            doc.content = doc_info['content']
-            doc.metadata = {'category': 'nlp', 'type': 'advanced'}
-            await basket.add_document(doc)
+            # Create temporary file with the document content
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as tmp_file:
+                tmp_file.write(doc_info['content'])
+                tmp_file_path = tmp_file.name
+            
+            try:
+                # Add document to basket using file path
+                doc = basket.add(
+                    file_path=tmp_file_path,
+                    document_type='file',
+                    metadata={
+                        'category': 'nlp',
+                        'type': 'advanced', 
+                        'added_by': 'pinecone_example',
+                        'original_name': doc_info['name']
+                    }
+                )
+                
+                # Update document name
+                doc.name = doc_info['name']
+                
+            finally:
+                # Clean up temporary file
+                try:
+                    os.unlink(tmp_file_path)
+                except OSError:
+                    pass
         
-        # Initialize semantic search
-        semantic_search = SemanticSearchService(config={'db_type': 'memory'})
-        await semantic_search.initialize()
-        await semantic_search.index_documents(basket.get_all_documents(), basket.id)
+        print(f"✅ Created {len(tech_docs)} documents")
         
-        # Initialize Claude adapter
-        claude_adapter = ClaudeAdapter()
+        # Initialize embedding service
+        print("🔍 Initializing embedding service...")
+        embedding_service = EmbeddingService(provider="auto")
         
-        # Configure Pinecone
+        # Initialize LLM adapter
+        print("🤖 Initializing Ollama LLM adapter...")
+        try:
+            from docex.processors.llm.ollama_adapter import OllamaAdapter
+            ollama_config = {
+                'base_url': 'http://127.0.0.1:11434',
+                'model': 'llama3.2',  # Use available model
+                'max_tokens': 4000
+            }
+            llm_adapter = OllamaAdapter(ollama_config)
+            await llm_adapter.initialize()
+            print("   ✅ Ollama LLM adapter ready")
+        except Exception as e:
+            # Fallback to Claude if Ollama adapter doesn't work
+            print(f"   ❌ Ollama adapter failed: {e}")
+            print("   Fallback to Claude...")
+            from docex.processors.llm.claude_adapter import ClaudeAdapter
+            claude_config = {
+                'api_key': os.getenv('ANTHROPIC_API_KEY'),  # Use environment variable
+                'model': 'claude-3-sonnet-20240229',
+                'max_tokens': 4000
+            }
+            llm_adapter = ClaudeAdapter(claude_config)
+        
+        llm_adapter.generate_embeddings = embedding_service.get_embeddings
+        print(f"✅ Services ready with {embedding_service.provider} embeddings (dim: {embedding_service.dimension})")
+        
+        # For this demo, we'll skip semantic search setup
+        semantic_search = None
+        
+        # Configure Pinecone with your credentials
+        print("☁️  Configuring Pinecone...")
         pinecone_config = {
-            'api_key': os.getenv('PINECONE_API_KEY'),
-            'environment': os.getenv('PINECONE_ENVIRONMENT'),
+            'api_key': os.getenv('PINECONE_API_KEY'),  # Use environment variable
             'index_name': 'docex-rag-demo',
-            'dimension': 1536,
+            'dimension': embedding_service.dimension,  # Use actual embedding dimension
             'metric': 'cosine'
         }
         
         enhanced_config = EnhancedRAGConfig(
             vector_db_type='pinecone',
             vector_db_config=pinecone_config,
-            enable_hybrid_search=True,
-            semantic_weight=0.5,
-            vector_weight=0.5
+            enable_hybrid_search=False,  # Vector-only for demo
+            semantic_weight=0.0,
+            vector_weight=1.0,
+            enable_caching=True,
+            top_k_documents=5,
+            min_similarity=0.3  # Lower threshold for demo
         )
+        
+        # Show configuration
+        print(f"   API Key: {pinecone_config['api_key'][:20]}...")
+        print(f"   Index Name: {pinecone_config['index_name']}")
+        print(f"   Dimension: {pinecone_config['dimension']}")
         
         # Create enhanced RAG service
         rag_service = EnhancedRAGService(
             semantic_search_service=semantic_search,
-            llm_adapter=claude_adapter,
+            llm_adapter=llm_adapter,
             config=enhanced_config
         )
         
@@ -299,7 +605,18 @@ async def pinecone_rag_example():
         
         # Add documents
         print("📊 Adding documents to Pinecone...")
-        await rag_service.add_documents_to_vector_db(basket.get_all_documents())
+        basket_docs = basket.list()
+        docs_added = await rag_service.add_documents_to_vector_db(basket_docs)
+        
+        if docs_added:
+            print("✅ Documents added to Pinecone")
+        else:
+            print("❌ Failed to add documents to Pinecone")
+            return
+        
+        # Get stats
+        stats = await rag_service.get_vector_db_stats()
+        print(f"📈 Pinecone Stats: {stats}")
         
         # Test queries
         pinecone_questions = [

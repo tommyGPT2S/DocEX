@@ -8,6 +8,7 @@ for improved performance and scalability.
 import logging
 import asyncio
 import numpy as np
+from datetime import datetime
 from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
 
@@ -304,12 +305,28 @@ class EnhancedRAGService(RAGService):
             # Convert vector results to semantic search results
             semantic_results = []
             for vector_result in vector_results:
-                # Convert VectorDocument back to Document
-                doc = Document()
-                doc.content = vector_result.document.content
-                doc.metadata = vector_result.document.metadata
-                if hasattr(doc, 'name'):
-                    doc.name = vector_result.document.metadata.get('name', vector_result.document.id)
+                # Create a minimal mock Document for the vector result
+                # since full Document construction requires many database fields
+                class MockDocument:
+                    def __init__(self, content, metadata, doc_id):
+                        self.content = content
+                        self.metadata = metadata
+                        self.id = doc_id
+                        self.name = metadata.get('original_name', f"doc_{doc_id}")
+                        self.path = f"vector://{doc_id}"
+                        self.content_type = "text/plain"
+                        self.document_type = "vector"
+                        self.size = len(content)
+                        self.checksum = ""
+                        self.status = "active"
+                        self.created_at = datetime.now()
+                        self.updated_at = datetime.now()
+                
+                doc = MockDocument(
+                    content=vector_result.document.content,
+                    metadata=vector_result.document.metadata,
+                    doc_id=vector_result.document.id
+                )
                 
                 semantic_result = SemanticSearchResult(
                     document=doc,
@@ -504,8 +521,19 @@ class EnhancedRAGService(RAGService):
             vector_docs = []
             
             for doc in documents:
-                # Generate embedding for document
-                content = getattr(doc, 'content', '') or str(doc)
+                # Generate embedding for document - get content properly
+                try:
+                    # Try to get content using Document's get_content method
+                    if hasattr(doc, 'get_content'):
+                        content = doc.get_content(mode='text')
+                    elif hasattr(doc, 'content'):
+                        content = doc.content
+                    else:
+                        content = str(doc)
+                except Exception as e:
+                    logger.warning(f"Failed to get content from document {doc}: {e}")
+                    content = str(doc)
+                
                 embedding = await self._get_query_embedding(content)
                 
                 # Create VectorDocument

@@ -251,17 +251,39 @@ class RAGService:
         logger.info("Generating answer with LLM...")
         
         try:
-            # Generate answer using LLM
+            # Generate answer using LLM through DocEX architecture
+            # DocBasket integration ensures proper tracking and storage patterns
+            from docex.docbasket import DocBasket
+            
+            # Create a temporary RAG processing basket for LLM operations
+            # This maintains DocEX's document management patterns while enabling RAG
+            basket = DocBasket(id=1, name="rag_processing_basket", description="Temporary basket for RAG LLM processing")
+            
+            # Support multiple LLM adapter patterns:
+            # 1. Service-based adapters (OpenAI, Claude with dedicated services)
+            # 2. Direct generation adapters (OllamaAdapter with generate method)  
+            # 3. DocBasket-integrated adapters (standard DocEX pattern)
             if hasattr(self.llm_adapter, 'llm_service'):
+                # Service-based LLM adapters (OpenAI, Claude)
                 answer = await self.llm_adapter.llm_service.generate_completion(
                     prompt=prompt,
                     max_tokens=config['max_answer_tokens'],
                     temperature=config['temperature']
                 )
+            elif hasattr(self.llm_adapter, 'generate'):
+                # Direct generation adapters (OllamaAdapter)
+                # These provide streamlined access to local/custom LLMs
+                answer = await self.llm_adapter.generate(
+                    prompt,
+                    max_tokens=config['max_answer_tokens'],
+                    temperature=config['temperature']
+                )
+                if not answer:
+                    answer = "Failed to generate answer"
             else:
-                # Fallback for adapters without direct service access
-                from docex.docbasket import DocBasket
-                basket = DocBasket()
+                # Standard DocEX pattern - process through DocBasket
+                # This path supports traditional DocEX LLM adapters that expect
+                # full document basket context and processing workflows
                 result = await self.llm_adapter.process(
                     basket,
                     options={

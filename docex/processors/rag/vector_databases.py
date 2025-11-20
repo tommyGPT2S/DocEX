@@ -9,12 +9,29 @@ import logging
 import numpy as np
 import json
 import asyncio
+import os
+import random
 from abc import ABC, abstractmethod
 from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
+
+
+class VectorDatabaseError(Exception):
+    """Base exception for vector database operations"""
+    pass
+
+
+class FAISSError(VectorDatabaseError):
+    """FAISS-specific errors"""
+    pass
+
+
+class PineconeError(VectorDatabaseError):
+    """Pinecone-specific errors"""
+    pass
 
 
 @dataclass
@@ -53,6 +70,27 @@ class VectorDocument:
             basket_id=data.get('basket_id'),
             timestamp=timestamp
         )
+    
+    def validate(self, expected_dimension: Optional[int] = None) -> bool:
+        """Validate the vector document"""
+        if not self.id:
+            raise ValueError("Document ID cannot be empty")
+        
+        if not self.content:
+            raise ValueError("Document content cannot be empty")
+        
+        if not isinstance(self.embedding, np.ndarray):
+            raise ValueError("Embedding must be a numpy array")
+        
+        if expected_dimension and self.embedding.shape[0] != expected_dimension:
+            raise ValueError(
+                f"Embedding dimension {self.embedding.shape[0]} != expected {expected_dimension}"
+            )
+        
+        if not np.isfinite(self.embedding).all():
+            raise ValueError("Embedding contains non-finite values")
+        
+        return True
 
 
 @dataclass
@@ -74,6 +112,48 @@ class VectorSearchResult:
 
 class BaseVectorDatabase(ABC):
     """Abstract base class for vector database implementations"""
+    
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
+        self.config = config or {}
+        self._validate_base_config()
+    
+    def _validate_base_config(self):
+        """Validate base configuration"""
+        if not isinstance(self.config, dict):
+            raise ValueError("Configuration must be a dictionary")
+    
+    @staticmethod
+    def validate_embeddings(embeddings: List[np.ndarray], expected_dimension: int) -> bool:
+        """Validate a list of embeddings"""
+        if not embeddings:
+            raise ValueError("Embeddings list cannot be empty")
+        
+        for i, embedding in enumerate(embeddings):
+            if not isinstance(embedding, np.ndarray):
+                raise ValueError(f"Embedding {i} must be numpy array")
+            
+            if embedding.shape[0] != expected_dimension:
+                raise ValueError(
+                    f"Embedding {i} dimension {embedding.shape[0]} != expected {expected_dimension}"
+                )
+            
+            if not np.isfinite(embedding).all():
+                raise ValueError(f"Embedding {i} contains non-finite values")
+        
+        return True
+    
+    async def safe_operation(self, operation_func, *args, max_retries: int = 3, **kwargs):
+        """Execute operations with retry logic"""
+        for attempt in range(max_retries):
+            try:
+                return await operation_func(*args, **kwargs)
+            except Exception as e:
+                if attempt == max_retries - 1:
+                    raise e
+                
+                wait_time = (2 ** attempt) + random.uniform(0, 1)
+                await asyncio.sleep(wait_time)
+                logger.warning(f"Retry {attempt + 1}/{max_retries} after {wait_time:.1f}s: {e}")
     
     @abstractmethod
     async def initialize(self) -> bool:
@@ -137,21 +217,60 @@ class FAISSVectorDatabase(BaseVectorDatabase):
                 - storage_path: Path to persist index (optional)
                 - enable_gpu: Use GPU acceleration if available (default: False)
         """
-        self.config = config or {}
+        super().__init__(config)
+        self._validate_faiss_config()
+        
         self.index = None
         self.documents: Dict[str, VectorDocument] = {}
         self.id_to_index: Dict[str, int] = {}
         self.index_to_id: Dict[int, str] = {}
-        self.dimension = self.config.get('dimension')
+        self.dimension = self.config['dimension']
         self.is_initialized = False
+        self.normalize_embeddings = False
+    
+    def _validate_faiss_config(self):
+        """Validate FAISS-specific configuration"""
+        required_fields = ['dimension']
+        for field in required_fields:
+            if field not in self.config:
+                raise ValueError(f"Missing required FAISS config field: {field}")
         
-        if not self.dimension:
-            raise ValueError("Dimension must be specified in config")
+        dimension = self.config.get('dimension', 0)
+        if not isinstance(dimension, int) or dimension <= 0:
+            raise ValueError("FAISS dimension must be a positive integer")
+        
+        if dimension > 4096:
+            logger.warning(f"Large embedding dimension ({dimension}) may impact performance")
+        
+        valid_index_types = ['flat', 'ivf', 'hnsw']
+        index_type = self.config.get('index_type', 'flat')
+        if index_type not in valid_index_types:
+            raise ValueError(f"Invalid FAISS index type. Must be one of: {valid_index_types}")
+        
+        valid_metrics = ['cosine', 'l2', 'inner_product']
+        metric = self.config.get('metric', 'cosine')
+        if metric not in valid_metrics:
+            raise ValueError(f"Invalid FAISS metric. Must be one of: {valid_metrics}")
+        
+        # Validate storage path if provided
+        storage_path = self.config.get('storage_path')
+        if storage_path:
+            storage_dir = os.path.dirname(storage_path)
+            if storage_dir and not os.path.exists(storage_dir):
+                try:
+                    os.makedirs(storage_dir, exist_ok=True)
+                except OSError as e:
+                    raise ValueError(f"Cannot create storage directory {storage_dir}: {e}")
     
     async def initialize(self) -> bool:
         """Initialize FAISS index"""
         try:
-            import faiss
+            try:
+                import faiss
+            except ImportError:
+                raise FAISSError(
+                    "FAISS library not found. Install with: pip install faiss-cpu or pip install faiss-gpu"
+                )
             
             dimension = self.dimension
             index_type = self.config.get('index_type', 'flat')
@@ -444,62 +563,126 @@ class PineconeVectorDatabase(BaseVectorDatabase):
         Args:
             config: Configuration with:
                 - api_key: Pinecone API key (required)
-                - environment: Pinecone environment (required)
                 - index_name: Index name (required)
                 - dimension: Embedding dimension (required)
                 - metric: 'cosine', 'euclidean', 'dotproduct' (default: 'cosine')
-                - pod_type: Pod type for index (default: 'p1.x1')
-                - replicas: Number of replicas (default: 1)
         """
-        self.config = config or {}
+        super().__init__(config)
+        self._validate_pinecone_config()
+        
         self.client = None
         self.index = None
         self.is_initialized = False
-        
-        required_fields = ['api_key', 'environment', 'index_name', 'dimension']
+    
+    def _validate_pinecone_config(self):
+        """Validate Pinecone-specific configuration"""
+        required_fields = ['api_key', 'index_name', 'dimension']
         for field in required_fields:
             if not self.config.get(field):
-                raise ValueError(f"{field} must be specified in config")
+                raise ValueError(f"Missing required Pinecone config field: {field}")
+        
+        # Validate API key format
+        api_key = self.config['api_key']
+        if len(api_key) < 20:
+            raise ValueError("Invalid Pinecone API key format - too short")
+        
+        # Validate dimension
+        dimension = self.config.get('dimension', 0)
+        if not isinstance(dimension, int) or dimension <= 0:
+            raise ValueError("Pinecone dimension must be a positive integer")
+        
+        if dimension > 20000:
+            raise ValueError(f"Pinecone dimension {dimension} exceeds maximum supported (20000)")
+        
+        # Validate metric
+        valid_metrics = ['cosine', 'euclidean', 'dotproduct']
+        metric = self.config.get('metric', 'cosine')
+        if metric not in valid_metrics:
+            raise ValueError(f"Invalid Pinecone metric. Must be one of: {valid_metrics}")
+        
+        # Validate index name
+        index_name = self.config['index_name']
+        if not index_name.replace('-', '').replace('_', '').isalnum():
+            raise ValueError("Pinecone index name must contain only alphanumeric characters, hyphens, and underscores")
+        
+        if len(index_name) > 45:
+            raise ValueError("Pinecone index name must be 45 characters or less")
     
     async def initialize(self) -> bool:
         """Initialize Pinecone client and index"""
         try:
-            import pinecone
+            try:
+                from pinecone import Pinecone, ServerlessSpec
+            except ImportError:
+                raise PineconeError(
+                    "Pinecone library not found. Install with: pip install pinecone"
+                )
             
-            # Initialize Pinecone
-            pinecone.init(
-                api_key=self.config['api_key'],
-                environment=self.config['environment']
-            )
-            
-            self.client = pinecone
+            # Initialize Pinecone with new API
+            try:
+                self.client = Pinecone(api_key=self.config['api_key'])
+            except Exception as e:
+                if "unauthorized" in str(e).lower() or "api_key" in str(e).lower():
+                    raise PineconeError(
+                        "Invalid Pinecone API key. Please check your credentials."
+                    )
+                else:
+                    raise PineconeError(f"Failed to initialize Pinecone client: {e}")
             
             # Check if index exists, create if not
             index_name = self.config['index_name']
-            if index_name not in pinecone.list_indexes():
+            existing_indexes = self.client.list_indexes().names()
+            
+            if index_name not in existing_indexes:
                 logger.info(f"Creating Pinecone index: {index_name}")
                 
-                pinecone.create_index(
-                    name=index_name,
-                    dimension=self.config['dimension'],
-                    metric=self.config.get('metric', 'cosine'),
-                    pod_type=self.config.get('pod_type', 'p1.x1'),
-                    replicas=self.config.get('replicas', 1)
-                )
+                # Use ServerlessSpec for new accounts (more cost-effective)
+                try:
+                    self.client.create_index(
+                        name=index_name,
+                        dimension=self.config['dimension'],
+                        metric=self.config.get('metric', 'cosine'),
+                        spec=ServerlessSpec(
+                            cloud='aws',
+                            region='us-east-1'
+                        )
+                    )
+                except Exception as create_error:
+                    # If serverless fails, try pod-based
+                    logger.warning(f"Serverless index creation failed: {create_error}")
+                    logger.info("Trying pod-based index...")
+                    
+                    from pinecone import PodSpec
+                    self.client.create_index(
+                        name=index_name,
+                        dimension=self.config['dimension'],
+                        metric=self.config.get('metric', 'cosine'),
+                        spec=PodSpec(
+                            environment=self.config.get('environment', 'us-east1-gcp'),
+                            pod_type=self.config.get('pod_type', 'p1.x1')
+                        )
+                    )
                 
                 # Wait for index to be ready
-                while index_name not in pinecone.list_indexes():
-                    await asyncio.sleep(1)
+                logger.info("Waiting for index to be ready...")
+                max_wait = 60  # Maximum wait time in seconds
+                wait_time = 0
+                while index_name not in self.client.list_indexes().names() and wait_time < max_wait:
+                    await asyncio.sleep(2)
+                    wait_time += 2
+                
+                if wait_time >= max_wait:
+                    raise PineconeError(f"Index {index_name} was not ready after {max_wait} seconds")
             
             # Connect to index
-            self.index = pinecone.Index(index_name)
+            self.index = self.client.Index(index_name)
             
             self.is_initialized = True
             logger.info("Pinecone vector database initialized successfully")
             return True
             
         except ImportError:
-            logger.error("Pinecone library not found. Install with: pip install pinecone-client")
+            logger.error("Pinecone library not found. Install with: pip install pinecone")
             return False
         except Exception as e:
             logger.error(f"Failed to initialize Pinecone database: {e}")
@@ -514,16 +697,27 @@ class PineconeVectorDatabase(BaseVectorDatabase):
         try:
             # Prepare vectors for Pinecone
             vectors = []
+            
+            # Convert documents to Pinecone format
             for doc in documents:
+                # Clean metadata to remove null values (Pinecone doesn't accept them)
+                metadata = {
+                    'content': doc.content[:1000],  # Truncate content for metadata
+                    **doc.metadata
+                }
+                
+                # Add basket_id if it exists and is not None
+                if doc.basket_id:
+                    metadata['basket_id'] = doc.basket_id
+                
+                # Add timestamp if it exists
+                if doc.timestamp:
+                    metadata['timestamp'] = doc.timestamp.isoformat()
+                
                 vector_data = {
                     'id': doc.id,
                     'values': doc.embedding.tolist(),
-                    'metadata': {
-                        'content': doc.content[:1000],  # Truncate content for metadata
-                        'basket_id': doc.basket_id,
-                        'timestamp': doc.timestamp.isoformat() if doc.timestamp else None,
-                        **doc.metadata
-                    }
+                    'metadata': metadata
                 }
                 vectors.append(vector_data)
             
