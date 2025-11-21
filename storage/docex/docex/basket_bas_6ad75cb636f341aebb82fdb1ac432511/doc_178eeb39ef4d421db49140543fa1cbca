@@ -1,0 +1,6 @@
+Artificial Intelligence encompasses machine learning, natural language processing, computer vision, 
+                and robotics. Deep learning, a subset of machine learning, uses artificial neural networks with multiple layers 
+                to model and understand complex patterns in data. Convolutional Neural Networks (CNNs) excel at image recognition, 
+                Recurrent Neural Networks (RNNs) and Transformers handle sequential data like text and speech. Popular frameworks 
+                include TensorFlow, PyTorch, and Keras. Applications span from autonomous vehicles to medical diagnosis and 
+                language translation.

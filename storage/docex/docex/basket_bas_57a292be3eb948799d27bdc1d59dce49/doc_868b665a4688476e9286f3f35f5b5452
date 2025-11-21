@@ -1,0 +1,5 @@
+Data science combines domain expertise, programming skills, and knowledge of mathematics and statistics 
+                to extract meaningful insights from data. The data science process typically follows these phases: business understanding, 
+                data mining, data understanding, data preparation, modeling, evaluation, and deployment. Essential tools include 
+                Python and R for programming, pandas and numpy for data manipulation, matplotlib and seaborn for visualization, 
+                scikit-learn for machine learning, and TensorFlow or PyTorch for deep learning applications.
