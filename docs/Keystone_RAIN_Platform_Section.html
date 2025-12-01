@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Keystone RAIN Platform Capabilities for MMF Use Cases</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+            color: #333;
+        }
+        .container {
+            background-color: white;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #2c3e50;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 10px;
+            margin-top: 0;
+        }
+        h2 {
+            color: #34495e;
+            margin-top: 30px;
+            border-left: 4px solid #3498db;
+            padding-left: 15px;
+        }
+        h3 {
+            color: #555;
+            margin-top: 25px;
+        }
+        .capabilities {
+            background-color: #f8f9fa;
+            padding: 20px;
+            border-radius: 5px;
+            margin: 15px 0;
+        }
+        .use-cases {
+            background-color: #e8f4f8;
+            padding: 20px;
+            border-radius: 5px;
+            margin: 15px 0;
+        }
+        ul {
+            margin: 10px 0;
+        }
+        li {
+            margin: 8px 0;
+        }
+        strong {
+            color: #2c3e50;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid #ecf0f1;
+        }
+        .header h1 {
+            border: none;
+            margin: 0;
+            padding: 0;
+        }
+        .meta {
+            color: #7f8c8d;
+            font-size: 0.9em;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Keystone RAIN Platform Capabilities for MMF Use Cases</h1>
+            <div class="meta">Keystone.ai &lt;&gt; Novartis: MMF AI Use Case Scoping Document</div>
+        </div>
+
+        <p>The Keystone RAIN platform provides a comprehensive foundation for automating MMF processes through its unified document management, intelligent processing, and workflow automation capabilities. This section outlines how the platform's core capabilities directly address the pain points and solution objectives identified in sections 2.2 and 2.3.</p>
+
+        <h2>2.6.1: Unified Document Management & Multi-Source Data Ingestion</h2>
+        <p>The platform provides a single, consistent interface for managing unstructured documents from diverse sources, directly addressing the challenge of manual data extraction from PDFs, email attachments, and spreadsheets.</p>
+
+        <div class="capabilities">
+            <h3>Key Capabilities:</h3>
+            <ul>
+                <li><strong>Multi-Format Document Support</strong>: Native ingestion of PDFs, Excel files, email attachments, and structured data files (NCPDP, EDI) without format-specific preprocessing</li>
+                <li><strong>Flexible Storage Architecture</strong>: Support for filesystem, S3, and Google Drive integration, enabling seamless access to GPO Rosters and DDD matrices stored in G-Suite</li>
+                <li><strong>Automatic Document Organization</strong>: Basket-based organization allows logical grouping of documents by process stage (e.g., raw_chargebacks, processed_chargebacks, customer_creation_requests)</li>
+                <li><strong>Version Control & Duplicate Detection</strong>: Automatic checksum validation and duplicate identification across Model N, SAP, and G-Drive sources, eliminating manual duplicate checks</li>
+            </ul>
+        </div>
+
+        <div class="use-cases">
+            <h3>Application to Use Cases:</h3>
+            <ul>
+                <li><strong>Chargeback Processing</strong>: Ingest chargeback documents from Model N, eligibility guides from G-Drive, and GPO rosters from email attachments into unified platform baskets</li>
+                <li><strong>Medicaid Rebate Processing</strong>: Automatically ingest invoices from state web portals, email attachments, and NCPDP flat files into organized baskets by state and quarter</li>
+                <li><strong>Cross-System Integration</strong>: Platform acts as central repository, eliminating need for analysts to manually query SAP, Model N, and G-Drive separately</li>
+            </ul>
+        </div>
+
+        <h2>2.6.2: LLM-Powered Structured Data Extraction</h2>
+        <p>Built-in LLM adapters enable automated extraction of structured data from unstructured documents with high accuracy, directly addressing the labor-intensive manual extraction of contract eligibility, customer identifiers, and claim details.</p>
+
+        <div class="capabilities">
+            <h3>Key Capabilities:</h3>
+            <ul>
+                <li><strong>Configurable Extraction Prompts</strong>: YAML-based prompt templates allow domain experts to define extraction schemas without code changes (e.g., extract contract number, eligibility dates, class-of-trade from GPO rosters)</li>
+                <li><strong>High-Accuracy Extraction</strong>: Proven 98%+ accuracy in production invoice processing systems for extracting structured fields (invoice numbers, amounts, dates, line items)</li>
+                <li><strong>Multi-Entity Extraction</strong>: Simultaneously extract customer identifiers (HIN, DEA), contract information (Bid Award numbers, eligibility rules), and claim details (NDC, quantities, dates of service)</li>
+                <li><strong>Automatic Metadata Enrichment</strong>: Extracted data automatically stored as searchable metadata, enabling downstream queries and validation workflows</li>
+            </ul>
+        </div>
+
+        <div class="use-cases">
+            <h3>Application to Use Cases:</h3>
+            <ul>
+                <li><strong>Contract Eligibility Extraction</strong>: Automatically extract eligibility rules, verification frequency, and class-of-trade requirements from G-Drive eligibility guides</li>
+                <li><strong>Customer Identifier Extraction</strong>: Extract HIN, DEA, and address information from chargeback documents and GPO rosters for automated duplicate checking</li>
+                <li><strong>Medicaid Claim Extraction</strong>: Extract claim-level details (NDC, quantity, pharmacy NPI, date of service) from state-specific invoice formats, normalizing 30+ different structures automatically</li>
+                <li><strong>External Validation Data Preparation</strong>: Structure extracted identifiers for automated queries to DEA, HIBCC, and HRSA federal databases</li>
+            </ul>
+        </div>
+
+        <h2>2.6.3: Entity Matching & Duplicate Detection</h2>
+        <p>Advanced entity matching capabilities automate customer duplication checks across multiple systems, addressing one of the most time-intensive manual steps in the chargeback process.</p>
+
+        <div class="capabilities">
+            <h3>Key Capabilities:</h3>
+            <ul>
+                <li><strong>Fuzzy Matching Algorithms</strong>: ML-powered entity matching using multiple identifiers (HIN, DEA, address) with configurable similarity thresholds</li>
+                <li><strong>Cross-System Deduplication</strong>: Query and match entities across SAP 4 HANA, Model N, and platform storage using extracted identifiers</li>
+                <li><strong>Confidence Scoring</strong>: Probabilistic matching scores enable human-in-the-loop review for edge cases while auto-approving high-confidence matches</li>
+                <li><strong>Metadata-Based Matching</strong>: Leverage extracted metadata (address, identifiers, class-of-trade) for multi-field matching beyond simple identifier lookup</li>
+            </ul>
+        </div>
+
+        <div class="use-cases">
+            <h3>Application to Use Cases:</h3>
+            <ul>
+                <li><strong>Customer Duplicate Detection</strong>: Automatically check if customer exists in SAP or Model N using extracted HIN/DEA identifiers before creating new customer record</li>
+                <li><strong>GPO Roster Validation</strong>: Match customers on GPO rosters against existing SAP customer master data to identify new vs. existing customers</li>
+                <li><strong>Claim Duplicate Detection</strong>: Identify duplicate discounts and billing errors in Medicaid claims using NDC, pharmacy NPI, and date-of-service matching</li>
+            </ul>
+        </div>
+
+        <h2>2.6.4: Workflow Automation & Processor Chaining</h2>
+        <p>The platform's extensible processor framework enables complex, multi-step workflows with dynamic logic, supporting the 8-step chargeback process and multi-stage Medicaid rebate workflows.</p>
+
+        <div class="capabilities">
+            <h3>Key Capabilities:</h3>
+            <ul>
+                <li><strong>Processor Framework</strong>: Extensible processor architecture allows custom processors for each workflow step (e.g., SAP query processor, GPO roster lookup processor, federal database validation processor)</li>
+                <li><strong>Dynamic Processing Logic</strong>: Conditional processor execution based on document state (e.g., skip COT determination for existing customers, skip duplicate check if customer already validated)</li>
+                <li><strong>Processor Chaining</strong>: Automatic sequencing of processors with dependency management (e.g., extract identifiers → check duplicates → validate eligibility → create customer request)</li>
+                <li><strong>Operation Tracking</strong>: Complete audit trail of every processing step with status tracking (pending, in_progress, success, failed) and error logging</li>
+            </ul>
+        </div>
+
+        <div class="use-cases">
+            <h3>Application to Use Cases:</h3>
+            <ul>
+                <li><strong>Chargeback Workflow Automation</strong>: Automate 8-step process: duplicate check → contract eligibility lookup → GPO roster validation → federal database queries → class-of-trade verification → compliance documentation → SAP customer creation → chargeback resolution</li>
+                <li><strong>Medicaid Invoice Processing</strong>: Chain processors for invoice ingestion → format normalization → data extraction → duplicate detection → dispute flagging → payment routing</li>
+                <li><strong>Exception Handling</strong>: Automatic routing of failed steps to exception queues with full context for analyst review</li>
+            </ul>
+        </div>
+
+        <h2>2.6.5: External System Integration & API Automation</h2>
+        <p>Platform capabilities for external system integration enable automated queries to SAP 4 HANA, federal databases, and third-party APIs, eliminating manual lookups and screenshots.</p>
+
+        <div class="capabilities">
+            <h3>Key Capabilities:</h3>
+            <ul>
+                <li><strong>API Integration Framework</strong>: Built-in support for REST API calls to external systems (SAP 4 HANA, DEA registrant database, HIBCC HIN portal, HRSA program portal)</li>
+                <li><strong>Credential Management</strong>: Secure storage and rotation of API credentials for federal database access (HIN licenses, DEA API keys)</li>
+                <li><strong>Response Processing</strong>: Automatic parsing and storage of API responses as document metadata for downstream validation and compliance documentation</li>
+                <li><strong>Retry Logic & Error Handling</strong>: Automatic retry for transient API failures with exponential backoff and fallback mechanisms</li>
+            </ul>
+        </div>
+
+        <div class="use-cases">
+            <h3>Application to Use Cases:</h3>
+            <ul>
+                <li><strong>SAP Customer Queries</strong>: Automated queries to SAP 4 HANA to check customer existence using extracted identifiers, with results stored as metadata</li>
+                <li><strong>Federal Database Validation</strong>: Automated lookups to DEA, HIBCC (HIN), and HRSA portals to verify class-of-trade, with responses automatically captured for compliance</li>
+                <li><strong>GPO Roster Synchronization</strong>: Automated retrieval and processing of GPO rosters from email attachments or portals, with automatic updates to platform storage</li>
+            </ul>
+        </div>
+
+        <h2>2.6.6: Compliance & Audit Trail Management</h2>
+        <p>Built-in operation tracking and metadata management provide complete audit trails required for SOX compliance and government pricing validation, eliminating manual screenshot capture and documentation.</p>
+
+        <div class="capabilities">
+            <h3>Key Capabilities:</h3>
+            <ul>
+                <li><strong>Complete Operation History</strong>: Every document operation (ingestion, processing, routing, validation) automatically tracked with timestamps, user context, and status</li>
+                <li><strong>Metadata Versioning</strong>: Track all changes to extracted data and processing results over time, enabling audit reconstruction</li>
+                <li><strong>Compliance Documentation</strong>: Automatic capture of validation results, API responses, and processing decisions as structured metadata</li>
+                <li><strong>Searchable Audit Trail</strong>: Query operation history by document, user, date range, or processing stage for compliance reporting</li>
+            </ul>
+        </div>
+
+        <div class="use-cases">
+            <h3>Application to Use Cases:</h3>
+            <ul>
+                <li><strong>Chargeback Compliance</strong>: Automatic documentation of duplicate checks, eligibility validations, and federal database lookups without manual screenshots</li>
+                <li><strong>Medicaid Audit Support</strong>: Complete audit trail of claim processing, dispute decisions, and payment routing for state audit requirements</li>
+                <li><strong>SOX Compliance</strong>: Full traceability of customer creation requests from chargeback kickout through SAP customer creation with all validation steps documented</li>
+            </ul>
+        </div>
+
+        <h2>2.6.7: Scalable Architecture for Multiple Use Cases</h2>
+        <p>The platform's reusable components and extensible architecture enable scaling from chargeback automation to Medicaid rebate processing and future MMF use cases without rebuilding core infrastructure.</p>
+
+        <div class="capabilities">
+            <h3>Key Capabilities:</h3>
+            <ul>
+                <li><strong>Reusable Processors</strong>: Processors developed for one use case (e.g., identifier extraction) can be reused across multiple workflows (chargeback, rebate, forecasting)</li>
+                <li><strong>Basket-Based Organization</strong>: Logical document grouping enables parallel processing of multiple use cases without data mixing</li>
+                <li><strong>Metadata Schema Flexibility</strong>: Key-value metadata system accommodates different data structures across use cases without schema changes</li>
+                <li><strong>Horizontal Scalability</strong>: Platform architecture supports processing 50-200 chargebacks daily with ability to scale to thousands of Medicaid claims per quarter</li>
+            </ul>
+        </div>
+
+        <div class="use-cases">
+            <h3>Application to Use Cases:</h3>
+            <ul>
+                <li><strong>Chargeback to Rebate Extension</strong>: Processors for data extraction, entity matching, and external validation developed for chargebacks can be adapted for Medicaid claim processing</li>
+                <li><strong>Forecasting Data Preparation</strong>: Extracted and encoded data from chargeback and rebate workflows can feed into forecasting models without additional data preparation</li>
+                <li><strong>Future Use Case Expansion</strong>: Platform infrastructure supports additional MMF use cases (government pricing, GTN forecasting) with minimal new development</li>
+            </ul>
+        </div>
+
+        <h2>2.6.8: Integration with Keystone RAIN Data Encoding</h2>
+        <p>The platform seamlessly integrates with Keystone's RAIN encoding system, ensuring extracted and processed data is encoded in reusable features for downstream analytics and forecasting.</p>
+
+        <div class="capabilities">
+            <h3>Key Capabilities:</h3>
+            <ul>
+                <li><strong>Automatic Feature Encoding</strong>: Extracted data (class-of-trade, contract ID, eligibility dates) automatically encoded into RAIN feature format</li>
+                <li><strong>Cross-Use Case Reusability</strong>: Encoded features from chargeback processing (customer class-of-trade, contract eligibility) reusable for rebate processing and GTN forecasting</li>
+                <li><strong>Temporal Feature Tracking</strong>: Eligibility dates and contract periods encoded with temporal semantics for time-series forecasting</li>
+                <li><strong>Hierarchical Feature Support</strong>: Features encoded at multiple grains (customer, contract, program) enabling aggregation for different forecasting targets</li>
+            </ul>
+        </div>
+
+        <div class="use-cases">
+            <h3>Application to Use Cases:</h3>
+            <ul>
+                <li><strong>Chargeback to Forecasting Pipeline</strong>: Customer class-of-trade and contract eligibility encoded during chargeback processing automatically available for rebate and GTN forecasting models</li>
+                <li><strong>Medicaid Claim Feature Engineering</strong>: Claim-level features (NDC, pharmacy, program) encoded for both dispute prediction and utilization forecasting</li>
+                <li><strong>Unified Data Model</strong>: Single encoding schema across chargeback, rebate, and forecasting use cases eliminates duplicative data preparation</li>
+            </ul>
+        </div>
+    </div>
+</body>
+</html>
+

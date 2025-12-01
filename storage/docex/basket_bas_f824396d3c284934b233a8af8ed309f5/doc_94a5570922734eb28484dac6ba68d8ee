@@ -1,0 +1,27 @@
+
+    CHARGEBACK DOCUMENT #3
+    =======================
+    
+    Customer Information:
+    Name: XYZ Medical Supply Co.
+    Address: 456 Oak Avenue
+    City: Los Angeles
+    State: CA
+    ZIP: 90001
+    
+    Identifiers:
+    HIN: HIN987654321
+    DEA: DEA9876543
+    
+    Contract Information:
+    Contract Number: CONTRACT-2024-002
+    Contract Type: Direct
+    Class of Trade: Wholesale Distributor
+    
+    Chargeback Details:
+    Invoice Number: INV-2024-100
+    Invoice Date: 2024-03-10
+    NDC: 98765-4321-10
+    Quantity: 200
+    Chargeback Amount: $12,000.00
+    

@@ -14,7 +14,7 @@ from sqlalchemy import select
 # Test configuration
 TEST_BASKET_NAME = "test_basket"
 TEST_STORAGE_PATH = "data/test_storage"
-TEST_DB_URL = "postgresql://gpt2s:9pt2s2025!@localhost:5444/scm_simulation"
+TEST_DB_URL = f"postgresql://gpt2s:{os.getenv('TEST_POSTGRES_PASSWORD', 'test_password')}@localhost:5444/scm_simulation"
 
 @pytest.fixture
 def db():

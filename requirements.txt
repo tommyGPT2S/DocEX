@@ -18,4 +18,7 @@ faiss-cpu>=1.7.0
 pinecone-client>=3.0.0
 
 # Optional: GPU acceleration for FAISS
-# faiss-gpu>=1.7.0  # Uncomment if you have GPU support 
+# faiss-gpu>=1.7.0  # Uncomment if you have GPU support
+
+# DSPy for declarative LM programming and optimization
+dspy-ai>=2.5.0 

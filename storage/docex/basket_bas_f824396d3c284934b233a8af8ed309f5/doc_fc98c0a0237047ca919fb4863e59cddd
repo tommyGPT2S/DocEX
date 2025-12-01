@@ -1,0 +1,27 @@
+
+    CHARGEBACK DOCUMENT #2
+    =======================
+    
+    Customer Information:
+    Name: ABC Pharmacy Inc.
+    Address: 123 Main Street
+    City: San Francisco
+    State: CA
+    ZIP: 94102
+    
+    Identifiers:
+    HIN: HIN123456789
+    DEA: DEA1234567
+    
+    Contract Information:
+    Contract Number: CONTRACT-2024-001
+    Contract Type: GPO
+    Class of Trade: Retail Pharmacy
+    
+    Chargeback Details:
+    Invoice Number: INV-2024-002
+    Invoice Date: 2024-02-20
+    NDC: 12345-6789-02
+    Quantity: 150
+    Chargeback Amount: $7,500.00
+    

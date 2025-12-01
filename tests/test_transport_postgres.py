@@ -37,7 +37,7 @@ class TestTransportPostgres(unittest.TestCase):
                     'port': 5444,
                     'database': 'scm_simulation',
                     'user': 'gpt2s',
-                    'password': '9pt2s2025!',
+                    'password': os.getenv('TEST_POSTGRES_PASSWORD', 'test_password'),
                     'schema': 'docex'
                 }
             }
