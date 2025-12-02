@@ -248,6 +248,9 @@ class SemanticSearchService:
                     session.execute(text(f'SET search_path TO "{current_schema}", public, pg_catalog'))
                 else:
                     session.execute(text('SET search_path TO public, pg_catalog'))
+            except ValueError:
+                # Re-raise ValueError (validation errors) - these are security issues
+                raise
             except Exception as e:
                 logger.debug(f"Could not set search_path: {e}")
             
