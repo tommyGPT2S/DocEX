@@ -46,10 +46,15 @@ class FileSystemStorage(AbstractStorage):
         if not key:
             raise ValueError("Storage key cannot be empty")
         
+        # Prevent path traversal attacks before normalization
+        # Check for .. sequences in the original key
+        if '..' in key or os.path.isabs(key):
+            raise ValueError(f"Invalid storage key: {key} - path traversal detected")
+        
         # Normalize the path to resolve any relative components
         normalized_key = os.path.normpath(key)
         
-        # Prevent path traversal attacks
+        # Double-check after normalization (in case normalization changed something)
         if normalized_key.startswith('..') or os.path.isabs(normalized_key):
             raise ValueError(f"Invalid storage key: {key} - path traversal detected")
         
@@ -78,11 +83,18 @@ class FileSystemStorage(AbstractStorage):
         # get_path() now includes path traversal protection
         path = self.get_path(key)
         
-        # Check for symlinks to prevent symlink attacks
-        if path.exists() and path.is_symlink():
-            raise ValueError(f"Invalid storage key: {key} - symlinks not allowed")
+        # Check for symlinks in the path and parent directories to prevent symlink attacks
+        current_path = path
+        while current_path != self.base_path and current_path != current_path.parent:
+            if current_path.exists() and current_path.is_symlink():
+                raise ValueError(f"Invalid storage key: {key} - symlinks not allowed in path")
+            current_path = current_path.parent
         
         path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Check if final path is a symlink
+        if path.exists() and path.is_symlink():
+            raise ValueError(f"Invalid storage key: {key} - symlinks not allowed")
         
         # Use atomic write to prevent race conditions
         temp_path = path.with_suffix(path.suffix + '.tmp')
@@ -145,10 +157,15 @@ class FileSystemStorage(AbstractStorage):
         if not path:
             raise ValueError("Path cannot be empty")
         
+        # Prevent path traversal attacks before normalization
+        # Check for .. sequences in the original path
+        if '..' in path or os.path.isabs(path):
+            raise ValueError(f"Invalid path: {path} - path traversal detected")
+        
         # Normalize the path to resolve any relative components
         normalized_path = os.path.normpath(path)
         
-        # Prevent path traversal attacks
+        # Double-check after normalization
         if normalized_path.startswith('..') or os.path.isabs(normalized_path):
             raise ValueError(f"Invalid path: {path} - path traversal detected")
         
@@ -313,9 +330,20 @@ class FileSystemStorage(AbstractStorage):
         # Use _get_full_path() which includes path traversal protection
         dest_path = self._get_full_path(document_path)
         
-        # Check for symlinks
+        # Check for symlinks in the destination path and parent directories
+        current_path = dest_path
+        while current_path != self.base_path and current_path != current_path.parent:
+            if current_path.exists() and current_path.is_symlink():
+                raise ValueError(f"Invalid document_path: {document_path} - symlinks not allowed in path")
+            current_path = current_path.parent
+        
+        # Check if final destination path is a symlink
         if dest_path.exists() and dest_path.is_symlink():
             raise ValueError(f"Invalid document_path: {document_path} - symlinks not allowed")
+        
+        # Ensure source and destination are different files
+        if source_path.resolve() == dest_path.resolve():
+            raise ValueError(f"Source and destination paths are the same: {source_path}")
         
         dest_path.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source_path, dest_path)
