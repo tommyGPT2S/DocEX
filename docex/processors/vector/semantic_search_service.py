@@ -220,38 +220,77 @@ class SemanticSearchService:
         
         with db.session() as session:
             from sqlalchemy import text
+            import json
             
-            # Convert embedding to PostgreSQL vector format
-            embedding_str = '[' + ','.join(map(str, query_embedding)) + ']'
+            # Validate embedding input
+            if not query_embedding or not isinstance(query_embedding, list):
+                raise ValueError("Invalid query_embedding: must be a non-empty list")
+            
+            # Validate all embedding values are numeric
+            try:
+                embedding_array = [float(x) for x in query_embedding]
+            except (ValueError, TypeError) as e:
+                raise ValueError(f"Invalid embedding values: {e}")
+            
+            # Convert embedding to PostgreSQL array format using JSON for safe parameterization
+            # PostgreSQL can cast JSON arrays to vector type
+            embedding_json = json.dumps(embedding_array)
             
             # Ensure search_path includes public where pgvector types are
             try:
                 current_schema = session.execute(text("SELECT current_schema()")).scalar()
-                # Quote schema name in case it contains special characters (like hyphens)
-                session.execute(text(f'SET search_path TO "{current_schema}", public, pg_catalog'))
+                # Validate schema name to prevent injection (alphanumeric, underscore, hyphen only)
+                if current_schema and not all(c.isalnum() or c in ('_', '-') for c in current_schema):
+                    raise ValueError(f"Invalid schema name: {current_schema}")
+                # Use quoted identifier for schema name to handle special characters safely
+                # Note: SET search_path doesn't support parameters, so we validate the schema name instead
+                if current_schema:
+                    session.execute(text(f'SET search_path TO "{current_schema}", public, pg_catalog'))
+                else:
+                    session.execute(text('SET search_path TO public, pg_catalog'))
             except Exception as e:
                 logger.debug(f"Could not set search_path: {e}")
             
-            # Build query using string formatting for vector cast (same approach as VectorIndexingProcessor)
-            # Use fully qualified type name public.vector for multi-tenant schemas
-            # Note: We use string formatting for the embedding literal to avoid SQLAlchemy parameter binding issues
-            query_sql = f"""
+            # Validate top_k
+            if top_k <= 0 or top_k > 10000:
+                raise ValueError(f"Invalid top_k value: {top_k} (must be between 1 and 10000)")
+            
+            # Validate basket_id if provided
+            if basket_id:
+                if not isinstance(basket_id, str) or not basket_id.strip():
+                    raise ValueError("Invalid basket_id")
+                basket_id = basket_id.strip()
+            
+            # Build parameterized query to prevent SQL injection
+            # Use CAST with parameterized JSON array instead of string interpolation
+            # Build query string with conditional WHERE clause
+            query_str = """
                 SELECT 
                     id,
-                    1 - (embedding <=> '{embedding_str}'::public.vector) AS similarity
+                    1 - (embedding <=> CAST(:embedding_json::jsonb AS public.vector)) AS similarity
                 FROM document
                 WHERE embedding IS NOT NULL
             """
-            params = {}
+            
+            params = {
+                'embedding_json': embedding_json,
+                'limit': int(top_k)
+            }
             
             if basket_id:
-                query_sql += " AND basket_id = :basket_id"
+                query_str += " AND basket_id = :basket_id"
                 params['basket_id'] = basket_id
             
-            query_sql += f" ORDER BY embedding <=> '{embedding_str}'::public.vector LIMIT :limit"
-            params['limit'] = top_k
+            # Add ORDER BY and LIMIT with parameterized values
+            query_str += " ORDER BY embedding <=> CAST(:embedding_json::jsonb AS public.vector) LIMIT :limit"
             
-            results = session.execute(text(query_sql), params).fetchall()
+            query_sql = text(query_str)
+            
+            # Validate top_k
+            if params['limit'] <= 0 or params['limit'] > 10000:
+                raise ValueError(f"Invalid top_k value: {top_k} (must be between 1 and 10000)")
+            
+            results = session.execute(query_sql, params).fetchall()
             
             return [
                 {
