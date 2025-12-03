@@ -14,8 +14,13 @@ from docex.db.connection import Database
 from docex.db.models import Base
 from docex.transport.models import Base as TransportBase
 import sqlite3
-from datetime import datetime, UTC
+from datetime import datetime, timezone
 from sqlalchemy import inspect
+
+try:
+    from datetime import UTC
+except ImportError:
+    UTC = timezone.utc
 
 @click.group()
 def cli():
