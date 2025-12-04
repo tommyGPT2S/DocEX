@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Knowledge Base (KB) Service is a RAG-powered service for querying rule books (GPO Rosters, DDD Matrix, Eligibility Guides) in the Novartis MMF AI chargeback automation workflow.
+The Knowledge Base (KB) Service is a RAG-powered service for querying rule books (GPO Rosters, DDD Matrix, Eligibility Guides) in chargeback automation workflows.
 
 This implementation follows the specifications in `KB_Implementation_Proposal.html` and provides:
 
@@ -256,7 +256,7 @@ config = EnhancedRAGConfig(
    - Unit tests for all processors
    - Integration tests for workflow
    - Performance tests for query latency
-   - Accuracy tests with real Novartis data
+   - Accuracy tests with real production data
 
 ## References
 

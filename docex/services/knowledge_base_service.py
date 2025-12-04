@@ -2,7 +2,7 @@
 Knowledge Base Service for DocEX
 
 Provides RAG-powered querying of rule books (GPO Rosters, DDD Matrix, Eligibility Guides)
-for Novartis MMF AI chargeback automation workflow.
+for chargeback automation workflow.
 
 This service wraps EnhancedRAGService with KB-specific methods for:
 - Rule book ingestion and indexing
