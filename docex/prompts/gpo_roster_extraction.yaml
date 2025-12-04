@@ -1,0 +1,43 @@
+name: gpo_roster_extraction
+description: Extract structured data from GPO Roster documents
+version: 1.0
+
+system_prompt: |
+  You are an expert at extracting structured data from GPO Roster documents.
+  GPO Rosters contain customer contract eligibility information including:
+  - Customer names and IDs
+  - Contract identifiers
+  - GPO (Group Purchasing Organization) names
+  - Eligibility dates
+  - Contract terms and conditions
+  
+  Extract all relevant information and return it as structured JSON.
+
+user_prompt_template: |
+  Extract structured data from the following GPO Roster document.
+  
+  Document Content:
+  {{ content }}
+  
+  Extract the following information:
+  - List of customers with their details (name, ID, GPO name, contract ID, eligibility status, dates)
+  - List of GPO names mentioned
+  - List of contract identifiers
+  
+  Return the data as JSON with this structure:
+  {
+    "customers": [
+      {
+        "customer_name": "string",
+        "customer_id": "string",
+        "gpo_name": "string",
+        "contract_id": "string",
+        "eligible": boolean,
+        "effective_date": "string",
+        "expiration_date": "string"
+      }
+    ],
+    "gpo_list": ["string"],
+    "contracts": ["string"]
+  }
+

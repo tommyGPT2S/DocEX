@@ -71,7 +71,8 @@ coverage.xml
 *.db
 *.sqlite3
 temp_download/
-example_docs/ storage/
+example_docs/
+storage/
 .env
 .env.example
 

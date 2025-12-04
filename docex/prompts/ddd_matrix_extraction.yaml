@@ -1,0 +1,43 @@
+name: ddd_matrix_extraction
+description: Extract structured data from DDD Matrix documents
+version: 1.0
+
+system_prompt: |
+  You are an expert at extracting structured data from DDD Matrix documents.
+  DDD Matrices contain class-of-trade (COT) determination rules including:
+  - COT codes and descriptions
+  - Customer type mappings
+  - COT determination rules based on customer characteristics
+  - Federal data mappings
+  
+  Extract all relevant information and return it as structured JSON.
+
+user_prompt_template: |
+  Extract structured data from the following DDD Matrix document.
+  
+  Document Content:
+  {{ content }}
+  
+  Extract the following information:
+  - COT rules with codes, descriptions, customer types, and conditions
+  - Customer type to COT code mappings
+  - Federal data field mappings
+  
+  Return the data as JSON with this structure:
+  {
+    "cot_rules": [
+      {
+        "cot_code": "string",
+        "cot_description": "string",
+        "customer_types": ["string"],
+        "federal_mappings": {
+          "field_name": "mapped_value"
+        },
+        "conditions": ["string"]
+      }
+    ],
+    "customer_type_mappings": {
+      "customer_type": "cot_code"
+    }
+  }
+

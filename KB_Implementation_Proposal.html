@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Knowledge Base Service Implementation Proposal - Novartis + Keystone</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+            color: #333;
+        }
+        .container {
+            background-color: white;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 30px;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 3px solid #3498db;
+        }
+        .header h1 {
+            color: #2c3e50;
+            margin: 0;
+            padding: 0;
+        }
+        .header h2 {
+            color: #34495e;
+            margin-top: 10px;
+            font-weight: normal;
+        }
+        .meta {
+            color: #7f8c8d;
+            font-size: 0.9em;
+            margin-top: 15px;
+        }
+        h1 {
+            color: #2c3e50;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 10px;
+            margin-top: 30px;
+        }
+        h2 {
+            color: #34495e;
+            margin-top: 30px;
+            border-left: 4px solid #3498db;
+            padding-left: 15px;
+        }
+        h3 {
+            color: #555;
+            margin-top: 25px;
+        }
+        h4 {
+            color: #666;
+            margin-top: 20px;
+        }
+        .section {
+            background-color: #f8f9fa;
+            padding: 20px;
+            border-radius: 5px;
+            margin: 15px 0;
+            border-left: 4px solid #3498db;
+        }
+        .highlight-box {
+            background-color: #e8f4f8;
+            padding: 20px;
+            border-radius: 5px;
+            margin: 15px 0;
+            border-left: 4px solid #17a2b8;
+        }
+        .requirement-box {
+            background-color: #fff3cd;
+            padding: 20px;
+            border-radius: 5px;
+            margin: 15px 0;
+            border-left: 4px solid #ffc107;
+        }
+        .diagram-container {
+            background-color: #f8f9fa;
+            padding: 20px;
+            border-radius: 5px;
+            margin: 20px 0;
+            overflow-x: auto;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 12px;
+            text-align: left;
+        }
+        th {
+            background-color: #3498db;
+            color: white;
+        }
+        tr:nth-child(even) {
+            background-color: #f2f2f2;
+        }
+        ul, ol {
+            margin: 10px 0;
+        }
+        li {
+            margin: 8px 0;
+        }
+        .reference-link {
+            background-color: #d1ecf1;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+            border-left: 4px solid #17a2b8;
+        }
+        .reference-link a {
+            color: #17a2b8;
+            font-weight: bold;
+            text-decoration: none;
+        }
+        .reference-link a:hover {
+            text-decoration: underline;
+        }
+        code {
+            background-color: #f4f4f4;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+        .code-snippet {
+            background-color: #f4f4f4;
+            padding: 15px;
+            border-radius: 5px;
+            border-left: 4px solid #3498db;
+            margin: 15px 0;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+            overflow-x: auto;
+        }
+        .benefit-item {
+            background-color: #d4edda;
+            padding: 10px 15px;
+            margin: 8px 0;
+            border-radius: 3px;
+            border-left: 4px solid #28a745;
+        }
+        .timeline-item {
+            background-color: #fff3cd;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 5px;
+            border-left: 4px solid #ffc107;
+        }
+        .timeline-item h4 {
+            margin-top: 0;
+            color: #856404;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Knowledge Base Service Implementation Proposal</h1>
+            <h2>Novartis + Keystone MMF AI Project</h2>
+            <div class="meta">
+                <strong>Project:</strong> Keystone RAIN Platform for Novartis Managed Markets Finance (MMF)<br>
+                <strong>Document Version:</strong> 2.0 | <strong>Date:</strong> Current Session | <strong>Status:</strong> Implementation Proposal
+            </div>
+        </div>
+
+        <div class="reference-link">
+            <strong>📄 Reference Document:</strong> For complete implementation details, code examples, and technical specifications, please refer to: 
+            <a href="KB_IMPLEMENTATION_PROPOSAL.md" target="_blank">KB_IMPLEMENTATION_PROPOSAL.md</a>
+        </div>
+
+        <h2>Executive Summary</h2>
+        <div class="section">
+            <p>This document proposes the implementation of a <strong>Knowledge Base (KB) Service</strong> for the Novartis MMF AI project, which enables automated querying of rule books (GPO Rosters, DDD Matrix, ICCR Eligibility Guides) using RAG (Retrieval-Augmented Generation) and LLM technology. The KB service is a critical component that supports <strong>Steps 3, 4, and 6</strong> of the 8-step chargeback process automation workflow.</p>
+            
+            <h3>Key Business Value</h3>
+            <ul>
+                <li><strong>Time Savings:</strong> Automates manual rule book lookups, contributing to 10+ minute reduction per chargeback kickout</li>
+                <li><strong>Accuracy:</strong> Enables 99.9% automated resolution rate for "Customer not found" kickouts</li>
+                <li><strong>Compliance:</strong> Maintains complete audit trail of all KB queries for SOX compliance</li>
+                <li><strong>Scalability:</strong> Supports processing 50-200 chargebacks daily with ability to scale</li>
+            </ul>
+
+            <h3>Technical Approach</h3>
+            <ul>
+                <li><strong>Leverages Existing DocEX Infrastructure:</strong> Uses EnhancedRAGService, LLM adapters, and vector databases</li>
+                <li><strong>RAG-Powered Querying:</strong> Combines semantic search with LLM generation for intelligent answers</li>
+                <li><strong>Structured Data Extraction:</strong> LLM extracts structured data (JSON) for programmatic use</li>
+                <li><strong>Workflow Integration:</strong> Seamlessly integrates with chargeback workflow processors</li>
+            </ul>
+        </div>
+
+        <h2>Project Context</h2>
+        <div class="section">
+            <h3>Business Context</h3>
+            <p>The KB service directly addresses requirements from the <strong>Novartis MMF AI Proposal</strong> for automating the 8-step chargeback process:</p>
+            <ul>
+                <li><strong>Step 3:</strong> Contract Eligibility Validation (queries GPO Roster and Eligibility Guide)</li>
+                <li><strong>Step 4:</strong> GPO Roster Validation (queries GPO Roster)</li>
+                <li><strong>Step 6:</strong> Class-of-Trade Determination (queries DDD Matrix)</li>
+            </ul>
+
+            <h3>Novartis-Specific Requirements</h3>
+            <div class="requirement-box">
+                <ul>
+                    <li><strong>99.9% vs 0.1% Split:</strong> 99.9% of "Customer not found" kickouts result in customer creation (eligible), 0.1% are rejected</li>
+                    <li><strong>Priority Order:</strong> Highest priority for Federal API calls and GPO Roster pulls</li>
+                    <li><strong>Rule Book Updates:</strong> GPO Rosters updated on contract/amendment receipt; DDD Matrix updated with contract changes</li>
+                    <li><strong>Compliance:</strong> Automatic capture of validation results for SOX audit trail</li>
+                    <li><strong>Data Lag Handling:</strong> Caching and retry logic for federal database API lag issues</li>
+                </ul>
+            </div>
+        </div>
+
+        <h2>Architecture Overview</h2>
+        <div class="diagram-container">
+            <div class="mermaid">
+graph TB
+    subgraph "Knowledge Base Service"
+        KB[KB Service Core<br/>Rule Book Management<br/>Query Engine]
+        RB[Rule Book<br/>Processors]
+        QP[Query<br/>Processors]
+    end
+
+    subgraph "DocEX Infrastructure"
+        RAG[Enhanced RAG Service<br/>FAISS/Pinecone]
+        LLM[LLM Adapters<br/>OpenAI/Claude/Local]
+        SEM[Semantic Search<br/>Service]
+        DB[DocEX Baskets<br/>Document Storage]
+    end
+
+    subgraph "Novartis Rule Books"
+        GPO[GPO Roster<br/>Customer Contracts]
+        DDD[DDD Matrix<br/>COT Rules]
+        ELG[ICCR Eligibility<br/>Guide]
+    end
+
+    subgraph "Chargeback Workflow"
+        STEP3[Step 3: Contract<br/>Eligibility]
+        STEP4[Step 4: GPO Roster<br/>Validation]
+        STEP6[Step 6: COT<br/>Determination]
+    end
+
+    GPO --> RB
+    DDD --> RB
+    ELG --> RB
+    
+    RB --> DB
+    DB --> RAG
+    RAG --> SEM
+    RAG --> LLM
+    
+    KB --> RAG
+    KB --> LLM
+    KB --> QP
+    
+    QP --> STEP3
+    QP --> STEP4
+    QP --> STEP6
+
+    style KB fill:#e74c3c,color:#fff,stroke:#e74c3c,stroke-width:3px,stroke-dasharray: 5 5
+    style RAG fill:#3498db,color:#fff
+    style LLM fill:#2ecc71,color:#fff
+    style STEP3 fill:#f39c12,color:#fff
+    style STEP4 fill:#f39c12,color:#fff
+    style STEP6 fill:#f39c12,color:#fff
+            </div>
+        </div>
+
+        <h2>Knowledge Base Service Flow</h2>
+        <div class="diagram-container">
+            <div class="mermaid">
+flowchart TD
+    Start[Rule Book Document<br/>PDF/Excel from G-Drive] --> Ingest[Rule Book Processor<br/>LLM Extraction]
+    Ingest --> Extract[Extract Structured Data<br/>Customers, Contracts, COT Rules]
+    Extract --> Store[Store in DocEX Basket<br/>with Metadata]
+    Store --> Index[Index in Vector Database<br/>FAISS/Pinecone]
+    
+    Query[User Query<br/>Natural Language] --> RAG[RAG Service<br/>Hybrid Search]
+    RAG --> Vector[Vector Search<br/>Semantic Similarity]
+    RAG --> Semantic[Semantic Search<br/>DocEX Native]
+    Vector --> Combine[Combine Results<br/>Weighted Scoring]
+    Semantic --> Combine
+    Combine --> Context[Build Context<br/>from Top Documents]
+    Context --> LLM[LLM Generation<br/>Answer with Sources]
+    LLM --> Extract2[Extract Structured Data<br/>JSON Format]
+    Extract2 --> Result[KB Query Result<br/>Answer + Structured Data]
+    
+    style Ingest fill:#e74c3c,color:#fff,stroke:#e74c3c,stroke-width:3px,stroke-dasharray: 5 5
+    style RAG fill:#3498db,color:#fff
+    style LLM fill:#2ecc71,color:#fff
+    style Result fill:#28a745,color:#fff
+            </div>
+        </div>
+
+        <h2>Integration with 8-Step Chargeback Workflow</h2>
+        <div class="diagram-container">
+            <div class="mermaid">
+flowchart LR
+    Step1[Step 1: Extract<br/>Identifiers] --> Step2[Step 2: SAP<br/>Customer Check]
+    Step2 -->|Not Found| Step3[Step 3: Contract<br/>Eligibility - KB]
+    Step2 -->|Found| Skip[Skip to<br/>Resolution]
+    Step3 --> Step4[Step 4: GPO Roster<br/>Validation - KB]
+    Step4 --> Step5[Step 5: Federal DB<br/>Lookup]
+    Step5 --> Step6[Step 6: COT<br/>Determination - KB]
+    Step6 --> Step7[Step 7: SAP Customer<br/>Creation]
+    Step7 --> Step8[Step 8: Chargeback<br/>Resolution]
+    
+    Step3 -.-> KB1[KB Service<br/>GPO Roster<br/>Eligibility Guide]
+    Step4 -.-> KB1
+    Step6 -.-> KB2[KB Service<br/>DDD Matrix]
+    
+    Step3 -->|99.9%| Continue[Continue Workflow]
+    Step3 -->|0.1%| Exception[Exception Queue<br/>Rejection]
+    
+    style Step3 fill:#e74c3c,color:#fff,stroke:#e74c3c,stroke-width:3px,stroke-dasharray: 5 5
+    style Step4 fill:#e74c3c,color:#fff,stroke:#e74c3c,stroke-width:3px,stroke-dasharray: 5 5
+    style Step6 fill:#e74c3c,color:#fff,stroke:#e74c3c,stroke-width:3px,stroke-dasharray: 5 5
+    style KB1 fill:#3498db,color:#fff
+    style KB2 fill:#3498db,color:#fff
+            </div>
+        </div>
+
+        <h2>Core Components</h2>
+
+        <h3>1. Knowledge Base Service</h3>
+        <div class="section">
+            <p>The core service that wraps RAG capabilities for KB-specific queries. Provides high-level methods for common KB operations.</p>
+            
+            <h4>Key Methods:</h4>
+            <ul>
+                <li><code>ingest_rule_book()</code> - Ingest rule books into KB with vector indexing</li>
+                <li><code>query_rule_book()</code> - Natural language query with RAG-powered search</li>
+                <li><code>validate_contract_eligibility()</code> - Validate customer contract eligibility (Step 3)</li>
+                <li><code>get_class_of_trade()</code> - Determine class-of-trade using DDD Matrix (Step 6)</li>
+                <li><code>get_rule_book_version()</code> - Get version information for rule books</li>
+            </ul>
+
+            <h4>Features:</h4>
+            <ul>
+                <li>RAG-powered semantic search across rule books</li>
+                <li>LLM-based answer generation with source citations</li>
+                <li>Structured data extraction (JSON) for programmatic use</li>
+                <li>Version control and change tracking</li>
+                <li>Fast lookup by indexed fields</li>
+            </ul>
+        </div>
+
+        <h3>2. Rule Book Processors</h3>
+        <div class="section">
+            <p>Specialized processors for ingesting and processing Novartis rule books from G-Drive/G-Suite.</p>
+            
+            <h4>Components:</h4>
+            <ul>
+                <li><strong>RuleBookProcessor</strong> - Base processor for rule book ingestion</li>
+                <li><strong>GPORosterProcessor</strong> - Extract customer contract eligibility from GPO Rosters</li>
+                <li><strong>DDDMatrixProcessor</strong> - Extract class-of-trade rules from DDD Matrix</li>
+                <li><strong>EligibilityGuideProcessor</strong> - Extract eligibility verification rules</li>
+            </ul>
+
+            <h4>Processing Flow:</h4>
+            <ol>
+                <li>Detect rule book type from document name/metadata</li>
+                <li>Extract text content from document (PDF/Excel)</li>
+                <li>Use LLM to extract structured data (customers, contracts, COT rules)</li>
+                <li>Store extracted data as document metadata</li>
+                <li>Index document in vector database for semantic search</li>
+            </ol>
+        </div>
+
+        <h3>3. Workflow Integration Processors</h3>
+        <div class="section">
+            <p>Processors that integrate KB service into the chargeback workflow.</p>
+            
+            <h4>ContractEligibilityProcessor (Step 3):</h4>
+            <ul>
+                <li>Extracts contract specifications from chargeback EDI</li>
+                <li>Queries KB service for eligibility validation</li>
+                <li>Stores eligibility result as document metadata</li>
+                <li>Routes to exception queue if not eligible (0.1% case)</li>
+            </ul>
+
+            <h4>COTDeterminationProcessor (Step 6):</h4>
+            <ul>
+                <li>Uses customer info and federal DB results</li>
+                <li>Queries KB service (DDD Matrix) for COT determination</li>
+                <li>Stores COT code and description for SAP customer creation</li>
+                <li>Flags ambiguous cases for human review</li>
+            </ul>
+        </div>
+
+        <h2>Data Flow Architecture</h2>
+        <div class="diagram-container">
+            <div class="mermaid">
+sequenceDiagram
+    participant GDrive as G-Drive/G-Suite
+    participant RBProc as Rule Book Processor
+    participant DocEX as DocEX Basket
+    participant VectorDB as Vector Database
+    participant KB as KB Service
+    participant RAG as RAG Service
+    participant LLM as LLM Adapter
+    participant Workflow as Chargeback Workflow
+
+    Note over GDrive,Workflow: Rule Book Ingestion Flow
+    GDrive->>RBProc: Rule Book Document
+    RBProc->>LLM: Extract Structured Data
+    LLM-->>RBProc: Extracted Rules (JSON)
+    RBProc->>DocEX: Store Document + Metadata
+    RBProc->>VectorDB: Index Document
+    
+    Note over GDrive,Workflow: Query Flow (Step 3)
+    Workflow->>KB: Validate Contract Eligibility
+    KB->>RAG: Query Rule Books
+    RAG->>VectorDB: Vector Search
+    RAG->>DocEX: Semantic Search
+    VectorDB-->>RAG: Relevant Documents
+    DocEX-->>RAG: Relevant Documents
+    RAG->>LLM: Generate Answer with Context
+    LLM-->>RAG: Answer + Confidence
+    RAG-->>KB: RAG Result
+    KB->>LLM: Extract Structured Data
+    LLM-->>KB: Structured Eligibility Result
+    KB-->>Workflow: Eligibility Validation
+            </div>
+        </div>
+
+        <h2>Rule Book Types</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Rule Book Type</th>
+                    <th>Purpose</th>
+                    <th>Update Frequency</th>
+                    <th>Used in Workflow Step</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>GPO Roster</strong></td>
+                    <td>Customer contract eligibility information</td>
+                    <td>On contract/amendment receipt</td>
+                    <td>Steps 3 & 4</td>
+                </tr>
+                <tr>
+                    <td><strong>DDD Matrix</strong></td>
+                    <td>Class-of-trade (COT) determination rules</td>
+                    <td>On contract changes</td>
+                    <td>Step 6</td>
+                </tr>
+                <tr>
+                    <td><strong>ICCR Eligibility Guide</strong></td>
+                    <td>Eligibility verification rules and procedures</td>
+                    <td>On contract amendments</td>
+                    <td>Step 3</td>
+                </tr>
+                <tr>
+                    <td><strong>Contract Eligibility Specifications</strong></td>
+                    <td>Detailed contract terms and eligibility requirements</td>
+                    <td>Real-time from contract system</td>
+                    <td>Step 3</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h2>Key Features</h2>
+        <div class="highlight-box">
+            <h3>RAG-Powered Querying</h3>
+            <ul>
+                <li><strong>Hybrid Search:</strong> Combines vector similarity search with semantic search for better accuracy</li>
+                <li><strong>Context-Aware:</strong> LLM generates answers based on retrieved document context</li>
+                <li><strong>Source Citations:</strong> Automatic citation of source documents in answers</li>
+                <li><strong>Confidence Scoring:</strong> AI-powered confidence assessment for generated answers</li>
+            </ul>
+
+            <h3>Structured Data Extraction</h3>
+            <ul>
+                <li><strong>JSON Output:</strong> LLM extracts structured data in JSON format for programmatic use</li>
+                <li><strong>Type-Specific Extraction:</strong> Different extraction schemas for eligibility, COT, contracts</li>
+                <li><strong>Fallback Handling:</strong> Text-based parsing if structured extraction fails</li>
+            </ul>
+
+            <h3>Version Control & Change Tracking</h3>
+            <ul>
+                <li><strong>Rule Book Versioning:</strong> Track changes to rule books over time</li>
+                <li><strong>Change Log:</strong> Maintain audit trail of rule modifications</li>
+                <li><strong>Rollback Support:</strong> Ability to revert to previous rule versions</li>
+            </ul>
+        </div>
+
+        <h2>Benefits for Novartis MMF Use Cases</h2>
+        <div class="benefit-item">
+            <strong>Time Savings:</strong> Automates manual rule book lookups, contributing to 10+ minute reduction per kickout
+        </div>
+        <div class="benefit-item">
+            <strong>Accuracy:</strong> 99.9% automated resolution rate for chargeback kickouts (as per proposal goals)
+        </div>
+        <div class="benefit-item">
+            <strong>Scalability:</strong> Vector database supports large rule book collections (GPO Rosters with 1000s of customers)
+        </div>
+        <div class="benefit-item">
+            <strong>Compliance:</strong> Maintains audit trail of all KB queries for SOX compliance
+        </div>
+        <div class="benefit-item">
+            <strong>Flexibility:</strong> Can query across multiple rule book types (GPO Roster, DDD Matrix, Eligibility Guide)
+        </div>
+        <div class="benefit-item">
+            <strong>Integration:</strong> Seamlessly integrates with DocEX workflow processors for 8-step chargeback automation
+        </div>
+
+        <h2>Implementation Timeline</h2>
+
+        <div class="timeline-item">
+            <h4>Phase 1A: Weeks 1-6 (Prototype Phase)</h4>
+            <ul>
+                <li>Create KB Service core implementation</li>
+                <li>Create Rule Book Processors for Novartis formats</li>
+                <li>Create KB-specific prompts</li>
+                <li>Test with Novartis sample data</li>
+            </ul>
+        </div>
+
+        <div class="timeline-item">
+            <h4>Phase 1A: Weeks 6-14 (Development Phase)</h4>
+            <ul>
+                <li>Create workflow integration processors (ContractEligibility, COTDetermination)</li>
+                <li>Add KB baskets to Novartis DocEX configuration</li>
+                <li>Integrate into chargeback workflow (Steps 3, 4, 6)</li>
+                <li>User Acceptance Testing with Novartis ICCR team</li>
+            </ul>
+        </div>
+
+        <div class="timeline-item">
+            <h4>Phase 1B: Productionization</h4>
+            <ul>
+                <li>Deploy KB service on Novartis cloud environment</li>
+                <li>Set up automated rule book update workflow</li>
+                <li>Monitor performance and accuracy</li>
+                <li>Expand to additional use cases (rebate processing, forecasting)</li>
+            </ul>
+        </div>
+
+        <h2>Success Criteria</h2>
+        <div class="section">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Metric</th>
+                        <th>Target</th>
+                        <th>Measurement</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Time Reduction per Kickout</td>
+                        <td>10+ minutes</td>
+                        <td>From 25 minutes to &lt;15 minutes</td>
+                    </tr>
+                    <tr>
+                        <td>Automation Rate</td>
+                        <td>99.9%</td>
+                        <td>Automated resolution vs. manual review</td>
+                    </tr>
+                    <tr>
+                        <td>Query Accuracy</td>
+                        <td>High</td>
+                        <td>Eligibility and COT determination accuracy</td>
+                    </tr>
+                    <tr>
+                        <td>Query Latency</td>
+                        <td>&lt;2 seconds</td>
+                        <td>Average query response time</td>
+                    </tr>
+                    <tr>
+                        <td>Compliance</td>
+                        <td>100%</td>
+                        <td>Complete audit trail for all KB queries</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <h2>Technical Stack</h2>
+        <div class="section">
+            <h3>Core Technologies</h3>
+            <ul>
+                <li><strong>DocEX Platform:</strong> Document management and processing framework</li>
+                <li><strong>Enhanced RAG Service:</strong> Vector database integration (FAISS/Pinecone)</li>
+                <li><strong>LLM Adapters:</strong> OpenAI GPT-4o, Anthropic Claude, Local LLM (Ollama)</li>
+                <li><strong>Vector Databases:</strong> FAISS (local) or Pinecone (cloud)</li>
+                <li><strong>Semantic Search:</strong> DocEX native semantic search service</li>
+            </ul>
+
+            <h3>Integration Points</h3>
+            <ul>
+                <li><strong>G-Drive/G-Suite:</strong> Automated rule book ingestion from Novartis G-Drive</li>
+                <li><strong>DocEX Baskets:</strong> Organized storage for rule books by type</li>
+                <li><strong>Chargeback Workflow:</strong> Integration with 8-step workflow processors</li>
+                <li><strong>Metadata Service:</strong> Store extracted rules and query results</li>
+            </ul>
+        </div>
+
+        <h2>Dependencies</h2>
+        <div class="requirement-box">
+            <h3>Required Dependencies</h3>
+            <ul>
+                <li><strong>G-Drive API Access:</strong> Access to Novartis G-Drive/G-Suite for rule book retrieval</li>
+                <li><strong>Rule Book Documents:</strong> Sample GPO Rosters, DDD Matrix, Eligibility Guides from Novartis</li>
+                <li><strong>LLM API Keys:</strong> OpenAI or Anthropic API keys for LLM services</li>
+                <li><strong>Vector Database:</strong> FAISS (local) or Pinecone (cloud) setup</li>
+                <li><strong>DocEX Environment:</strong> DocEX deployed on Novartis cloud environment</li>
+            </ul>
+        </div>
+
+        <h2>Next Steps</h2>
+        <div class="section">
+            <h3>Immediate Actions (Week 1-2)</h3>
+            <ol>
+                <li>Obtain sample Novartis rule books (GPO Roster, DDD Matrix, Eligibility Guide)</li>
+                <li>Set up development environment on Novartis cloud</li>
+                <li>Configure G-Drive API access for automated rule book updates</li>
+                <li>Prototype KB Service with sample data</li>
+            </ol>
+
+            <h3>Phase 1A: Weeks 3-6 (Prototype)</h3>
+            <ol>
+                <li>Implement KnowledgeBaseService class</li>
+                <li>Create rule book processors for Novartis formats</li>
+                <li>Test extraction accuracy with Novartis data</li>
+                <li>Validate against manual process results</li>
+            </ol>
+
+            <h3>Phase 1A: Weeks 6-14 (Development)</h3>
+            <ol>
+                <li>Integrate ContractEligibilityProcessor into Step 3</li>
+                <li>Integrate COTDeterminationProcessor into Step 6</li>
+                <li>Test complete 8-step workflow with KB service</li>
+                <li>User Acceptance Testing with Novartis ICCR team</li>
+            </ol>
+        </div>
+
+        <h2>Reference Materials</h2>
+        <div class="reference-link">
+            <h3>Complete Implementation Details</h3>
+            <p>For complete code implementations, detailed API specifications, error handling patterns, performance optimizations, testing strategies, and deployment guides, please refer to:</p>
+            <p><strong><a href="KB_IMPLEMENTATION_PROPOSAL.md" target="_blank">KB_IMPLEMENTATION_PROPOSAL.md</a></strong></p>
+            <p>This markdown document contains:</p>
+            <ul>
+                <li>Full code implementations for all components</li>
+                <li>Detailed API specifications</li>
+                <li>Error handling and resilience patterns</li>
+                <li>Performance optimization strategies</li>
+                <li>Testing examples (unit, integration, performance)</li>
+                <li>Deployment scripts and configuration</li>
+                <li>Monitoring and observability setup</li>
+                <li>Complete prompt templates (YAML)</li>
+            </ul>
+        </div>
+
+        <div class="reference-link">
+            <h3>Related Project Documents</h3>
+            <ul>
+                <li><a href="Keystone.ai x Novartis - MMF AI Proposal - v.live.pdf" target="_blank">Keystone.ai x Novartis - MMF AI Proposal</a> - Project definition</li>
+                <li><a href="Architecture_Review_and_Enhancements.md" target="_blank">Architecture Review and Enhancements</a> - Architecture adjustments</li>
+                <li><a href="Technical_Specification.html" target="_blank">Technical Specification</a> - Technical specifications</li>
+                <li><a href="Project_Proposal.html" target="_blank">Project Proposal</a> - Project proposal</li>
+                <li><a href="Updated_RAIN_Architecture_Diagram.html" target="_blank">Updated RAIN Architecture Diagram</a> - Architecture diagrams</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        mermaid.initialize({ 
+            startOnLoad: true, 
+            theme: 'default',
+            flowchart: {
+                useMaxWidth: true,
+                htmlLabels: true,
+                curve: 'basis'
+            },
+            sequence: {
+                diagramMarginX: 50,
+                diagramMarginY: 10,
+                actorMargin: 50,
+                width: 150,
+                height: 65,
+                boxMargin: 10,
+                boxTextMargin: 5,
+                noteMargin: 10,
+                messageMargin: 35
+            }
+        });
+    </script>
+</body>
+</html>
+

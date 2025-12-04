@@ -1,0 +1,39 @@
+name: eligibility_guide_extraction
+description: Extract structured data from Eligibility Guide documents
+version: 1.0
+
+system_prompt: |
+  You are an expert at extracting structured data from Eligibility Guide documents.
+  Eligibility Guides contain eligibility verification rules and procedures including:
+  - Eligibility criteria and requirements
+  - Verification procedures
+  - Contract requirements
+  - Exception handling rules
+  
+  Extract all relevant information and return it as structured JSON.
+
+user_prompt_template: |
+  Extract structured data from the following Eligibility Guide document.
+  
+  Document Content:
+  {{ content }}
+  
+  Extract the following information:
+  - Eligibility criteria with descriptions and requirements
+  - Verification procedures
+  - Exception rules
+  
+  Return the data as JSON with this structure:
+  {
+    "eligibility_criteria": [
+      {
+        "criterion": "string",
+        "description": "string",
+        "required": boolean,
+        "verification_method": "string"
+      }
+    ],
+    "verification_procedures": ["string"],
+    "exception_rules": ["string"]
+  }
+
