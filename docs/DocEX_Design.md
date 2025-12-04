@@ -59,7 +59,8 @@ docex/
 │   ├── __init__.py
 │   ├── base.py           # BaseProcessor and helpers
 │   ├── factory.py        # ProcessorFactory
-│   └── csv_to_json.py    # Example processor
+│   ├── csv_to_json.py    # CSV to JSON converter
+│   └── word_to_text.py   # Word to Text converter
 ├── transport/
 │   ├── __init__.py
 │   ├── base.py           # Base transport interface
@@ -103,8 +104,14 @@ docex/
 - Example CLI usage:
 
 ```bash
+# Register processors
 docex processor register --name CSVToJSONProcessor --type format_converter --description "Converts CSV to JSON" --config '{}'
+docex processor register --name WordToTextProcessor --type format_converter --description "Converts Word to Text" --config '{}'
+
+# Remove processors
 docex processor remove --name CSVToJSONProcessor
+
+# List processors
 docex processor list
 ```
 
