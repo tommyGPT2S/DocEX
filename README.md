@@ -41,6 +41,11 @@ For PDF processing features:
 pip install pdfminer.six
 ```
 
+For Word document processing features:
+```sh
+pip install python-docx
+```
+
 For LLM features (included by default in 2.2.0+):
 - `openai>=1.0.0` - OpenAI API integration
 - `jinja2>=3.1.0` - Prompt templating
