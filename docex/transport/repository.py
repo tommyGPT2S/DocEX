@@ -1,7 +1,12 @@
 from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session
 from sqlalchemy import select, update, delete
-from datetime import datetime, UTC
+from datetime import datetime, timezone
+
+try:
+    from datetime import UTC
+except ImportError:
+    UTC = timezone.utc
 
 from .models import Route, RouteOperation
 from .config import RouteConfig, OtherParty, RouteMethod
