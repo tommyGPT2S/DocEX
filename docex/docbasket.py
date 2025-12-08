@@ -420,7 +420,10 @@ class DocBasket:
             )
             session.add(document)
             session.flush()
-            document_path = f"docex/basket_{self.id}/{document.id}"
+            # Document path should be relative to the basket's storage root
+            # The basket storage path already includes the base path (e.g., storage/docex/basket_{id})
+            # So we only need the document ID as the path
+            document_path = str(document.id)
             stored_path = self.storage_service.store_document(str(file_path), document_path)
             document.path = stored_path
             if metadata:
