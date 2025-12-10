@@ -215,7 +215,21 @@ class RAGService:
                 doc_header += f" {doc.name}"
             
             # Get document content
-            content = getattr(doc, 'content', '') or str(doc)
+            try:
+                # Try to get content using Document's get_content method
+                if hasattr(doc, 'get_content'):
+                    content = doc.get_content(mode='text')
+                elif hasattr(doc, 'content'):
+                    content = doc.content
+                else:
+                    # Fallback: try to get text from document
+                    content = str(doc) if doc else ''
+            except Exception as e:
+                logger.warning(f"Could not get content from document {getattr(doc, 'id', 'unknown')}: {e}")
+                content = ''
+            
+            if not content:
+                content = ''
             
             # Estimate tokens (rough approximation: 1 token ≈ 4 characters)
             estimated_tokens = len(content) // 4
