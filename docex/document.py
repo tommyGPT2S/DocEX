@@ -133,7 +133,19 @@ class Document:
     def get_metadata_dict(self) -> Dict[str, Any]:
         """Get all metadata as a plain dict (for backward compatibility)."""
         meta = self.get_metadata()
-        return {k: v.to_dict() for k, v in meta.items()}
+        result = {}
+        for k, v in meta.items():
+            # Handle both MetaModel objects and plain values
+            if hasattr(v, 'to_dict'):
+                # MetaModel object - convert to dict
+                result[k] = v.to_dict()
+            elif isinstance(v, dict):
+                # Already a dict
+                result[k] = v
+            else:
+                # Plain value (string, int, etc.)
+                result[k] = v
+        return result
     
     def update_metadata(self, metadata: Dict[str, Any]) -> None:
         """Update metadata for this document.
