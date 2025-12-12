@@ -125,6 +125,7 @@ class EnhancedRAGService(RAGService):
             
         except Exception as e:
             logger.error(f"Vector database initialization failed: {e}")
+            self.vector_db_initialized = False  # Ensure it's set to False on failure
             return False
     
     async def query(
@@ -172,6 +173,12 @@ class EnhancedRAGService(RAGService):
                 search_results = await self._vector_search(
                     question, basket_id, filters, query_config
                 )
+                # If vector search returns no results, fall back to semantic search
+                if not search_results:
+                    logger.info("Vector search returned no results, falling back to semantic search")
+                    search_results = await self._retrieve_documents(
+                        question, basket_id, filters, query_config
+                    )
             else:
                 # Fallback to semantic search
                 logger.info("Vector database not available, using semantic search")
@@ -339,7 +346,8 @@ class EnhancedRAGService(RAGService):
             
         except Exception as e:
             logger.error(f"Vector search failed: {e}")
-            return []
+            logger.info("Vector search failed, will fall back to semantic search")
+            return []  # Return empty to trigger fallback
     
     async def _get_query_embedding(self, question: str) -> np.ndarray:
         """Generate embedding for query using LLM adapter"""

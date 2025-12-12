@@ -94,3 +94,11 @@ test_meeting_notes.txt
 *api_key*
 *secret*
 sk-ant-*
+KB_Implementation_Proposal.html
+
+# Documentation files (email responses, summaries, etc.)
+EMAIL_RESPONSE_*.md
+*_SUMMARY.md
+DOCEX_KB_RELATIONSHIP.md
+GENERIC_KB_SERVICE_SUMMARY.md
+PR_DESCRIPTION.md
