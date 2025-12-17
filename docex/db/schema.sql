@@ -117,4 +117,12 @@ CREATE INDEX IF NOT EXISTS idx_doc_events_event_timestamp ON doc_events(event_ti
 CREATE INDEX IF NOT EXISTS idx_doc_events_status ON doc_events(status);
 CREATE INDEX IF NOT EXISTS idx_document_metadata_document_id ON document_metadata(document_id);
 CREATE INDEX IF NOT EXISTS idx_document_metadata_key ON document_metadata(key);
-CREATE INDEX IF NOT EXISTS idx_document_metadata_type ON document_metadata(metadata_type); 
+CREATE INDEX IF NOT EXISTS idx_document_metadata_type ON document_metadata(metadata_type);
+CREATE INDEX IF NOT EXISTS idx_document_metadata_key_value ON document_metadata(key, value);
+
+-- Composite indexes for optimized document queries with basket_id
+CREATE INDEX IF NOT EXISTS idx_document_basket_status ON document(basket_id, status);
+CREATE INDEX IF NOT EXISTS idx_document_basket_type ON document(basket_id, document_type);
+CREATE INDEX IF NOT EXISTS idx_document_basket_created ON document(basket_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_document_basket_updated ON document(basket_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_document_basket_name ON document(basket_id, name); 
