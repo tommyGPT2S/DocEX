@@ -151,8 +151,9 @@ class Database:
                     password_encoded = quote_plus(password)
                     
                     # Create PostgreSQL engine with properly encoded credentials
-                    # Add SSL mode for RDS connections (required for AWS RDS)
-                    connection_url = f'postgresql://{user_encoded}:{password_encoded}@{host}:{port}/{database}?sslmode=require'
+                    # Add SSL mode - disable for local, require for remote/RDS
+                    sslmode = postgres_config.get('sslmode', 'disable' if host in ['localhost', '127.0.0.1'] else 'require')
+                    connection_url = f'postgresql://{user_encoded}:{password_encoded}@{host}:{port}/{database}?sslmode={sslmode}'
                     self.engine = create_engine(
                         connection_url,
                         poolclass=QueuePool,
