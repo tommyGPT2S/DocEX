@@ -1,0 +1,907 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Technical Specification - Keystone RAIN Platform for Novartis MMF</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+            color: #333;
+        }
+        .container {
+            background-color: white;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 30px;
+        }
+        h1 {
+            color: #2c3e50;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 10px;
+            margin-top: 0;
+        }
+        h2 {
+            color: #34495e;
+            margin-top: 30px;
+            border-left: 4px solid #3498db;
+            padding-left: 15px;
+        }
+        h3 {
+            color: #555;
+            margin-top: 25px;
+        }
+        h4 {
+            color: #666;
+            margin-top: 20px;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid #ecf0f1;
+        }
+        .header h1 {
+            border: none;
+            margin: 0;
+            padding: 0;
+        }
+        .meta {
+            color: #7f8c8d;
+            font-size: 0.9em;
+            margin-top: 10px;
+        }
+        .spec-section {
+            background-color: #f8f9fa;
+            padding: 20px;
+            border-radius: 5px;
+            margin: 15px 0;
+            border-left: 4px solid #3498db;
+        }
+        .spec-item {
+            margin: 15px 0;
+            padding: 10px;
+            background-color: white;
+            border-radius: 3px;
+        }
+        .spec-item h4 {
+            margin-top: 0;
+            color: #2c3e50;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 12px;
+            text-align: left;
+        }
+        th {
+            background-color: #3498db;
+            color: white;
+        }
+        tr:nth-child(even) {
+            background-color: #f2f2f2;
+        }
+        code {
+            background-color: #f4f4f4;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+        pre {
+            background-color: #f4f4f4;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            border-left: 4px solid #3498db;
+        }
+        .requirement {
+            background-color: #e8f4f8;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 10px 0;
+            border-left: 4px solid #3498db;
+        }
+        .requirement strong {
+            color: #2c3e50;
+        }
+        .dependency {
+            background-color: #fff3cd;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 10px 0;
+            border-left: 4px solid #ffc107;
+        }
+        .new-feature {
+            background-color: #f8d7da;
+            padding: 10px;
+            border-radius: 3px;
+            margin: 5px 0;
+            border-left: 4px solid #dc3545;
+        }
+        .new-feature::before {
+            content: "NEW: ";
+            font-weight: bold;
+            color: #dc3545;
+        }
+        .enhanced-feature {
+            background-color: #fff3cd;
+            padding: 10px;
+            border-radius: 3px;
+            margin: 5px 0;
+            border-left: 4px solid #ffc107;
+        }
+        .enhanced-feature::before {
+            content: "ENHANCED: ";
+            font-weight: bold;
+            color: #ffc107;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Technical Specification</h1>
+            <h2>Keystone RAIN Platform for Novartis MMF Use Cases</h2>
+            <div class="meta">
+                <strong>Version:</strong> 2.0 | <strong>Date:</strong> Current Session | 
+                <strong>Status:</strong> Enhanced Specification with Knowledge Base Service
+            </div>
+        </div>
+
+        <h2>1. System Overview</h2>
+        <p>The Keystone RAIN Platform is a comprehensive document management and workflow automation system designed to support three primary Managed Markets Finance (MMF) use cases for Novartis:</p>
+        <ul>
+            <li><strong>Chargeback Process Automation</strong> - Automated resolution of "Customer not found" chargeback kickouts</li>
+            <li><strong>Medicaid GTN Forecasting</strong> - Improved accuracy of Medicaid gross-to-net forecasts using 867 sellout data</li>
+            <li><strong>Medicaid Rebate Invoice Automation</strong> - Automated triage and error detection for rebate invoices</li>
+        </ul>
+
+        <h2>2. Architecture Components</h2>
+
+        <h3>2.1 Knowledge Base Service <span class="new-feature">NEW</span></h3>
+        <div class="spec-section">
+            <div class="spec-item">
+                <h4>2.1.1 Overview</h4>
+                <p>The Knowledge Base Service manages structured rule books, reference documents, and eligibility matrices that drive automated workflow decisions.</p>
+            </div>
+
+            <div class="spec-item">
+                <h4>2.1.2 Rule Book Types</h4>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Rule Book Type</th>
+                            <th>Purpose</th>
+                            <th>Update Frequency</th>
+                            <th>Storage Format</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>GPO Roster</td>
+                            <td>Customer contract eligibility information</td>
+                            <td>On contract/amendment receipt</td>
+                            <td>Excel, CSV, Google Sheets</td>
+                        </tr>
+                        <tr>
+                            <td>DDD Matrix</td>
+                            <td>Class-of-trade (COT) determination rules</td>
+                            <td>On contract changes</td>
+                            <td>Excel, Structured Data</td>
+                        </tr>
+                        <tr>
+                            <td>ICCR Eligibility Guide</td>
+                            <td>Eligibility verification rules and procedures</td>
+                            <td>On contract amendments</td>
+                            <td>PDF, Word, Google Docs</td>
+                        </tr>
+                        <tr>
+                            <td>Contract Eligibility Specifications</td>
+                            <td>Detailed contract terms and eligibility requirements</td>
+                            <td>Real-time from contract system</td>
+                            <td>API, Database, Structured Data</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="spec-item">
+                <h4>2.1.3 Technical Specifications</h4>
+                <div class="requirement">
+                    <strong>Storage:</strong>
+                    <ul>
+                        <li>Rule books stored as DocEX documents in dedicated baskets (<code>gpo_rosters</code>, <code>ddd_matrices</code>, <code>eligibility_guides</code>)</li>
+                        <li>Structured rule data indexed in PostgreSQL with full-text search capabilities</li>
+                        <li>Vector embeddings stored for semantic search (FAISS or Pinecone)</li>
+                    </ul>
+                </div>
+
+                <div class="requirement">
+                    <strong>Ingestion:</strong>
+                    <ul>
+                        <li>LLM-powered extraction of structured data from rule books</li>
+                        <li>Automatic versioning and change tracking</li>
+                        <li>Support for Google Drive API integration for automated updates</li>
+                    </ul>
+                </div>
+
+                <div class="requirement">
+                    <strong>Query Interface:</strong>
+                    <ul>
+                        <li>Fast lookup by indexed fields (customer ID, contract number, etc.)</li>
+                        <li>Semantic search using RAG services for complex queries</li>
+                        <li>REST API endpoints for programmatic access</li>
+                    </ul>
+                </div>
+
+                <div class="requirement">
+                    <strong>Version Control:</strong>
+                    <ul>
+                        <li>Track all changes to rule books over time</li>
+                        <li>Maintain audit trail of rule modifications</li>
+                        <li>Support rollback to previous rule versions</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="spec-item">
+                <h4>2.1.4 API Specification</h4>
+                <pre><code># Knowledge Base Service API Endpoints
+
+GET  /api/kb/rule-books
+     List all available rule books
+
+POST /api/kb/rule-books/{type}/ingest
+     Ingest a new rule book document
+     Body: { "document_id": "...", "version": "..." }
+
+GET  /api/kb/rule-books/{type}/query
+     Query a rule book
+     Query params: { "customer_id": "...", "contract_number": "..." }
+
+POST /api/kb/class-of-trade
+     Determine class-of-trade
+     Body: { "customer_info": {...}, "federal_db_results": {...} }
+
+POST /api/kb/eligibility/validate
+     Validate contract eligibility
+     Body: { "customer_id": "...", "contract_spec": {...} }
+
+GET  /api/kb/rule-books/{type}/versions
+     Get version history for a rule book</code></pre>
+            </div>
+        </div>
+
+        <h3>2.2 Enhanced Chargeback Workflow <span class="enhanced-feature">ENHANCED</span></h3>
+        <div class="spec-section">
+            <div class="spec-item">
+                <h4>2.2.1 8-Step Workflow Processors</h4>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Step</th>
+                            <th>Processor</th>
+                            <th>Input</th>
+                            <th>Output</th>
+                            <th>Integration</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>1</td>
+                            <td>IdentifierExtractionProcessor</td>
+                            <td>Chargeback EDI</td>
+                            <td>HIN, DEA, Address</td>
+                            <td>LLM Adapter</td>
+                        </tr>
+                        <tr>
+                            <td>2</td>
+                            <td>SAPCustomerCheckProcessor</td>
+                            <td>Customer identifiers</td>
+                            <td>Customer exists (Y/N)</td>
+                            <td>SAP 4 HANA API</td>
+                        </tr>
+                        <tr>
+                            <td>3</td>
+                            <td>ContractEligibilityProcessor</td>
+                            <td>Contract specifications</td>
+                            <td>Eligibility validation</td>
+                            <td>Knowledge Base Service</td>
+                        </tr>
+                        <tr>
+                            <td>4</td>
+                            <td>GPORosterValidationProcessor</td>
+                            <td>Customer ID, Contract</td>
+                            <td>Roster match result</td>
+                            <td>Knowledge Base Service</td>
+                        </tr>
+                        <tr>
+                            <td>5</td>
+                            <td>FederalDBLookupProcessor</td>
+                            <td>Customer identifiers</td>
+                            <td>Federal DB validation</td>
+                            <td>Federal DB Adapter</td>
+                        </tr>
+                        <tr>
+                            <td>6</td>
+                            <td>COTDeterminationProcessor</td>
+                            <td>Customer info, Federal DB results</td>
+                            <td>Class-of-trade</td>
+                            <td>Knowledge Base Service (DDD Matrix)</td>
+                        </tr>
+                        <tr>
+                            <td>7</td>
+                            <td>SAPCustomerCreationProcessor</td>
+                            <td>Customer details, COT</td>
+                            <td>Customer creation request</td>
+                            <td>SAP 4 HANA API</td>
+                        </tr>
+                        <tr>
+                            <td>8</td>
+                            <td>ChargebackResolutionProcessor</td>
+                            <td>Customer creation result</td>
+                            <td>Chargeback resolution, Compliance docs</td>
+                            <td>Model N API, Audit Trail</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="spec-item">
+                <h4>2.2.2 Conditional Logic</h4>
+                <div class="requirement">
+                    <strong>Workflow Routing:</strong>
+                    <ul>
+                        <li>If customer exists in SAP (Step 2): Skip to resolution (99.9% path)</li>
+                        <li>If customer not eligible (Step 3): Route to exception queue (0.1% path)</li>
+                        <li>If federal DB lookup fails: Retry with exponential backoff, then manual review</li>
+                        <li>If COT determination ambiguous: Flag for human review with recommendations</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="spec-item">
+                <h4>2.2.3 Performance Requirements</h4>
+                <ul>
+                    <li><strong>Target Processing Time:</strong> &lt;15 minutes per kickout (down from 25 minutes)</li>
+                    <li><strong>Throughput:</strong> Support 50-200 chargebacks per day</li>
+                    <li><strong>Success Rate:</strong> 99.9% automated resolution rate</li>
+                    <li><strong>Exception Rate:</strong> &lt;0.1% requiring human review</li>
+                </ul>
+            </div>
+        </div>
+
+        <h3>2.3 Federal Database Adapter <span class="enhanced-feature">ENHANCED</span></h3>
+        <div class="spec-section">
+            <div class="spec-item">
+                <h4>2.3.1 Supported Databases</h4>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Database</th>
+                            <th>Purpose</th>
+                            <th>API Type</th>
+                            <th>Rate Limits</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>DEA Registrant Database</td>
+                            <td>DEA number validation</td>
+                            <td>REST API</td>
+                            <td>100 req/min (with license)</td>
+                        </tr>
+                        <tr>
+                            <td>HIBCC HIN Portal</td>
+                            <td>HIN validation</td>
+                            <td>REST API</td>
+                            <td>50 req/min (with license)</td>
+                        </tr>
+                        <tr>
+                            <td>HRSA Program Portal</td>
+                            <td>340B program eligibility</td>
+                            <td>REST API</td>
+                            <td>30 req/min</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="spec-item">
+                <h4>2.3.2 Technical Features</h4>
+                <div class="requirement">
+                    <strong>Lag Handling:</strong>
+                    <ul>
+                        <li>Cache responses for 24 hours to handle data lag issues</li>
+                        <li>Implement retry logic with exponential backoff (max 3 retries)</li>
+                        <li>Fallback to manual lookup if API unavailable</li>
+                    </ul>
+                </div>
+
+                <div class="requirement">
+                    <strong>Compliance:</strong>
+                    <ul>
+                        <li>Automatic capture of API responses for audit trail</li>
+                        <li>Store screenshots/responses as document metadata</li>
+                        <li>Maintain complete query history with timestamps</li>
+                    </ul>
+                </div>
+
+                <div class="requirement">
+                    <strong>Error Handling:</strong>
+                    <ul>
+                        <li>Rate limit detection and automatic throttling</li>
+                        <li>Timeout handling (30 second timeout per request)</li>
+                        <li>Graceful degradation on API failures</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <h3>2.4 Medicaid Forecasting Data Pipeline <span class="new-feature">NEW</span></h3>
+        <div class="spec-section">
+            <div class="spec-item">
+                <h4>2.4.1 Data Sources</h4>
+                <ul>
+                    <li><strong>867 Sellout Data:</strong> Weekly/monthly aggregated sellout data with shorter reporting lag</li>
+                    <li><strong>Claim-Level Dispense Data:</strong> Detailed Medicaid utilization data (3+ month lag)</li>
+                    <li><strong>Provider Master Data:</strong> Provider ID mappings and hierarchies</li>
+                </ul>
+            </div>
+
+            <div class="spec-item">
+                <h4>2.4.2 Provider ID Matching Service</h4>
+                <div class="requirement">
+                    <strong>Matching Logic:</strong>
+                    <ul>
+                        <li>Fuzzy matching on provider name, address, NPI</li>
+                        <li>Hierarchical matching (state/region level if provider-level fails)</li>
+                        <li>Confidence scoring for matches</li>
+                        <li>Manual review queue for low-confidence matches</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="spec-item">
+                <h4>2.4.3 Lead/Lag Relationship Analysis</h4>
+                <ul>
+                    <li>Analyze correlation between 867 sellout and Medicaid utilization</li>
+                    <li>Determine optimal lead/lag periods by brand and geography</li>
+                    <li>Model at multiple granularities (provider, state, national)</li>
+                </ul>
+            </div>
+
+            <div class="spec-item">
+                <h4>2.4.4 Forecasting Model Specifications</h4>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Specification</th>
+                            <th>Requirement</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Forecast Target</td>
+                            <td>Medicaid utilization (units dispensed) per brand at national level</td>
+                        </tr>
+                        <tr>
+                            <td>Brand Coverage</td>
+                            <td>All active Novartis brands with 2+ years utilization history</td>
+                        </tr>
+                        <tr>
+                            <td>Prediction Horizon</td>
+                            <td>~4 months ahead of reported utilization</td>
+                        </tr>
+                        <tr>
+                            <td>Prediction Unit</td>
+                            <td>Week or month (determined during discovery)</td>
+                        </tr>
+                        <tr>
+                            <td>Accuracy Target</td>
+                            <td>Improve GTN forecast accuracy to achieve 1% variance in out-of-period adjustment</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <h3>2.5 Medicaid Rebate Invoice Processing <span class="enhanced-feature">ENHANCED</span></h3>
+        <div class="spec-section">
+            <div class="spec-item">
+                <h4>2.5.1 LLM Term Extraction</h4>
+                <div class="requirement">
+                    <strong>Extracted Fields:</strong>
+                    <ul>
+                        <li>Invoice date, Claimant/reporting entity</li>
+                        <li>NDC codes, Units of measure (UOM)</li>
+                        <li>ID codes (provider, pharmacy, etc.)</li>
+                        <li>Units dispensed, Provider ID</li>
+                        <li>Rebate amount requested</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="spec-item">
+                <h4>2.5.2 Error Detection Model</h4>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Error Type</th>
+                            <th>Detection Method</th>
+                            <th>Priority</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>UOM Errors</td>
+                            <td>Rule-based validation</td>
+                            <td>High</td>
+                        </tr>
+                        <tr>
+                            <td>Duplicates within Invoice</td>
+                            <td>NDC + Date matching</td>
+                            <td>High</td>
+                        </tr>
+                        <tr>
+                            <td>Duplicates across Invoices</td>
+                            <td>Historical invoice matching</td>
+                            <td>High</td>
+                        </tr>
+                        <tr>
+                            <td>340B Duplicates</td>
+                            <td>Medicaid exclusion file check (Phase 1B)</td>
+                            <td>Medium</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="spec-item">
+                <h4>2.5.3 Triage Model Specifications</h4>
+                <ul>
+                    <li><strong>Focus:</strong> Sub-500K claims (80% of invoices, 11% of rebate dollars)</li>
+                    <li><strong>Output:</strong> Probabilistic error score and recommendation (approve/dispute)</li>
+                    <li><strong>Threshold:</strong> Configurable probability threshold for flagging (determined via backtesting)</li>
+                    <li><strong>Performance Target:</strong> Reduce review time from 60 minutes to &lt;10 minutes per invoice</li>
+                </ul>
+            </div>
+        </div>
+
+        <h2>3. Integration Specifications</h2>
+
+        <h3>3.1 SAP 4 HANA Integration</h3>
+        <div class="spec-section">
+            <div class="spec-item">
+                <h4>3.1.1 API Requirements</h4>
+                <div class="dependency">
+                    <strong>Dependencies:</strong>
+                    <ul>
+                        <li>SAP 4 HANA API specification/documentation</li>
+                        <li>OAuth 2.0 or API key authentication</li>
+                        <li>Test/sandbox environment access</li>
+                        <li>Customer master data model documentation</li>
+                    </ul>
+                </div>
+
+                <div class="requirement">
+                    <strong>Endpoints Required:</strong>
+                    <ul>
+                        <li><code>GET /api/customers/{identifier}</code> - Check customer existence</li>
+                        <li><code>POST /api/customers</code> - Create new customer</li>
+                        <li><code>GET /api/customers/{id}/master-data</code> - Retrieve customer master data</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <h3>3.2 Model N Integration</h3>
+        <div class="spec-section">
+            <div class="spec-item">
+                <h4>3.2.1 API Requirements</h4>
+                <div class="dependency">
+                    <strong>Dependencies:</strong>
+                    <ul>
+                        <li>Model N API specification or integration guide</li>
+                        <li>Chargeback kickout data format (EDI structure)</li>
+                        <li>Customer creation request submission API</li>
+                        <li>Webhook/event system for kickout notifications (preferred)</li>
+                    </ul>
+                </div>
+
+                <div class="requirement">
+                    <strong>Integration Points:</strong>
+                    <ul>
+                        <li><strong>Inbound:</strong> Retrieve chargeback kickouts (API or file-based)</li>
+                        <li><strong>Outbound:</strong> Submit customer creation requests</li>
+                        <li><strong>Outbound:</strong> Update chargeback resolution status</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <h3>3.3 Google Drive Integration</h3>
+        <div class="spec-section">
+            <div class="spec-item">
+                <h4>3.3.1 Requirements</h4>
+                <div class="requirement">
+                    <ul>
+                        <li>G-Suite API access and credentials</li>
+                        <li>Folder structure and document naming conventions</li>
+                        <li>Change notification/webhook setup for automated updates</li>
+                        <li>Fallback: Manual file upload capability</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <h2>4. Data Requirements</h2>
+
+        <h3>4.1 Historical Data Access</h3>
+        <div class="spec-section">
+            <div class="spec-item">
+                <h4>4.1.1 Chargeback Data</h4>
+                <ul>
+                    <li>Historical chargeback kickouts from Model N (12+ months)</li>
+                    <li>Customer creation request history</li>
+                    <li>Resolution time data</li>
+                    <li>Kickout volume and frequency statistics</li>
+                </ul>
+            </div>
+
+            <div class="spec-item">
+                <h4>4.1.2 Medicaid Forecasting Data</h4>
+                <ul>
+                    <li>Claim-level dispense data (24+ months historical)</li>
+                    <li>867 sellout data (24+ months historical)</li>
+                    <li>Provider ID mapping data</li>
+                    <li>Brand-level utilization history</li>
+                </ul>
+            </div>
+
+            <div class="spec-item">
+                <h4>4.1.3 Medicaid Rebate Data</h4>
+                <ul>
+                    <li>Historical rebate invoices (24+ months)</li>
+                    <li>Dispute history and rationale</li>
+                    <li>Approval/rejection outcomes</li>
+                    <li>Error type distribution</li>
+                </ul>
+            </div>
+        </div>
+
+        <h2>5. Infrastructure Requirements</h2>
+
+        <h3>5.1 Cloud Environment</h3>
+        <div class="spec-section">
+            <div class="spec-item">
+                <h4>5.1.1 Requirements</h4>
+                <div class="dependency">
+                    <ul>
+                        <li>Novartis's chosen cloud environment (AWS, Azure, or GCP)</li>
+                        <li>Cloud account setup and access</li>
+                        <li>Network configuration (VPC, security groups)</li>
+                        <li>IAM roles and permissions</li>
+                        <li>Storage buckets/containers</li>
+                        <li>Compute resources for model training and inference</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <h3>5.2 Database Infrastructure</h3>
+        <div class="spec-section">
+            <div class="spec-item">
+                <h4>5.2.1 Requirements</h4>
+                <ul>
+                    <li>PostgreSQL or SQL Server instance</li>
+                    <li>Network connectivity from application to database</li>
+                    <li>Backup and disaster recovery setup</li>
+                    <li>Performance tuning for expected load (50-200 chargebacks/day, 5000 invoices/quarter)</li>
+                </ul>
+            </div>
+        </div>
+
+        <h3>5.3 Network Connectivity</h3>
+        <div class="spec-section">
+            <div class="spec-item">
+                <h4>5.3.1 Requirements</h4>
+                <ul>
+                    <li>VPN setup for internal systems (SAP 4 HANA)</li>
+                    <li>Firewall rules and security policies</li>
+                    <li>Network latency testing</li>
+                    <li>Secure access to federal databases (public internet)</li>
+                </ul>
+            </div>
+        </div>
+
+        <h2>6. Security and Compliance</h2>
+
+        <h3>6.1 Security Requirements</h3>
+        <div class="spec-section">
+            <div class="spec-item">
+                <h4>6.1.1 Authentication & Authorization</h4>
+                <ul>
+                    <li>OAuth 2.0 or SAML for user authentication</li>
+                    <li>Role-based access control (RBAC)</li>
+                    <li>API key management for external integrations</li>
+                    <li>Secure credential storage and rotation</li>
+                </ul>
+            </div>
+
+            <div class="spec-item">
+                <h4>6.1.2 Data Protection</h4>
+                <ul>
+                    <li>Encryption at rest for all stored data</li>
+                    <li>Encryption in transit (TLS 1.2+)</li>
+                    <li>PII data masking in logs and audit trails</li>
+                    <li>Data retention and deletion policies</li>
+                </ul>
+            </div>
+        </div>
+
+        <h3>6.2 Compliance Requirements</h3>
+        <div class="spec-section">
+            <div class="spec-item">
+                <h4>6.2.1 Audit Trail</h4>
+                <ul>
+                    <li>Complete operation history with timestamps</li>
+                    <li>User context and action tracking</li>
+                    <li>Metadata versioning</li>
+                    <li>Searchable audit logs</li>
+                </ul>
+            </div>
+
+            <div class="spec-item">
+                <h4>6.2.2 SOX Compliance</h4>
+                <ul>
+                    <li>Full traceability of customer creation requests</li>
+                    <li>Documentation of all validation steps</li>
+                    <li>Immutable audit logs</li>
+                    <li>Compliance reporting capabilities</li>
+                </ul>
+            </div>
+        </div>
+
+        <h2>7. Performance Requirements</h2>
+
+        <h3>7.1 Processing Performance</h3>
+        <div class="spec-section">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Use Case</th>
+                        <th>Current Performance</th>
+                        <th>Target Performance</th>
+                        <th>Throughput</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Chargeback Processing</td>
+                        <td>25 minutes/kickout</td>
+                        <td>&lt;15 minutes/kickout</td>
+                        <td>50-200 kickouts/day</td>
+                    </tr>
+                    <tr>
+                        <td>Medicaid Invoice Review</td>
+                        <td>60 minutes/invoice</td>
+                        <td>&lt;10 minutes/invoice</td>
+                        <td>~5,000 invoices/quarter</td>
+                    </tr>
+                    <tr>
+                        <td>Forecasting Model</td>
+                        <td>Manual estimation</td>
+                        <td>Automated 4-month forecast</td>
+                        <td>Weekly/monthly execution</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <h3>7.2 System Availability</h3>
+        <div class="spec-section">
+            <ul>
+                <li><strong>Uptime Target:</strong> 99.5% availability during business hours</li>
+                <li><strong>Response Time:</strong> &lt;2 seconds for API queries</li>
+                <li><strong>Processing Latency:</strong> Real-time processing for chargeback kickouts</li>
+                <li><strong>Scalability:</strong> Horizontal scaling for peak loads</li>
+            </ul>
+        </div>
+
+        <h2>8. Deployment Specifications</h2>
+
+        <h3>8.1 Deployment Model</h3>
+        <div class="spec-section">
+            <div class="spec-item">
+                <h4>8.1.1 Phase 1A Deployment</h4>
+                <ul>
+                    <li>MVP workflows deployed on Novartis cloud environment</li>
+                    <li>Executable source code with documentation</li>
+                    <li>Docker containerization for model pipelines</li>
+                    <li>CI/CD pipeline in Git repositories</li>
+                </ul>
+            </div>
+
+            <div class="spec-item">
+                <h4>8.1.2 Phase 1B Deployment</h4>
+                <ul>
+                    <li>Production-ready workflows</li>
+                    <li>Full system integrations (Model N, SAP)</li>
+                    <li>Model orchestration and scheduling</li>
+                    <li>Monitoring and alerting</li>
+                </ul>
+            </div>
+        </div>
+
+        <h2>9. Dependencies Summary</h2>
+
+        <h3>9.1 Critical Dependencies (Week 1-2)</h3>
+        <div class="spec-section">
+            <div class="dependency">
+                <strong>Must Have:</strong>
+                <ul>
+                    <li>SAP 4 HANA API specification and access</li>
+                    <li>Model N API specification</li>
+                    <li>Cloud environment setup</li>
+                    <li>Historical data access</li>
+                </ul>
+            </div>
+        </div>
+
+        <h3>9.2 Important Dependencies (Week 2-3)</h3>
+        <div class="spec-section">
+            <div class="dependency">
+                <strong>Important:</strong>
+                <ul>
+                    <li>Federal database API access</li>
+                    <li>Network connectivity setup</li>
+                    <li>Google Drive API access</li>
+                </ul>
+            </div>
+        </div>
+
+        <h2>10. Success Criteria</h2>
+
+        <h3>10.1 Chargeback Automation</h3>
+        <div class="spec-section">
+            <ul>
+                <li>10+ minute reduction per kickout processing time</li>
+                <li>99.9% automated resolution rate</li>
+                <li>Reusable platform components demonstrated</li>
+            </ul>
+        </div>
+
+        <h3>10.2 Medicaid Forecasting</h3>
+        <div class="spec-section">
+            <ul>
+                <li>Improve forecast accuracy to achieve 1% variance in out-of-period adjustment</li>
+                <li>4-month prediction horizon</li>
+                <li>Reusable forecasting model for all active brands</li>
+            </ul>
+        </div>
+
+        <h3>10.3 Medicaid Rebate Automation</h3>
+        <div class="spec-section">
+            <ul>
+                <li>Substantial reduction in time-to-review for sub-500K invoices</li>
+                <li>High accuracy error detection (backtested)</li>
+                <li>Productization potential demonstrated</li>
+            </ul>
+        </div>
+    </div>
+</body>
+</html>
+
+

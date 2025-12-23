@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Updated Keystone RAIN Platform Architecture - Novartis MMF</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 30px;
+        }
+        h1 {
+            color: #2c3e50;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 10px;
+        }
+        h2 {
+            color: #34495e;
+            margin-top: 30px;
+            border-left: 4px solid #3498db;
+            padding-left: 15px;
+        }
+        h3 {
+            color: #555;
+            margin-top: 20px;
+        }
+        .diagram-container {
+            background-color: #f8f9fa;
+            padding: 20px;
+            border-radius: 5px;
+            margin: 20px 0;
+            overflow-x: auto;
+        }
+        .new-component {
+            border: 2px dashed #e74c3c;
+            padding: 5px;
+            margin: 2px;
+        }
+        .enhanced-component {
+            border: 2px solid #f39c12;
+            padding: 5px;
+            margin: 2px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 12px;
+            text-align: left;
+        }
+        th {
+            background-color: #3498db;
+            color: white;
+        }
+        tr:nth-child(even) {
+            background-color: #f2f2f2;
+        }
+        .checkmark {
+            color: #2ecc71;
+            font-weight: bold;
+            font-size: 1.2em;
+        }
+        .legend {
+            background-color: #ecf0f1;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+        .legend-item {
+            display: inline-block;
+            margin: 5px 15px;
+        }
+        .legend-box {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            margin-right: 5px;
+            vertical-align: middle;
+        }
+        .note {
+            background-color: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 15px;
+            margin: 15px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Updated Keystone RAIN Platform Architecture for Novartis MMF Use Cases</h1>
+        <p><strong>Version:</strong> 2.0 | <strong>Date:</strong> Current Session | <strong>Status:</strong> Enhanced with Knowledge Base Service and Project Requirements</p>
+        
+        <div class="legend">
+            <h3 style="margin-top: 0;">Legend</h3>
+            <div class="legend-item">
+                <span class="legend-box" style="background-color: #e74c3c; border: 2px dashed #e74c3c;"></span>
+                <strong>New Component</strong> - Added based on project requirements
+            </div>
+            <div class="legend-item">
+                <span class="legend-box" style="background-color: #f39c12; border: 2px solid #f39c12;"></span>
+                <strong>Enhanced Component</strong> - Updated with new capabilities
+            </div>
+            <div class="legend-item">
+                <span class="legend-box" style="background-color: #3498db;"></span>
+                <strong>Core Platform Component</strong>
+            </div>
+        </div>
+
+        <div class="note">
+            <strong>Key Enhancements:</strong> This updated architecture includes the Knowledge Base Service layer, enhanced 8-step chargeback workflow, Federal Database Adapter layer, Medicaid Forecasting Data Pipeline, and improved RAIN encoding integration.
+        </div>
+
+        <h2>1. High-Level Architecture Diagram (Enhanced)</h2>
+        <div class="diagram-container">
+            <div class="mermaid">
+graph TB
+    subgraph "Data Sources"
+        A[Model N<br/>Chargebacks/EDI]
+        B[SAP 4 HANA<br/>Customer Master]
+        C[G-Drive/G-Suite<br/>GPO Rosters/DDD Matrix]
+        D[Email Attachments<br/>GPO Rosters]
+        E[State Web Portals<br/>Medicaid Invoices]
+        F[Federal Databases<br/>DEA/HIBCC/HRSA]
+        G[867 Sellout Data<br/>Medicaid Forecasting]
+    end
+
+    subgraph "Keystone RAIN Platform"
+        subgraph "Ingestion Layer"
+            H[Multi-Format<br/>Document Ingestion]
+            I[Basket Organization<br/>raw_chargebacks<br/>processed_chargebacks<br/>medicaid_invoices<br/>knowledge_base]
+        end
+
+        subgraph "Knowledge Base Service - NEW"
+            J[GPO Roster<br/>Management]
+            K[DDD Matrix<br/>COT Rules]
+            L[ICCR Eligibility<br/>Guide]
+            M[Rule Versioning<br/>& Change Tracking]
+            N[Rule Query<br/>Engine]
+        end
+
+        subgraph "Processing Layer"
+            O[LLM Adapters<br/>Structured Data Extraction]
+            P[Entity Matching<br/>Duplicate Detection]
+            Q[Processor Framework<br/>8-Step Workflow Automation]
+            R[Federal DB Adapter<br/>ENHANCED - Lag Handling]
+        end
+
+        subgraph "Medicaid Forecasting Pipeline - NEW"
+            S[867 Data<br/>Ingestion]
+            T[Provider ID<br/>Matching Service]
+            U[Lead/Lag<br/>Relationship Analysis]
+            V[Feature Engineering<br/>for Forecasting]
+        end
+
+        subgraph "Storage & Metadata"
+            W[Document Storage<br/>Filesystem/S3]
+            X[Metadata Management<br/>Key-Value Store]
+            Y[Operation Tracking<br/>Audit Trail]
+        end
+
+        subgraph "RAIN Integration - ENHANCED"
+            Z[Feature Encoding<br/>RAIN Format<br/>Multi-Use Case]
+            AA[Cross-Use Case<br/>Feature Reuse]
+        end
+    end
+
+    subgraph "Output & Integration"
+        AB[SAP Customer<br/>Creation Requests]
+        AC[Exception Queues<br/>Human Review]
+        AD[RAIN Encoded Features<br/>Forecasting Models]
+        AE[Compliance<br/>Documentation]
+        AF[Invoice Triage<br/>Recommendations]
+    end
+
+    A --> H
+    B --> R
+    C --> H
+    D --> H
+    E --> H
+    F --> R
+    G --> S
+
+    H --> I
+    I --> O
+    I --> J
+    J --> K
+    K --> L
+    L --> M
+    M --> N
+    N --> Q
+
+    O --> P
+    P --> Q
+    Q --> R
+    Q --> N
+    R --> W
+
+    S --> T
+    T --> U
+    U --> V
+    V --> Z
+
+    O --> X
+    P --> X
+    Q --> Y
+    R --> X
+    N --> X
+
+    X --> Z
+    Z --> AA
+
+    Q --> AB
+    Q --> AC
+    AA --> AD
+    Y --> AE
+    Q --> AF
+
+    style J fill:#e74c3c,color:#fff,stroke:#e74c3c,stroke-width:3px,stroke-dasharray: 5 5
+    style K fill:#e74c3c,color:#fff,stroke:#e74c3c,stroke-width:3px,stroke-dasharray: 5 5
+    style L fill:#e74c3c,color:#fff,stroke:#e74c3c,stroke-width:3px,stroke-dasharray: 5 5
+    style M fill:#e74c3c,color:#fff,stroke:#e74c3c,stroke-width:3px,stroke-dasharray: 5 5
+    style N fill:#e74c3c,color:#fff,stroke:#e74c3c,stroke-width:3px,stroke-dasharray: 5 5
+    style R fill:#f39c12,color:#fff,stroke:#f39c12,stroke-width:3px
+    style S fill:#e74c3c,color:#fff,stroke:#e74c3c,stroke-width:3px,stroke-dasharray: 5 5
+    style T fill:#e74c3c,color:#fff,stroke:#e74c3c,stroke-width:3px,stroke-dasharray: 5 5
+    style U fill:#e74c3c,color:#fff,stroke:#e74c3c,stroke-width:3px,stroke-dasharray: 5 5
+    style V fill:#e74c3c,color:#fff,stroke:#e74c3c,stroke-width:3px,stroke-dasharray: 5 5
+    style Z fill:#f39c12,color:#fff,stroke:#f39c12,stroke-width:3px
+    style H fill:#3498db,color:#fff
+    style O fill:#2ecc71,color:#fff
+    style P fill:#2ecc71,color:#fff
+    style Q fill:#e74c3c,color:#fff
+            </div>
+        </div>
+
+        <h2>2. Enhanced 8-Step Chargeback Workflow</h2>
+        <div class="diagram-container">
+            <div class="mermaid">
+flowchart TD
+    Start[Chargeback Kickout<br/>from Model N] --> Step1[Step 1: Extract Identifiers<br/>HIN, DEA, Address]
+    Step1 --> Step2[Step 2: SAP Customer<br/>Existence Check]
+    Step2 -->|Not Found| Step3[Step 3: Query Knowledge Base<br/>Contract Eligibility]
+    Step2 -->|Found| Skip[Skip to Resolution]
+    Step3 --> Step4[Step 4: GPO Roster<br/>Validation]
+    Step4 --> Step5[Step 5: Federal Database<br/>Lookup DEA/HIBCC/HRSA]
+    Step5 --> Step6[Step 6: Class-of-Trade<br/>Determination - DDD Matrix]
+    Step6 --> Step7[Step 7: SAP Customer<br/>Creation Request]
+    Step7 --> Step8[Step 8: Chargeback Resolution<br/>& Compliance Documentation]
+    Step8 --> Complete[Complete]
+    
+    Step3 -.-> KB[Knowledge Base<br/>Service]
+    Step4 -.-> KB
+    Step6 -.-> KB
+    Step2 -.-> SAP[SAP 4 HANA<br/>API]
+    Step5 -.-> Fed[Federal DB<br/>Adapter]
+    Step7 -.-> SAP
+    
+    Step3 -->|99.9%| Continue[Continue Workflow]
+    Step3 -->|0.1%| Exception[Exception Queue<br/>Rejection]
+    
+    style Step3 fill:#e74c3c,color:#fff,stroke:#e74c3c,stroke-width:3px,stroke-dasharray: 5 5
+    style Step4 fill:#e74c3c,color:#fff,stroke:#e74c3c,stroke-width:3px,stroke-dasharray: 5 5
+    style Step6 fill:#e74c3c,color:#fff,stroke:#e74c3c,stroke-width:3px,stroke-dasharray: 5 5
+    style KB fill:#e74c3c,color:#fff,stroke:#e74c3c,stroke-width:3px,stroke-dasharray: 5 5
+    style Fed fill:#f39c12,color:#fff,stroke:#f39c12,stroke-width:3px
+            </div>
+        </div>
+
+        <h2>3. Knowledge Base Service Architecture</h2>
+        <div class="diagram-container">
+            <div class="mermaid">
+graph TB
+    subgraph "Knowledge Base Service - NEW"
+        A[Rule Book Ingestion<br/>GPO Roster, DDD Matrix,<br/>Eligibility Guide]
+        B[LLM-Powered<br/>Rule Extraction]
+        C[Structured Rule<br/>Storage]
+        D[Rule Versioning<br/>& Change Tracking]
+        E[Rule Query Engine<br/>Fast Lookup]
+        F[Vector Search<br/>Semantic Lookup]
+    end
+
+    subgraph "Rule Book Types"
+        G[GPO Roster<br/>Customer Contracts]
+        H[DDD Matrix<br/>COT Rules]
+        I[ICCR Eligibility<br/>Guide]
+        J[Contract Eligibility<br/>Specifications]
+    end
+
+    subgraph "Workflow Integration"
+        K[Chargeback<br/>Workflow]
+        L[Rebate<br/>Processing]
+        M[Forecasting<br/>Pipeline]
+    end
+
+    G --> A
+    H --> A
+    I --> A
+    J --> A
+    
+    A --> B
+    B --> C
+    C --> D
+    D --> E
+    C --> F
+    
+    E --> K
+    E --> L
+    F --> K
+    F --> L
+    E --> M
+
+    style A fill:#e74c3c,color:#fff,stroke:#e74c3c,stroke-width:3px,stroke-dasharray: 5 5
+    style B fill:#e74c3c,color:#fff,stroke:#e74c3c,stroke-width:3px,stroke-dasharray: 5 5
+    style C fill:#e74c3c,color:#fff,stroke:#e74c3c,stroke-width:3px,stroke-dasharray: 5 5
+    style D fill:#e74c3c,color:#fff,stroke:#e74c3c,stroke-width:3px,stroke-dasharray: 5 5
+    style E fill:#e74c3c,color:#fff,stroke:#e74c3c,stroke-width:3px,stroke-dasharray: 5 5
+    style F fill:#e74c3c,color:#fff,stroke:#e74c3c,stroke-width:3px,stroke-dasharray: 5 5
+            </div>
+        </div>
+
+        <h2>4. Medicaid Forecasting Data Pipeline</h2>
+        <div class="diagram-container">
+            <div class="mermaid">
+flowchart LR
+    A[867 Sellout Data<br/>Ingestion] --> B[Data Normalization<br/>& Cleaning]
+    C[Claim-Level<br/>Dispense Data] --> D[Data Normalization<br/>& Cleaning]
+    
+    B --> E[Provider ID<br/>Matching Service]
+    D --> E
+    
+    E --> F[Lead/Lag<br/>Relationship Analysis]
+    F --> G[Feature Engineering<br/>for Forecasting]
+    G --> H[RAIN Feature<br/>Encoding]
+    H --> I[Forecasting Model<br/>Training/Inference]
+    
+    style E fill:#e74c3c,color:#fff,stroke:#e74c3c,stroke-width:3px,stroke-dasharray: 5 5
+    style F fill:#e74c3c,color:#fff,stroke:#e74c3c,stroke-width:3px,stroke-dasharray: 5 5
+    style G fill:#e74c3c,color:#fff,stroke:#e74c3c,stroke-width:3px,stroke-dasharray: 5 5
+            </div>
+        </div>
+
+        <h2>5. System Integration Architecture (Enhanced)</h2>
+        <div class="diagram-container">
+            <div class="mermaid">
+graph TB
+    subgraph "Keystone RAIN Platform"
+        Platform[Platform Core<br/>Document Management<br/>Processing Framework<br/>Knowledge Base Service]
+    end
+
+    subgraph "External Systems"
+        SAP[SAP 4 HANA<br/>Customer Master<br/>API Integration]
+        ModelN[Model N<br/>Chargeback System<br/>API/File Integration]
+        GDrive[Google Drive<br/>GPO Rosters<br/>API Integration]
+        FedDB[Federal Databases<br/>DEA/HIBCC/HRSA<br/>ENHANCED Adapter]
+    end
+
+    subgraph "LLM Services"
+        OpenAI[OpenAI GPT-4o<br/>Data Extraction]
+        Claude[Anthropic Claude<br/>Rule Extraction]
+    end
+
+    subgraph "RAIN System - ENHANCED"
+        RAIN[RAIN Encoding<br/>Feature Engineering<br/>Multi-Use Case]
+        Forecast[Forecasting<br/>Models]
+    end
+
+    subgraph "Knowledge Base - NEW"
+        KB[Knowledge Base<br/>Service<br/>Rule Management]
+    end
+
+    Platform <--> SAP
+    Platform <--> ModelN
+    Platform <--> GDrive
+    Platform <--> FedDB
+    Platform --> OpenAI
+    Platform --> Claude
+    Platform --> KB
+    Platform --> RAIN
+    RAIN --> Forecast
+    KB --> Platform
+
+    style KB fill:#e74c3c,color:#fff,stroke:#e74c3c,stroke-width:3px,stroke-dasharray: 5 5
+    style FedDB fill:#f39c12,color:#fff,stroke:#f39c12,stroke-width:3px
+    style RAIN fill:#f39c12,color:#fff,stroke:#f39c12,stroke-width:3px
+    style Platform fill:#3498db,color:#fff
+    style Forecast fill:#e74c3c,color:#fff
+            </div>
+        </div>
+
+        <h2>6. Enhanced Use Case Coverage Matrix</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Platform Capability</th>
+                    <th>Chargeback Use Case</th>
+                    <th>Medicaid Rebate Use Case</th>
+                    <th>Forecasting Use Case</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Document Ingestion</td>
+                    <td><span class="checkmark">✅</span> Model N, G-Drive, Email</td>
+                    <td><span class="checkmark">✅</span> State Portals, Email, NCPDP</td>
+                    <td><span class="checkmark">✅</span> Claim-level data, 867 sellout</td>
+                </tr>
+                <tr>
+                    <td><strong>Knowledge Base Service</strong> <em>(NEW)</em></td>
+                    <td><span class="checkmark">✅</span> GPO Roster, DDD Matrix, Eligibility Guide</td>
+                    <td><span class="checkmark">✅</span> Contract rules, dispute rules</td>
+                    <td><span class="checkmark">✅</span> Historical patterns, rules</td>
+                </tr>
+                <tr>
+                    <td>LLM Extraction</td>
+                    <td><span class="checkmark">✅</span> Customer IDs, Contract Info</td>
+                    <td><span class="checkmark">✅</span> Claim Details, NDC</td>
+                    <td><span class="checkmark">✅</span> Feature Extraction</td>
+                </tr>
+                <tr>
+                    <td>Entity Matching</td>
+                    <td><span class="checkmark">✅</span> Duplicate Detection</td>
+                    <td><span class="checkmark">✅</span> Claim Deduplication</td>
+                    <td><span class="checkmark">✅</span> Provider ID Matching <em>(NEW)</em></td>
+                </tr>
+                <tr>
+                    <td>Workflow Automation</td>
+                    <td><span class="checkmark">✅</span> 8-Step Process <em>(ENHANCED)</em></td>
+                    <td><span class="checkmark">✅</span> Multi-Stage Pipeline</td>
+                    <td><span class="checkmark">✅</span> Data Prep Pipeline <em>(NEW)</em></td>
+                </tr>
+                <tr>
+                    <td>External Integration</td>
+                    <td><span class="checkmark">✅</span> SAP, Federal DBs <em>(ENHANCED)</em></td>
+                    <td><span class="checkmark">✅</span> State APIs</td>
+                    <td><span class="checkmark">✅</span> External Data Sources</td>
+                </tr>
+                <tr>
+                    <td>Compliance/Audit</td>
+                    <td><span class="checkmark">✅</span> SOX Compliance</td>
+                    <td><span class="checkmark">✅</span> State Audit Support</td>
+                    <td><span class="checkmark">✅</span> Forecast Audit</td>
+                </tr>
+                <tr>
+                    <td>RAIN Encoding <em>(ENHANCED)</em></td>
+                    <td><span class="checkmark">✅</span> Customer Features</td>
+                    <td><span class="checkmark">✅</span> Claim Features</td>
+                    <td><span class="checkmark">✅</span> Forecasting Features</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h2>7. Component Enhancement Summary</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Component</th>
+                    <th>Enhancement Type</th>
+                    <th>Key Features Added</th>
+                    <th>Use Case Impact</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>Knowledge Base Service</strong></td>
+                    <td>NEW</td>
+                    <td>GPO Roster management, DDD Matrix, Rule versioning, Query engine</td>
+                    <td>All use cases - enables automated rule application</td>
+                </tr>
+                <tr>
+                    <td><strong>Chargeback Workflow</strong></td>
+                    <td>ENHANCED</td>
+                    <td>8-step explicit processors, Conditional routing, Exception handling</td>
+                    <td>Chargeback - reduces 25min to &lt;15min per kickout</td>
+                </tr>
+                <tr>
+                    <td><strong>Federal DB Adapter</strong></td>
+                    <td>ENHANCED</td>
+                    <td>Lag handling, Retry logic, Response caching, Compliance capture</td>
+                    <td>Chargeback - handles data lag issues</td>
+                </tr>
+                <tr>
+                    <td><strong>Medicaid Forecasting Pipeline</strong></td>
+                    <td>NEW</td>
+                    <td>867 data ingestion, Provider ID matching, Lead/lag analysis</td>
+                    <td>Forecasting - addresses 3+ month data lag</td>
+                </tr>
+                <tr>
+                    <td><strong>RAIN Encoding</strong></td>
+                    <td>ENHANCED</td>
+                    <td>Multi-use case encoding, Temporal features, Hierarchical features</td>
+                    <td>All use cases - unified data model</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        mermaid.initialize({ 
+            startOnLoad: true, 
+            theme: 'default',
+            flowchart: {
+                useMaxWidth: true,
+                htmlLabels: true,
+                curve: 'basis'
+            }
+        });
+    </script>
+</body>
+</html>
+
+
+
+

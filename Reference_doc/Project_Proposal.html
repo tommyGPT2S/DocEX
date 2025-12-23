@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Project Proposal - Keystone RAIN Platform for Novartis MMF</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+            color: #333;
+        }
+        .container {
+            background-color: white;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 30px;
+        }
+        h1 {
+            color: #2c3e50;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 10px;
+            margin-top: 0;
+        }
+        h2 {
+            color: #34495e;
+            margin-top: 30px;
+            border-left: 4px solid #3498db;
+            padding-left: 15px;
+        }
+        h3 {
+            color: #555;
+            margin-top: 25px;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid #ecf0f1;
+        }
+        .header h1 {
+            border: none;
+            margin: 0;
+            padding: 0;
+        }
+        .meta {
+            color: #7f8c8d;
+            font-size: 0.9em;
+            margin-top: 10px;
+        }
+        .proposal-section {
+            background-color: #f8f9fa;
+            padding: 20px;
+            border-radius: 5px;
+            margin: 15px 0;
+            border-left: 4px solid #3498db;
+        }
+        .use-case {
+            background-color: #e8f4f8;
+            padding: 20px;
+            border-radius: 5px;
+            margin: 15px 0;
+        }
+        .use-case h3 {
+            color: #2c3e50;
+            margin-top: 0;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 12px;
+            text-align: left;
+        }
+        th {
+            background-color: #3498db;
+            color: white;
+        }
+        tr:nth-child(even) {
+            background-color: #f2f2f2;
+        }
+        .timeline {
+            background-color: #fff3cd;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 15px 0;
+            border-left: 4px solid #ffc107;
+        }
+        .milestone {
+            background-color: #d4edda;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 10px 0;
+            border-left: 4px solid #28a745;
+        }
+        .milestone h4 {
+            margin-top: 0;
+            color: #155724;
+        }
+        .dependency {
+            background-color: #f8d7da;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 10px 0;
+            border-left: 4px solid #dc3545;
+        }
+        .dependency h4 {
+            margin-top: 0;
+            color: #721c24;
+        }
+        .success-criteria {
+            background-color: #d1ecf1;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 10px 0;
+            border-left: 4px solid #17a2b8;
+        }
+        .highlight {
+            background-color: #fff3cd;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-weight: bold;
+        }
+        ul {
+            margin: 10px 0;
+        }
+        li {
+            margin: 8px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Project Proposal</h1>
+            <h2>Keystone RAIN Platform Deployment for Novartis MMF Use Cases</h2>
+            <div class="meta">
+                <strong>Version:</strong> 2.0 | <strong>Date:</strong> Current Session | 
+                <strong>Status:</strong> Enhanced Proposal with Knowledge Base Service
+            </div>
+        </div>
+
+        <h2>Executive Summary</h2>
+        <div class="proposal-section">
+            <p>Keystone proposes deploying its <strong>RAIN Data Platform</strong> to address three critical Managed Markets Finance (MMF) use cases for Novartis, delivering significant time savings, improved forecast accuracy, and automated workflow capabilities.</p>
+            
+            <h3>Key Value Propositions</h3>
+            <ul>
+                <li><strong>Chargeback Process Automation:</strong> Reduce processing time from 25 minutes to &lt;15 minutes per kickout, automating 99.9% of "Customer not found" resolutions</li>
+                <li><strong>Medicaid GTN Forecasting:</strong> Improve forecast accuracy to achieve 1% variance in out-of-period adjustment by leveraging 867 sellout data</li>
+                <li><strong>Medicaid Rebate Automation:</strong> Reduce invoice review time from 60 minutes to &lt;10 minutes for sub-500K claims through automated error detection</li>
+            </ul>
+
+            <h3>Platform Capabilities</h3>
+            <ul>
+                <li><strong>Knowledge Base Service:</strong> Automated rule book management (GPO Rosters, DDD Matrix, Eligibility Guides)</li>
+                <li><strong>LLM-Powered Extraction:</strong> 98%+ accuracy in structured data extraction from unstructured documents</li>
+                <li><strong>Workflow Automation:</strong> 8-step chargeback process automation with conditional logic</li>
+                <li><strong>External System Integration:</strong> Seamless integration with SAP 4 HANA, Model N, and federal databases</li>
+                <li><strong>RAIN Data Encoding:</strong> Unified feature encoding across all use cases for downstream analytics</li>
+            </ul>
+        </div>
+
+        <h2>1. Engagement Overview</h2>
+        <div class="proposal-section">
+            <h3>1.1 Business Challenge</h3>
+            <p>Novartis's commercial organization seeks to transform how it leverages data to power best-in-class AI models, improving efficiency and driving meaningful increases in operating profitability. The challenge lies in preparing finest-grain data (claim-level dispense data, EDI terms) in the right format for AI models in commercial pharmaceutical settings.</p>
+
+            <h3>1.2 Solution Approach</h3>
+            <p>Keystone will deploy its <strong>RAIN Data Platform</strong> on Novartis's chosen cloud environment, providing:</p>
+            <ul>
+                <li>Unified document management and multi-source data ingestion</li>
+                <li>LLM-powered structured data extraction</li>
+                <li>Knowledge Base Service for automated rule application</li>
+                <li>Workflow automation with extensible processor framework</li>
+                <li>External system integration (SAP, Model N, federal databases)</li>
+                <li>RAIN data encoding for downstream analytics and forecasting</li>
+            </ul>
+
+            <h3>1.3 Engagement Structure</h3>
+            <ul>
+                <li><strong>Phase 1A (16-18 weeks):</strong> MVP workflow automation and models deployed on Novartis environment</li>
+                <li><strong>Phase 1B (8-12 weeks):</strong> Productionization, full system integrations, and model improvements</li>
+                <li><strong>Total Engagement:</strong> 24-30 weeks (6-7.5 months)</li>
+            </ul>
+        </div>
+
+        <h2>2. Three MMF Use Cases</h2>
+
+        <div class="use-case">
+            <h3>Use Case 1: Chargeback Process Automation</h3>
+            
+            <h4>Problem Statement</h4>
+            <ul>
+                <li>50-200 chargebacks "kicked-out" of Model N daily due to "Customer not found" errors</li>
+                <li>Each kickout requires ~25 minutes of manual processing by 5 full-time analysts</li>
+                <li>8 highly manual and repetitive steps per kickout</li>
+                <li>Must be resolved within 5 days</li>
+            </ul>
+
+            <h4>Solution</h4>
+            <p>Deploy automated workflow using:</p>
+            <ul>
+                <li><strong>Process Automation:</strong> 8-step automated workflow with conditional logic</li>
+                <li><strong>LLM-Based Term Extraction:</strong> Extract customer identifiers and contract specifications</li>
+                <li><strong>Knowledge Base Service:</strong> Query GPO Rosters, DDD Matrix, and Eligibility Guides</li>
+                <li><strong>External API Calls:</strong> Automated queries to SAP 4 HANA and federal databases (DEA, HIBCC, HRSA)</li>
+                <li><strong>Class-of-Trade Determination:</strong> Automated COT determination using DDD Matrix rules</li>
+                <li><strong>SAP Customer Creation:</strong> Programmatic customer creation in SAP 4 HANA</li>
+            </ul>
+
+            <h4>8-Step Workflow</h4>
+            <ol>
+                <li>Extract Identifiers (HIN, DEA, Address) from chargeback EDI</li>
+                <li>SAP Customer Existence Check</li>
+                <li>Query Knowledge Base for Contract Eligibility</li>
+                <li>GPO Roster Validation</li>
+                <li>Federal Database Lookup (DEA/HIBCC/HRSA)</li>
+                <li>Class-of-Trade Determination (using DDD Matrix)</li>
+                <li>SAP Customer Creation Request Generation</li>
+                <li>Chargeback Resolution & Compliance Documentation</li>
+            </ol>
+
+            <div class="success-criteria">
+                <h4>Success Criteria</h4>
+                <ul>
+                    <li><strong>Time Reduction:</strong> 10+ minute reduction per kickout (target: &lt;15 minutes total)</li>
+                    <li><strong>Automation Rate:</strong> 99.9% automated resolution rate</li>
+                    <li><strong>Reusability:</strong> Demonstrate reusable platform components extensible to additional kickout types</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="use-case">
+            <h3>Use Case 2: Medicaid GTN Forecasting</h3>
+            
+            <h4>Problem Statement</h4>
+            <ul>
+                <li>Claim-level dispensing data has 3+ month reporting lag</li>
+                <li>Creates reporting gap that reduces ability to create accurate gross-to-net forecasts</li>
+                <li>At time of forecast, missing 3+ recent months of utilization data</li>
+                <li>Central finance team needs to forecast Medicaid rebates through end-of-year with incomplete data</li>
+            </ul>
+
+            <h4>Solution</h4>
+            <p>Deploy forecasting model that:</p>
+            <ul>
+                <li><strong>Leverages Leading Indicators:</strong> Uses 867 sellout data with shorter reporting lag</li>
+                <li><strong>Models Lead/Lag Relationships:</strong> Analyzes relationship between 867 sellout and Medicaid utilization</li>
+                <li><strong>Provider ID Matching:</strong> Reconciles provider ID mismatches between 867 and Medicaid data</li>
+                <li><strong>Multi-Granularity Analysis:</strong> Analyzes at provider, state, and national levels</li>
+                <li><strong>4-Month Prediction Horizon:</strong> Predicts utilization 4 months ahead of reported data</li>
+            </ul>
+
+            <h4>Model Specifications</h4>
+            <ul>
+                <li><strong>Forecast Target:</strong> Medicaid utilization (units dispensed) per brand at national level</li>
+                <li><strong>Brand Coverage:</strong> All active Novartis brands with 2+ years utilization history</li>
+                <li><strong>Prediction Horizon:</strong> ~4 months ahead of reported utilization</li>
+                <li><strong>Prediction Unit:</strong> Week or month (determined during discovery)</li>
+            </ul>
+
+            <div class="success-criteria">
+                <h4>Success Criteria</h4>
+                <ul>
+                    <li><strong>Forecast Accuracy:</strong> Improve GTN forecast accuracy to achieve 1% variance in out-of-period adjustment</li>
+                    <li><strong>Reusability:</strong> Reusable forecasting method easily executable on receipt of new data</li>
+                    <li><strong>Impact Analysis:</strong> Demonstrate improvement in central finance team's ability to hit KPIs</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="use-case">
+            <h3>Use Case 3: Medicaid Rebate Invoice Automation</h3>
+            
+            <h4>Problem Statement</h4>
+            <ul>
+                <li>Medicaid rebate processing team (5 FTE) overburdened reviewing ~5,000 rebate invoices annually</li>
+                <li>Each review takes ~45 minutes to several days</li>
+                <li>~80% of claims are sub-500K but represent only 11% of rebates paid</li>
+                <li>No ability to triage/prioritize problematic vs. non-problematic claims</li>
+                <li>Novartis disputes ~$50M in rebates annually (~5% of total)</li>
+            </ul>
+
+            <h4>Solution</h4>
+            <p>Deploy multi-stage AI model that:</p>
+            <ul>
+                <li><strong>LLM-Powered Term Extraction:</strong> Extract key terms from unstructured invoices (date, claimant, NDC, UOM, etc.)</li>
+                <li><strong>Probabilistic Error Detection:</strong> Multi-stage model to identify errors (UOM, duplicates within invoice, duplicates across invoices)</li>
+                <li><strong>Invoice Triage:</strong> Flag invoices above probability threshold for human review, approve below threshold</li>
+                <li><strong>Focus on Sub-500K Claims:</strong> Initial model focuses on automating checks for sub-500K claims</li>
+                <li><strong>Dispute Prediction:</strong> Assess likelihood of successful dispute and time to resolution</li>
+            </ul>
+
+            <h4>Error Detection Types</h4>
+            <ul>
+                <li><strong>UOM Errors:</strong> Units of measure validation</li>
+                <li><strong>Duplicates within Invoice:</strong> NDC + date matching</li>
+                <li><strong>Duplicates across Invoices:</strong> Historical invoice matching</li>
+                <li><strong>340B Duplicates:</strong> Medicaid exclusion file check (Phase 1B)</li>
+            </ul>
+
+            <div class="success-criteria">
+                <h4>Success Criteria</h4>
+                <ul>
+                    <li><strong>Time Reduction:</strong> Substantial reduction in time-to-review for sub-500K invoices (target: &lt;10 minutes)</li>
+                    <li><strong>Accuracy:</strong> High-accuracy error detection (validated via backtesting)</li>
+                    <li><strong>Productization:</strong> Demonstrate potential for expansion to additional error types and larger claims</li>
+                </ul>
+            </div>
+        </div>
+
+        <h2>3. Project Timeline</h2>
+
+        <div class="timeline">
+            <h3>Phase 1A: MVP Deployment (16-18 weeks)</h3>
+            
+            <h4>Weeks 1-2: Foundation & Access</h4>
+            <ul>
+                <li>System access requests and setup</li>
+                <li>RAIN platform deployment on Novartis cloud environment</li>
+                <li>Knowledge Base service basic implementation</li>
+                <li>Data access and initial exploration</li>
+                <li>API documentation and integration point validation</li>
+            </ul>
+
+            <h4>Weeks 3-6: Prototyping</h4>
+            <ul>
+                <li><strong>Chargeback:</strong> Prototype workflow on Keystone environment</li>
+                <li><strong>Forecasting:</strong> Data analysis and modeling insights</li>
+                <li><strong>Rebate:</strong> Invoice analysis and modeling insights</li>
+                <li>Integration point validation (SAP, Model N, Federal DBs)</li>
+                <li>Initial concept feedback from Novartis team</li>
+            </ul>
+
+            <h4>Weeks 7-12: Development</h4>
+            <ul>
+                <li><strong>Chargeback:</strong> Workflow development on Novartis environment</li>
+                <li><strong>Forecasting:</strong> Model development and testing</li>
+                <li><strong>Rebate:</strong> LLM extraction and triage model development</li>
+                <li>Knowledge Base service enhancement</li>
+                <li>Integration development and testing</li>
+            </ul>
+
+            <h4>Weeks 13-14: Testing & Refinement</h4>
+            <ul>
+                <li>User Acceptance Testing (UAT) for chargeback workflow</li>
+                <li>Model backtesting and validation</li>
+                <li>Integration testing</li>
+                <li>Performance optimization</li>
+            </ul>
+
+            <h4>Weeks 15-16: MVP Deployment & Analysis</h4>
+            <ul>
+                <li>Chargeback MVP deployment</li>
+                <li>Medicaid Rebate MVP deployment</li>
+                <li>Forecasting model backtest and GTN impact analysis</li>
+                <li>Phase 1A completion review</li>
+            </ul>
+        </div>
+
+        <div class="timeline">
+            <h3>Phase 1B: Productionization (8-12 weeks)</h3>
+            <p><em>Exact scope to be determined following Phase 1A completion</em></p>
+            
+            <h4>Chargeback Process Automation</h4>
+            <ul>
+                <li>Proactive customer creation logic</li>
+                <li>Expanded automation for additional kickout types (product not found, price discrepancies)</li>
+                <li>Improve edge-cases, operability, and UX</li>
+                <li>Complete interoperability with Model N and SAP 4 HANA</li>
+            </ul>
+
+            <h4>Medicaid GTN Forecasting</h4>
+            <ul>
+                <li>Productionize model in reusable workflow</li>
+                <li>Deploy as dockerized executable containers</li>
+                <li>Implement model orchestration and CI/CD</li>
+                <li>Add price estimation to model framework</li>
+                <li>Analyze additional causal variables</li>
+            </ul>
+
+            <h4>Medicaid Rebate Automation</h4>
+            <ul>
+                <li>Productionize model in reusable workflow</li>
+                <li>Deploy automatic integrations to Model N</li>
+                <li>Expand model capabilities (340B duplicate check, channel trend identification)</li>
+                <li>Test and expand model coverage to above 500K invoices</li>
+            </ul>
+        </div>
+
+        <h2>4. Key Deliverables</h2>
+
+        <h3>4.1 Phase 1A Deliverables</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Use Case</th>
+                    <th>Deliverable</th>
+                    <th>Type</th>
+                    <th>Target Date</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td rowspan="3">Chargeback Automation</td>
+                    <td>[1.1] Prototype Automation Workflow</td>
+                    <td>Executable Source Code | Keystone Environment</td>
+                    <td>Weeks 1-6</td>
+                </tr>
+                <tr>
+                    <td>[1.2] Development/Testing Workflow</td>
+                    <td>Executable Source Code | Novartis Environment</td>
+                    <td>Weeks 6-14</td>
+                </tr>
+                <tr>
+                    <td>[1.3] MVP Automation Workflow</td>
+                    <td>Executable Source Code | Novartis Environment</td>
+                    <td>Week 14</td>
+                </tr>
+                <tr>
+                    <td rowspan="4">Medicaid Forecasting</td>
+                    <td>[2.1] Forecasting Data & Modeling Insight</td>
+                    <td>Analysis (PPT/Word)</td>
+                    <td>Weeks 1-6</td>
+                </tr>
+                <tr>
+                    <td>[2.2] MVP Medicaid Utilization Forecasting Model</td>
+                    <td>Executable Source Code | Novartis Environment</td>
+                    <td>Week 12</td>
+                </tr>
+                <tr>
+                    <td>[2.3] Back Test of Forecasting Model</td>
+                    <td>Data (Excel)</td>
+                    <td>Week 14</td>
+                </tr>
+                <tr>
+                    <td>[2.4] GTN Impact Analysis</td>
+                    <td>Analysis (PPT/Word)</td>
+                    <td>Week 16</td>
+                </tr>
+                <tr>
+                    <td rowspan="3">Medicaid Rebate</td>
+                    <td>[3.1] Claim Automation Data & Modeling Insight</td>
+                    <td>Analysis (PPT/Word)</td>
+                    <td>Weeks 1-6</td>
+                </tr>
+                <tr>
+                    <td>[3.2] LLM Term Extraction Workflow</td>
+                    <td>Executable Source Code | Novartis Environment</td>
+                    <td>Week 10</td>
+                </tr>
+                <tr>
+                    <td>[3.3] MVP Rebate Invoice Triaging Model</td>
+                    <td>Executable Source Code | Novartis Environment</td>
+                    <td>Week 14</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h2>5. Critical Dependencies</h2>
+
+        <div class="dependency">
+            <h4>5.1 API Specifications (Week 1-2)</h4>
+            <ul>
+                <li><strong>SAP 4 HANA API:</strong> Specification, authentication mechanism, test environment access</li>
+                <li><strong>Model N API:</strong> Specification, integration guide, test environment access</li>
+                <li><strong>Federal Database APIs:</strong> DEA, HIBCC, HRSA API documentation and access credentials</li>
+                <li><strong>Google Drive API:</strong> G-Suite API access, folder structure, naming conventions</li>
+            </ul>
+        </div>
+
+        <div class="dependency">
+            <h4>5.2 IT Infrastructure (Week 1-2)</h4>
+            <ul>
+                <li><strong>Cloud Environment:</strong> Novartis's chosen cloud (AWS/Azure/GCP) setup and access</li>
+                <li><strong>Database Infrastructure:</strong> PostgreSQL or SQL Server instance provisioning</li>
+                <li><strong>Network Connectivity:</strong> VPN setup, firewall rules, security policies</li>
+                <li><strong>Storage Infrastructure:</strong> S3-compatible storage or filesystem storage</li>
+            </ul>
+        </div>
+
+        <div class="dependency">
+            <h4>5.3 Data Access (Week 1-2)</h4>
+            <ul>
+                <li><strong>Historical Chargeback Data:</strong> 12+ months of kickout history from Model N</li>
+                <li><strong>Historical Medicaid Data:</strong> 24+ months of claim-level dispense data and 867 sellout data</li>
+                <li><strong>Historical Rebate Data:</strong> 24+ months of rebate invoices and dispute history</li>
+                <li><strong>Real-Time Data Feeds:</strong> Access to live chargeback kickouts, GPO roster updates</li>
+            </ul>
+        </div>
+
+        <div class="dependency">
+            <h4>5.4 Integration Points (Week 2-3)</h4>
+            <ul>
+                <li><strong>Model N Integration:</strong> API or file-based integration for kickout retrieval and customer creation</li>
+                <li><strong>SAP 4 HANA Integration:</strong> Customer existence check and creation APIs</li>
+                <li><strong>Federal Database Integration:</strong> API access credentials, rate limit understanding</li>
+                <li><strong>Google Drive Integration:</strong> Automated GPO roster and DDD matrix updates</li>
+            </ul>
+        </div>
+
+        <h2>6. Risk Mitigation</h2>
+
+        <h3>6.1 Timeline Risks</h3>
+        <div class="proposal-section">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Risk</th>
+                        <th>Impact</th>
+                        <th>Mitigation</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>System access delays</td>
+                        <td>High - Blocks project start</td>
+                        <td>Early access requests (Week 1), parallel workstreams</td>
+                    </tr>
+                    <tr>
+                        <td>API integration complexity</td>
+                        <td>Medium - Delays MVP deployment</td>
+                        <td>Early API exploration, sandbox testing, fallback to file-based</td>
+                    </tr>
+                    <tr>
+                        <td>Data quality issues</td>
+                        <td>Medium - Delays model development</td>
+                        <td>Data quality assessment in Weeks 1-2, parallel data cleaning</td>
+                    </tr>
+                    <tr>
+                        <td>Cross-workstream dependencies</td>
+                        <td>Medium - Blocks multiple workstreams</td>
+                        <td>Prioritize shared components (KB service, RAIN platform) in Weeks 1-4</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <h3>6.2 Technical Risks</h3>
+        <div class="proposal-section">
+            <ul>
+                <li><strong>Federal Database Data Lags:</strong> Implement caching and retry logic with manual override</li>
+                <li><strong>API Rate Limits:</strong> Implement throttling and queue-based processing</li>
+                <li><strong>Model Accuracy:</strong> Extensive backtesting and validation before deployment</li>
+                <li><strong>Integration Failures:</strong> Graceful degradation and exception handling</li>
+            </ul>
+        </div>
+
+        <h2>7. Success Metrics</h2>
+
+        <h3>7.1 Chargeback Automation</h3>
+        <div class="success-criteria">
+            <ul>
+                <li><strong>Processing Time:</strong> Reduce from 25 minutes to &lt;15 minutes per kickout</li>
+                <li><strong>Automation Rate:</strong> 99.9% automated resolution (0.1% exception rate)</li>
+                <li><strong>Volume Handling:</strong> Support 50-200 chargebacks per day</li>
+                <li><strong>Time Savings:</strong> 10+ minutes saved per kickout × 500 kickouts/week = 5,000+ minutes/week</li>
+            </ul>
+        </div>
+
+        <h3>7.2 Medicaid Forecasting</h3>
+        <div class="success-criteria">
+            <ul>
+                <li><strong>Forecast Accuracy:</strong> Achieve 1% variance in out-of-period adjustment (KPI)</li>
+                <li><strong>Prediction Horizon:</strong> 4-month forecast ahead of reported utilization</li>
+                <li><strong>Brand Coverage:</strong> All active Novartis brands with 2+ years history</li>
+                <li><strong>Reusability:</strong> Easily executable on receipt of new data</li>
+            </ul>
+        </div>
+
+        <h3>7.3 Medicaid Rebate Automation</h3>
+        <div class="success-criteria">
+            <ul>
+                <li><strong>Review Time:</strong> Reduce from 60 minutes to &lt;10 minutes per invoice</li>
+                <li><strong>Error Detection Accuracy:</strong> High accuracy validated via backtesting</li>
+                <li><strong>Focus:</strong> Sub-500K claims (80% of invoices, 11% of rebate dollars)</li>
+                <li><strong>Time Savings:</strong> 50+ minutes saved per invoice × 4,000 sub-500K invoices/year = 200,000+ minutes/year</li>
+            </ul>
+        </div>
+
+        <h2>8. Knowledge Base Service Integration</h2>
+
+        <div class="proposal-section">
+            <h3>8.1 Overview</h3>
+            <p>The <strong>Knowledge Base Service</strong> is a new platform component that manages structured rule books and reference documents, enabling automated workflow decisions without manual intervention.</p>
+
+            <h3>8.2 Rule Book Types</h3>
+            <ul>
+                <li><strong>GPO Roster:</strong> Customer contract eligibility information</li>
+                <li><strong>DDD Matrix:</strong> Class-of-trade (COT) determination rules</li>
+                <li><strong>ICCR Eligibility Guide:</strong> Eligibility verification rules and procedures</li>
+                <li><strong>Contract Eligibility Specifications:</strong> Detailed contract terms and requirements</li>
+            </ul>
+
+            <h3>8.3 Implementation Timeline</h3>
+            <ul>
+                <li><strong>Weeks 1-6:</strong> Basic KB service with GPO Roster and DDD Matrix ingestion</li>
+                <li><strong>Weeks 6-14:</strong> Enhanced KB service with version control and COT determination</li>
+                <li><strong>Phase 1B:</strong> Automated rule book update workflow</li>
+            </ul>
+
+            <h3>8.4 Integration Points</h3>
+            <ul>
+                <li><strong>Chargeback Workflow:</strong> Steps 3, 4, and 6 (Contract Eligibility, GPO Roster Validation, COT Determination)</li>
+                <li><strong>Rebate Processing:</strong> Contract rules and dispute rules</li>
+                <li><strong>Forecasting:</strong> Historical patterns and business rules</li>
+            </ul>
+        </div>
+
+        <h2>9. Next Steps</h2>
+
+        <div class="milestone">
+            <h4>Immediate Actions (Week 1)</h4>
+            <ol>
+                <li>Finalize project scope and timeline alignment</li>
+                <li>Initiate system access requests (SAP, Model N, cloud environment)</li>
+                <li>Request API specifications and documentation</li>
+                <li>Request historical data access</li>
+                <li>Set up project kickoff meeting</li>
+            </ol>
+        </div>
+
+        <div class="milestone">
+            <h4>Project Kickoff (Week 1-2)</h4>
+            <ol>
+                <li>Stakeholder alignment meeting</li>
+                <li>Technical architecture review</li>
+                <li>Data access and infrastructure setup</li>
+                <li>Development environment provisioning</li>
+            </ol>
+        </div>
+
+        <h2>10. Conclusion</h2>
+        <div class="proposal-section">
+            <p>This proposal outlines a comprehensive solution for automating three critical MMF processes through the deployment of Keystone's RAIN Data Platform. The enhanced architecture, including the new Knowledge Base Service, provides a robust foundation for automated workflow execution, improved forecast accuracy, and significant time savings.</p>
+            
+            <p>The phased approach (Phase 1A: MVP deployment, Phase 1B: Productionization) allows for iterative development, stakeholder feedback, and risk mitigation while delivering value incrementally.</p>
+            
+            <p>Success depends on early resolution of critical dependencies (API access, infrastructure setup, data access) and close collaboration between Keystone and Novartis teams throughout the engagement.</p>
+        </div>
+    </div>
+</body>
+</html>
+
+
+
+
