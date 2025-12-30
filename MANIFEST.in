@@ -9,6 +9,10 @@ include docs/DocEX_Architecture.jpeg
 # Include configuration files
 include docex/config/default_config.yaml
 
+# Include database schema and migration files
+include docex/db/schema.sql
+recursive-include docex/db/migrations *.sql
+
 # Include examples
 recursive-include examples *
 

@@ -4,7 +4,14 @@ from pathlib import Path
 
 from .abstract_storage import AbstractStorage
 from .filesystem_storage import FileSystemStorage
-from .s3_storage import S3Storage
+
+# Optional S3 storage - only available if boto3 is installed
+try:
+    from .s3_storage import S3Storage
+    HAS_S3 = True
+except ImportError:
+    S3Storage = None
+    HAS_S3 = False
 
 class StorageFactory:
     """
@@ -15,9 +22,11 @@ class StorageFactory:
     
     _storage_classes = {
         'filesystem': FileSystemStorage,
-        's3': S3Storage,
-        # Add other storage backends here as they are implemented
     }
+    
+    # Register S3 storage if available (at class level)
+    if HAS_S3 and S3Storage:
+        _storage_classes['s3'] = S3Storage
     
     @classmethod
     def register_storage(cls, name: str, storage_class: type) -> None:
@@ -44,8 +53,18 @@ class StorageFactory:
                    
         Returns:
             Configured storage backend instance
+            
+        Raises:
+            ValueError: If storage type is unknown or required dependencies are missing
         """
         storage_type = config.get('type', 'filesystem')
+        
+        # Register S3 if available (check at runtime)
+        if storage_type == 's3' and not HAS_S3:
+            raise ValueError(
+                "S3 storage requires 'boto3' package. "
+                "Install it with: pip install docex[storage-s3]"
+            )
         
         if storage_type not in cls._storage_classes:
             raise ValueError(f"Unknown storage type: {storage_type}")
