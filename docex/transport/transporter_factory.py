@@ -31,10 +31,22 @@ class TransporterFactory:
             Transport instance
             
         Raises:
-            ValueError: If transport type not registered
+            ValueError: If transport type not registered or required dependencies are missing
         """
         if config.type not in cls._transporters:
-            raise ValueError(f"Transport type '{config.type}' not registered")
+            # Provide helpful error messages for optional transports
+            if config.type.value == 'sftp':
+                raise ValueError(
+                    "SFTP transport requires 'paramiko' package. "
+                    "Install it with: pip install docex[transport-sftp]"
+                )
+            elif config.type.value == 'http':
+                raise ValueError(
+                    "HTTP transport requires 'aiohttp' package. "
+                    "Install it with: pip install docex[transport-http]"
+                )
+            else:
+                raise ValueError(f"Transport type '{config.type}' not registered")
             
         transporter_class = cls._transporters[config.type]
         return transporter_class(config)
