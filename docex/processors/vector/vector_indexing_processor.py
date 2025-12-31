@@ -50,12 +50,20 @@ class VectorIndexingProcessor(BaseProcessor):
         super().__init__(serializable_config, db=db)
         
         # Initialize LLM adapter for generating embeddings
+        # Check if it's already a BaseLLMProcessor instance (passed from workflow executor)
+        from docex.processors.llm.base_llm_processor import BaseLLMProcessor
         if isinstance(llm_adapter_config, BaseLLMProcessor):
             self.llm_adapter = llm_adapter_config
         else:
             # Create LLM adapter from config
+            # Default to OpenAIAdapter, but workflow executor should provide adapter
             from docex.processors.llm import OpenAIAdapter
-            self.llm_adapter = OpenAIAdapter(llm_adapter_config or {})
+            # Pass db to adapter if available (for multi-tenancy)
+            adapter_db = db if db else None
+            if adapter_db:
+                self.llm_adapter = OpenAIAdapter(llm_adapter_config or {}, db=adapter_db)
+            else:
+                self.llm_adapter = OpenAIAdapter(llm_adapter_config or {})
         
         # Vector database configuration
         self.vector_db_type = config.get('vector_db_type', 'memory')
@@ -127,6 +135,16 @@ class VectorIndexingProcessor(BaseProcessor):
                             raise ValueError(f"pgvector extension is required but not available: {e}")
                     finally:
                         raw_conn.close()
+                    
+                    # Create HNSW index if it doesn't exist
+                    # Re-open connection for index creation
+                    raw_conn = db.engine.raw_connection()
+                    try:
+                        cursor = raw_conn.cursor()
+                        self._ensure_hnsw_index(cursor, raw_conn)
+                        cursor.close()
+                    finally:
+                        raw_conn.close()
                 except Exception as e:
                     logger.error(f"Failed to initialize pgvector extension: {e}")
                     raise ValueError(f"pgvector extension is required but not available: {e}")
@@ -134,6 +152,48 @@ class VectorIndexingProcessor(BaseProcessor):
             return {'type': 'pgvector', 'db': db}
         except ImportError:
             raise ValueError("pgvector requires PostgreSQL database")
+    
+    def _ensure_hnsw_index(self, cursor, connection):
+        """
+        Ensure HNSW index exists on document.embedding column.
+        
+        Args:
+            cursor: Database cursor
+            connection: Database connection
+        """
+        try:
+            # Check if index already exists
+            cursor.execute("""
+                SELECT EXISTS (
+                    SELECT 1 FROM pg_indexes 
+                    WHERE indexname = 'document_embedding_idx'
+                )
+            """)
+            index_exists = cursor.fetchone()[0]
+            
+            if not index_exists:
+                logger.info("Creating HNSW index on document.embedding...")
+                # Use public.vector_l2_ops (most commonly supported)
+                # Note: We use vector_l2_ops even though we use <=> (cosine) in queries
+                # The index still works for cosine similarity with normalized vectors
+                cursor.execute("""
+                    CREATE INDEX document_embedding_idx 
+                    ON document 
+                    USING hnsw (embedding public.vector_l2_ops)
+                """)
+                connection.commit()
+                logger.info("✅ HNSW index created successfully")
+            else:
+                logger.debug("HNSW index already exists")
+        except Exception as e:
+            logger.warning(f"Could not create HNSW index: {e}")
+            logger.warning("   Index creation may require superuser privileges")
+            logger.warning("   You can create it manually: CREATE INDEX document_embedding_idx ON document USING hnsw (embedding public.vector_l2_ops);")
+            # Don't fail initialization if index creation fails
+            try:
+                connection.rollback()
+            except:
+                pass
     
     
     def _init_memory_db(self):
@@ -146,6 +206,8 @@ class VectorIndexingProcessor(BaseProcessor):
         
         Extracts relevant metadata fields and formats them as searchable text.
         This allows semantic search to find documents by metadata values.
+        
+        Enhanced to include more context for better search results.
         
         Args:
             document: Document to extract metadata from
@@ -194,9 +256,38 @@ class VectorIndexingProcessor(BaseProcessor):
                 # Format field name (convert snake_case to readable)
                 field_name = field.replace('_', ' ').title()
                 
-                # Format value
+                # Format value - handle special cases
                 if isinstance(value, (int, float)):
                     value_str = str(value)
+                elif isinstance(value, list):
+                    # Handle line items or arrays - summarize for embedding
+                    if field == 'line_items' and len(value) > 0:
+                        # Summarize line items: "3 items, total $9500"
+                        item_count = len(value)
+                        # Try to get total from line items if available
+                        total = sum(item.get('amount', item.get('total', 0)) for item in value if isinstance(item, dict))
+                        if total > 0:
+                            value_str = f"{item_count} line items totaling {total}"
+                        else:
+                            value_str = f"{item_count} line items"
+                    else:
+                        value_str = ", ".join(str(v) for v in value[:5])  # Limit to first 5 items
+                elif isinstance(value, dict):
+                    # Handle complex objects - convert to readable string
+                    if field == 'line_items':
+                        # Format line items more comprehensively
+                        items = value if isinstance(value, list) else [value]
+                        item_descriptions = []
+                        for item in items[:3]:  # Limit to first 3 items
+                            if isinstance(item, dict):
+                                desc = item.get('description', item.get('item_name', ''))
+                                qty = item.get('quantity', '')
+                                price = item.get('unit_price', item.get('price', ''))
+                                if desc:
+                                    item_descriptions.append(f"{desc} (qty: {qty}, price: {price})")
+                        value_str = "; ".join(item_descriptions) if item_descriptions else str(value)
+                    else:
+                        value_str = str(value)
                 elif isinstance(value, str):
                     value_str = value
                 else:
@@ -207,8 +298,9 @@ class VectorIndexingProcessor(BaseProcessor):
             if not metadata_parts:
                 return ""
             
-            # Format as structured text
-            metadata_text = "Document Metadata:\n" + "\n".join(metadata_parts)
+            # Format as structured text with more context
+            doc_type = metadata.get('document_type', 'document')
+            metadata_text = f"{doc_type.replace('_', ' ').title()} Document:\n" + "\n".join(metadata_parts)
             return metadata_text
             
         except Exception as e:
@@ -229,7 +321,30 @@ class VectorIndexingProcessor(BaseProcessor):
         if not self.config.get('force_reindex', False):
             metadata = document.get_metadata_dict()
             if metadata.get('vector_indexed'):
-                return False
+                # Verify embedding actually exists in database
+                # Metadata flag might be set but embedding not stored (e.g., due to error)
+                try:
+                    if self.db:
+                        from sqlalchemy import text
+                        with self.db.session() as session:
+                            has_embedding = session.execute(
+                                text("SELECT embedding IS NOT NULL FROM document WHERE id = :doc_id"),
+                                {"doc_id": document.id}
+                            ).scalar()
+                            if has_embedding:
+                                # Both metadata flag and embedding exist - skip
+                                return False
+                            else:
+                                # Metadata flag set but no embedding - re-index
+                                logger.warning(
+                                    f"Document {document.id} has vector_indexed=True but no embedding in DB. "
+                                    "Will re-index."
+                                )
+                                return True
+                except Exception as e:
+                    logger.warning(f"Could not verify embedding in DB: {e}. Will attempt to index.")
+                    # If we can't verify, try to index anyway
+                    return True
         
         # Process all documents that have text content
         return True

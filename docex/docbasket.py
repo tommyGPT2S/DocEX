@@ -343,6 +343,69 @@ class DocBasket:
     
     def _get_content_type(self, file_path: Path) -> str:
         return get_content_type(file_path)
+    
+    def _extract_tenant_id(self) -> Optional[str]:
+        """
+        Extract tenant_id from basket name or user context.
+        
+        Basket name format: {tenant_id}_{document_type}_{stage}
+        
+        Returns:
+            Tenant ID if found, None otherwise
+        """
+        # Try to extract from basket name first (most reliable)
+        # Basket name format: {tenant_id}_{document_type}_{stage}
+        basket_name_parts = self.name.split('_', 1)
+        if len(basket_name_parts) == 2:
+            return basket_name_parts[0]
+        
+        return None
+    
+    def _get_document_path(self, document: Any, file_path: Optional[str] = None) -> str:
+        """
+        Generate document path based on storage type.
+        
+        For S3 storage:
+        - Default: 'documents/{document_id}.{ext}' structure (tenant-aware)
+        - Custom: Uses 'document_path_template' if provided in storage config
+        
+        For filesystem storage:
+        - Uses 'docex/basket_{basket_id}/{document_id}' structure (unchanged)
+        
+        Args:
+            document: Document model instance with id attribute
+            file_path: Optional file path to extract extension from
+            
+        Returns:
+            Document path string
+        """
+        storage_type = self.storage_config.get('type', 'filesystem')
+        
+        if storage_type == 's3':
+            s3_config = self.storage_config.get('s3', {})
+            
+            # Extract file extension from file_path if available
+            file_ext = ''
+            if file_path:
+                file_ext = Path(file_path).suffix
+            
+            # Check for custom path template (optional)
+            path_template = s3_config.get('document_path_template')
+            if path_template:
+                # Use custom template with variable substitution
+                tenant_id = self._extract_tenant_id()
+                return path_template.format(
+                    basket_id=self.id,
+                    document_id=document.id,
+                    ext=file_ext,
+                    tenant_id=tenant_id or '',
+                )
+            
+            # Default S3 structure: documents/{document_id}.{ext}
+            return f"documents/{document.id}{file_ext}"
+        else:
+            # Filesystem storage uses original structure (unchanged)
+            return f"docex/basket_{self.id}/{document.id}"
 
     def add(self, file_path: str, document_type: str = 'file', metadata: Optional[Dict[str, Any]] = None) -> Document:
         """
@@ -420,7 +483,7 @@ class DocBasket:
             )
             session.add(document)
             session.flush()
-            document_path = f"docex/basket_{self.id}/{document.id}"
+            document_path = self._get_document_path(document, str(file_path))
             stored_path = self.storage_service.store_document(str(file_path), document_path)
             document.path = stored_path
             if metadata:

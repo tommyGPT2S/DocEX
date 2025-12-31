@@ -49,6 +49,27 @@ storage:
   type: filesystem
   filesystem:
     path: storage/docex
+  s3:
+    # Required: S3 bucket name
+    bucket: null
+    # Required: AWS region for S3 bucket
+    region: us-east-1
+    # Optional: Application name prefix for S3 paths
+    # If set, S3 paths will be: {application_name}/{tenant_id}/{document_type}_{stage}/
+    # If not set, S3 paths will be: {tenant_id}/{document_type}_{stage}/
+    # Examples: "llamasee-dp-dev", "llamasee-dp-prod", "my-app-staging"
+    application_name: null
+    # Optional: S3 key prefix for all objects (alternative to application_name)
+    prefix: null
+    # Optional: AWS credentials (if not using IAM roles or default profile)
+    access_key: null
+    secret_key: null
+    session_token: null
+    # Optional: Boto3 configuration
+    max_retries: 3
+    retry_delay: 1.0
+    connect_timeout: 60
+    read_timeout: 60
 
 logging:
   level: DEBUG

@@ -92,9 +92,13 @@ class SemanticSearchService:
     def _init_pgvector(self):
         """Initialize pgvector connection"""
         from docex.db.connection import Database
-        # Try to get tenant_id from doc_ex context if available
+        # Try to get tenant_id from multiple sources
         tenant_id = None
-        if hasattr(self.doc_ex, 'user_context') and self.doc_ex.user_context:
+        # First check vector_db_config
+        if self.vector_db_config and 'tenant_id' in self.vector_db_config:
+            tenant_id = self.vector_db_config['tenant_id']
+        # Then check doc_ex context if available
+        elif hasattr(self.doc_ex, 'user_context') and self.doc_ex.user_context:
             tenant_id = getattr(self.doc_ex.user_context, 'tenant_id', None)
         db = Database(tenant_id=tenant_id) if tenant_id else Database()
         return {'type': 'pgvector', 'db': db}
@@ -152,32 +156,75 @@ class SemanticSearchService:
                 
                 # Apply minimum similarity threshold
                 if similarity < min_similarity:
+                    logger.info(f"Skipping document {doc_id}: similarity {similarity} < min_similarity {min_similarity}")
                     continue
+                
+                logger.info(f"Processing document {doc_id} with similarity {similarity}")
                 
                 # Get document from DocEX
                 try:
-                    # Try to get basket first
-                    if basket_id:
-                        try:
-                            basket = self.doc_ex.get_basket(basket_id)
-                        except Exception:
-                            basket = None
-                    else:
-                        # Find basket by searching all baskets
+                    # Get the document's actual basket_id from the database
+                    from docex.docbasket import DocBasket
+                    from sqlalchemy import text
+                    
+                    # Get tenant-aware database
+                    db = self.doc_ex.db if hasattr(self.doc_ex, 'db') else self.vector_db.get('db')
+                    if not db:
+                        logger.warning(f"   ❌ No database available for document {doc_id}")
+                        continue
+                    
+                    # Query the document's basket_id from the database
+                    with db.session() as session:
+                        doc_row = session.execute(
+                            text("SELECT basket_id FROM document WHERE id = :doc_id"),
+                            {"doc_id": doc_id}
+                        ).fetchone()
+                        
+                        if not doc_row or not doc_row[0]:
+                            logger.warning(f"   ❌ Document {doc_id} not found in database or has no basket_id")
+                            continue
+                        
+                        doc_basket_id = doc_row[0]
+                        logger.debug(f"   Document {doc_id} is in basket {doc_basket_id}")
+                    
+                    # Get the basket using the document's basket_id
+                    basket = None
+                    try:
+                        basket = DocBasket.get(doc_basket_id, db=db)
+                        if basket:
+                            logger.debug(f"   ✅ Got basket {basket.name} (ID: {doc_basket_id}) for document {doc_id}")
+                        else:
+                            logger.warning(f"   ❌ Basket {doc_basket_id} not found for document {doc_id}")
+                    except Exception as e:
+                        logger.warning(f"   ❌ Failed to get basket {doc_basket_id} for document {doc_id}: {e}")
+                        # Try to find basket by searching all baskets as fallback
                         basket = self._find_basket_for_document(doc_id)
                     
                     if basket:
-                        document = basket.get_document(doc_id)
-                        if document:
+                        try:
+                            document = basket.get_document(doc_id)
+                            logger.debug(f"   ✅ Retrieved document {doc_id} from basket {basket.name}")
+                            
                             # Apply additional filters if needed
-                            if self._matches_filters(document, filters):
+                            # Note: document_type filter is already applied in SQL query, so skip it here
+                            filters_to_check = {k: v for k, v in (filters or {}).items() if k != 'document_type'}
+                            if not filters_to_check or self._matches_filters(document, filters_to_check):
+                                logger.info(f"   ✅ Adding document {doc_id} to results (similarity: {similarity:.4f})")
                                 results.append(SemanticSearchResult(
                                     document=document,
                                     similarity_score=similarity,
                                     metadata=vector_result.get('metadata', {})
                                 ))
+                            else:
+                                logger.debug(f"   ❌ Document {doc_id} did not match filters: {filters_to_check}")
+                        except Exception as e:
+                            logger.warning(f"   ❌ Failed to get document {doc_id} from basket: {e}")
+                    else:
+                        logger.warning(f"   ❌ No basket found for document {doc_id}")
                 except Exception as e:
-                    logger.warning(f"Failed to retrieve document {doc_id}: {e}")
+                    logger.warning(f"   ❌ Exception retrieving document {doc_id}: {e}")
+                    import traceback
+                    logger.debug(traceback.format_exc())
                     continue
                 
                 # Stop if we have enough results
@@ -239,17 +286,36 @@ class SemanticSearchService:
             # Check if we need to filter by metadata
             needs_metadata_join = filters and any(key in filters for key in ['document_type'])
             
+            params = {}
+            
             if needs_metadata_join:
                 # Join with document_metadata table for filtering
+                # Use GROUP BY to handle potential duplicates from JOIN, then order by similarity
                 query_sql = f"""
-                    SELECT DISTINCT
+                    SELECT 
                         d.id,
-                        1 - (d.embedding <=> '{embedding_str}'::public.vector) AS similarity
+                        MIN(1 - (d.embedding <=> '{embedding_str}'::public.vector)) AS similarity
                     FROM document d
                     INNER JOIN document_metadata dm ON dm.document_id = d.id
                     WHERE d.embedding IS NOT NULL
                 """
-                table_alias = "d"
+                
+                # Add basket filter
+                if basket_id:
+                    query_sql += " AND d.basket_id = :basket_id"
+                    params['basket_id'] = basket_id
+                
+                # Add metadata filters
+                if filters:
+                    for key, value in filters.items():
+                        if key == 'document_type':
+                            # Value is stored as JSON, so we need to compare with JSON string
+                            # Use JSONB comparison: dm.value::text = '"value"' or dm.value = '"value"'::jsonb
+                            query_sql += " AND dm.key = 'document_type' AND dm.value::text = :document_type"
+                            # Store value as JSON string (with quotes)
+                            params['document_type'] = f'"{str(value)}"'
+                
+                query_sql += " GROUP BY d.id ORDER BY similarity DESC LIMIT :limit"
             else:
                 query_sql = f"""
                     SELECT 
@@ -258,33 +324,25 @@ class SemanticSearchService:
                     FROM document
                     WHERE embedding IS NOT NULL
                 """
-                table_alias = ""
-            
-            params = {}
-            
-            if basket_id:
-                if table_alias:
-                    query_sql += f" AND {table_alias}.basket_id = :basket_id"
-                else:
+                
+                # Add basket filter
+                if basket_id:
                     query_sql += " AND basket_id = :basket_id"
-                params['basket_id'] = basket_id
-            
-            # Add metadata filters
-            if filters:
-                for key, value in filters.items():
-                    if key == 'document_type':
-                        # Filter by document_type metadata
-                        query_sql += " AND dm.key = 'document_type' AND dm.value = :document_type"
-                        params['document_type'] = str(value)
-                    # Add other metadata filters as needed
-            
-            if table_alias:
-                query_sql += f" ORDER BY {table_alias}.embedding <=> '{embedding_str}'::public.vector LIMIT :limit"
-            else:
+                    params['basket_id'] = basket_id
+                
                 query_sql += f" ORDER BY embedding <=> '{embedding_str}'::public.vector LIMIT :limit"
+            
             params['limit'] = top_k
             
+            # Debug logging
+            logger.info(f"Executing SQL query: {query_sql}")
+            logger.info(f"Query params: {params}")
+            
             results = session.execute(text(query_sql), params).fetchall()
+            
+            logger.info(f"Query returned {len(results)} raw results from database")
+            if results:
+                logger.info(f"First result: document_id={results[0][0]}, similarity={results[0][1]}")
             
             return [
                 {

@@ -70,7 +70,19 @@ class DocEXConfig:
         # Deep update logging configuration
         if 'logging' in kwargs:
             instance._update_config_recursive(instance.config['logging'], kwargs['logging'])
-        
+
+        # Deep update storage configuration
+        if 'storage' in kwargs:
+            instance._update_config_recursive(instance.config['storage'], kwargs['storage'])
+
+        # Deep update security configuration
+        if 'security' in kwargs:
+            instance._update_config_recursive(instance.config['security'], kwargs['security'])
+
+        # Deep update app configuration
+        if 'app' in kwargs:
+            instance._update_config_recursive(instance.config['app'], kwargs['app'])
+
         # Ensure configuration directory exists
         config_dir = instance.config_file.parent
         config_dir.mkdir(parents=True, exist_ok=True)
@@ -123,8 +135,11 @@ class DocEXConfig:
                 raise RuntimeError("Database type not specified")
             
             if db_config['type'] in ['postgres']:
+                if 'postgres' not in db_config:
+                    raise RuntimeError("PostgreSQL configuration section missing")
+                postgres_config = db_config['postgres']
                 required_fields = ['user', 'password', 'host', 'port', 'database']
-                missing_fields = [field for field in required_fields if field not in db_config]
+                missing_fields = [field for field in required_fields if field not in postgres_config]
                 if missing_fields:
                     raise RuntimeError(f"Missing required PostgreSQL configuration fields: {', '.join(missing_fields)}")
             elif db_config['type'] == 'sqlite':
