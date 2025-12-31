@@ -24,14 +24,17 @@ class StorageService:
         # Extract storage type and settings
         storage_type = storage_config.get('type', 'filesystem')
 
-        # Check if config is flattened (S3 params at top level) or nested
+        # Check if config has flattened params (preferred) or nested format
+        flattened_params = {k: v for k, v in storage_config.items()
+                          if k not in ['type', storage_type] and v is not None}
+
         if storage_type in storage_config and isinstance(storage_config[storage_type], dict):
-            # Nested format: storage_config['s3'] = {...}
-            storage_settings = storage_config[storage_type]
+            # Nested format exists, merge with flattened params (flattened takes precedence)
+            nested_params = storage_config[storage_type]
+            storage_settings = {**nested_params, **flattened_params}
         else:
-            # Flattened format: S3 params directly in storage_config
-            # Extract all non-type keys as storage settings
-            storage_settings = {k: v for k, v in storage_config.items() if k != 'type'}
+            # Only flattened format available
+            storage_settings = flattened_params
         
         # Create storage config with type and settings
         config = {

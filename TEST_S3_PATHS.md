@@ -42,6 +42,33 @@ This will:
 3. Show complete S3 bucket structure
 4. Verify no cross-tenant contamination
 
+## Basket Subdirectory Test
+
+Test the new basket-based document organization:
+
+```bash
+python test_s3_basket_subdirs.py
+```
+
+This verifies:
+- Documents are stored under `{basket_name}/documents/` directories
+- Readable filenames with unique ID suffixes
+- Proper S3 organization for easy navigation
+
+## Name Sanitization Test
+
+Test the name validation and sanitization functions:
+
+```bash
+python test_name_sanitization.py
+```
+
+This verifies:
+- Basket names with spaces/special chars are sanitized
+- Filenames are made filesystem-safe
+- Validation functions work correctly
+- Length limits are enforced
+
 ## Full Test Suite
 
 Run the comprehensive test suite:

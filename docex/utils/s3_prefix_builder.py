@@ -8,6 +8,127 @@ If application_name is not provided, uses: {tenant_id}/{document_type}_{stage}/
 """
 
 from typing import Optional
+import re
+
+
+def sanitize_name(name: str, max_length: int = 100) -> str:
+    """
+    Sanitize a name for safe use in filenames and paths.
+
+    Args:
+        name: Name to sanitize
+        max_length: Maximum allowed length
+
+    Returns:
+        Sanitized name safe for filesystem use
+    """
+    if not name:
+        return "unnamed"
+
+    # Replace spaces with underscores
+    name = name.replace(' ', '_')
+
+    # Remove/replace unsafe characters (keep alphanumeric, underscore, hyphen, dot)
+    name = re.sub(r'[^\w\-_.]', '_', name)
+
+    # Remove multiple consecutive underscores
+    name = re.sub(r'_+', '_', name)
+
+    # Remove leading/trailing underscores and dots
+    name = name.strip('_.')
+
+    # Ensure not empty after sanitization
+    if not name:
+        return "unnamed"
+
+    # Limit length
+    return name[:max_length] if len(name) > max_length else name
+
+
+def sanitize_basket_name(basket_name: str) -> str:
+    """
+    Sanitize basket name for filesystem and database use.
+
+    Basket names should be safe for:
+    - Database storage
+    - Filesystem directories
+    - S3 keys
+    - URL paths
+
+    Args:
+        basket_name: Raw basket name
+
+    Returns:
+        Sanitized basket name
+    """
+    return sanitize_name(basket_name, max_length=80)
+
+
+def sanitize_filename(filename: str) -> str:
+    """
+    Sanitize filename for filesystem and S3 use.
+
+    Args:
+        filename: Raw filename (without extension)
+
+    Returns:
+        Sanitized filename safe for filesystem use
+    """
+    return sanitize_name(filename, max_length=80)
+
+
+def validate_basket_name(basket_name: str) -> tuple[bool, str]:
+    """
+    Validate a basket name for safety and compliance.
+
+    Args:
+        basket_name: Basket name to validate
+
+    Returns:
+        Tuple of (is_valid, sanitized_name)
+    """
+    if not basket_name or not basket_name.strip():
+        return False, "unnamed_basket"
+
+    # Check length
+    if len(basket_name) > 80:
+        return False, sanitize_basket_name(basket_name)
+
+    # Check for obviously problematic characters
+    if re.search(r'[<>|:*?"\x00-\x1f]', basket_name):
+        return False, sanitize_basket_name(basket_name)
+
+    # Check if it would be changed by sanitization
+    sanitized = sanitize_basket_name(basket_name)
+    if sanitized != basket_name:
+        return False, sanitized
+
+    return True, basket_name
+
+
+def validate_filename(filename: str) -> tuple[bool, str]:
+    """
+    Validate a filename for safety and compliance.
+
+    Args:
+        filename: Filename to validate (without extension)
+
+    Returns:
+        Tuple of (is_valid, sanitized_name)
+    """
+    if not filename or not filename.strip():
+        return False, "unnamed_file"
+
+    # Check length
+    if len(filename) > 80:
+        return False, sanitize_filename(filename)
+
+    # Check if it would be changed by sanitization
+    sanitized = sanitize_filename(filename)
+    if sanitized != filename:
+        return False, sanitized
+
+    return True, filename
 
 
 def build_s3_prefix(
