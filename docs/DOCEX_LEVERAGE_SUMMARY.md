@@ -4,7 +4,7 @@
 
 ### 1. Does DocEX have LLM provider adapters?
 
-**Answer: Yes!** DocEX now has LLM provider adapters integrated as processors. As of version 2.2.0, we have:
+**Answer: Yes!** DocEX now has LLM provider adapters integrated as processors. As of version 2.6.2, we have:
 - ✅ **OpenAI Adapter** - Fully implemented and tested
 - ✅ **BaseLLMProcessor** - Abstract base class for LLM processors
 - ✅ **Prompt Management System** - YAML-based prompts with Jinja2 templating

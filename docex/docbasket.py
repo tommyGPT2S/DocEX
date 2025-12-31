@@ -28,6 +28,7 @@ from docex.transport.transport_result import TransportResult
 from docex.document import Document
 from docex.utils.file_utils import is_binary_file, get_content_type
 from docex.models.document_metadata import DocumentMetadata as MetaModel
+from docex.utils.s3_prefix_builder import sanitize_basket_name, sanitize_filename
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -107,25 +108,32 @@ class DocBasket:
     def create(cls, name: str, description: Optional[str] = None, storage_config: Optional[Dict[str, Any]] = None, db: Optional[Database] = None) -> 'DocBasket':
         """
         Create a new document basket
-        
+
         Args:
-            name: Basket name
+            name: Basket name (will be sanitized for filesystem safety)
             description: Optional basket description
             storage_config: Optional storage configuration
-            
+
         Returns:
             Created basket
-            
+
         Raises:
             ValueError: If a basket with the same name already exists
         """
+        # Sanitize basket name for filesystem safety
+        original_name = name
+        name = sanitize_basket_name(name)
+
+        if name != original_name:
+            logger.info(f"Basket name sanitized: '{original_name}' -> '{name}'")
+
         # Get config instance
         config = DocEXConfig()
-        
+
         # Use default storage config if none provided
         if storage_config is None:
             storage_config = config.get('storage', {})
-        
+
         # Ensure storage type is set
         if 'type' not in storage_config:
             storage_config['type'] = 'filesystem'
@@ -162,7 +170,7 @@ class DocBasket:
                         base_path = config.get('storage.filesystem.path', 'storage/docex')
                         storage_config['path'] = str(Path(base_path) / f"basket_{basket_model.id}")
                 elif storage_config['type'] == 's3':
-                    # For S3, ensure s3 config is properly nested
+                    # For S3, handle both flattened and nested formats
                     if 's3' not in storage_config:
                         # If s3 config is at top level, move it under 's3' key
                         s3_config = {k: v for k, v in storage_config.items() if k != 'type'}
@@ -170,6 +178,16 @@ class DocBasket:
                             'type': 's3',
                             's3': s3_config
                         }
+                    else:
+                        # Handle hybrid format: both flattened and nested values exist
+                        # Update nested s3 config with any flattened values that are set
+                        s3_config = storage_config['s3']
+                        for key in ['bucket', 'region', 'prefix', 'access_key', 'secret_key', 'session_token']:
+                            if key in storage_config and storage_config[key] is not None:
+                                s3_config[key] = storage_config[key]
+                                # Remove from top level to avoid duplication
+                                del storage_config[key]
+
                     # Add prefix for basket organization if not present
                     if 'prefix' not in storage_config.get('s3', {}):
                         storage_config['s3']['prefix'] = f"baskets/{basket_model.id}/"
@@ -426,6 +444,139 @@ class DocBasket:
     
     def _get_content_type(self, file_path: Path) -> str:
         return get_content_type(file_path)
+    
+    def _extract_tenant_id(self) -> Optional[str]:
+        """
+        Extract tenant_id from basket name or user context.
+        
+        Basket name format: {tenant_id}_{document_type}_{stage}
+        
+        Returns:
+            Tenant ID if found, None otherwise
+        """
+        # Try to extract from basket name first (most reliable)
+        # Basket name format: {tenant_id}_{document_type}_{stage}
+        basket_name_parts = self.name.split('_', 1)
+        if len(basket_name_parts) == 2:
+            return basket_name_parts[0]
+        
+        return None
+    
+    def _get_document_path(self, document: Any, file_path: Optional[str] = None, metadata: Optional[Dict[str, Any]] = None) -> str:
+        """
+        Generate document path based on storage type.
+
+        For S3 storage:
+        - Default: 'tenant/basket_name/documents/{readable_name}__{document_id}.{ext}' structure
+        - Custom: Uses 'document_path_template' if provided in storage config
+
+        For filesystem storage:
+        - Uses 'docex/basket_{basket_id}/{document_id}' structure (unchanged)
+
+        Args:
+            document: Document model instance with id attribute
+            file_path: Optional file path to extract extension from
+
+        Returns:
+            Document path string
+        """
+        storage_type = self.storage_config.get('type', 'filesystem')
+
+        if storage_type == 's3':
+            s3_config = self.storage_config.get('s3', {})
+
+            # Get readable document name
+            readable_name = self._get_readable_document_name(document, file_path, metadata)
+
+            # Extract file extension
+            file_ext = Path(file_path).suffix if file_path else ''
+
+            # Check for custom path template (optional)
+            path_template = s3_config.get('document_path_template')
+            if path_template:
+                # Use custom template with variable substitution
+                tenant_id = self._extract_tenant_id()
+                return path_template.format(
+                    basket_id=self.id,
+                    basket_name=self.name,
+                    document_id=document.id,
+                    document_name=readable_name,
+                    ext=file_ext,
+                    tenant_id=tenant_id or '',
+                )
+
+            # Parse tenant and basket from basket name (format: {tenant_id}_{basket_name})
+            tenant_id, basket_short_name = self._parse_tenant_basket_name()
+
+            # Default S3 structure: basket_name/{readable_name}__{document_id}.{ext}
+            # Note: Tenant isolation is provided by the S3 prefix, not the document path
+            return f"{basket_short_name}/{readable_name}__{document.id}{file_ext}"
+        else:
+            # Filesystem storage uses original structure (unchanged)
+            return f"docex/basket_{self.id}/{document.id}"
+
+    def _get_readable_document_name(self, document: Any, file_path: Optional[str] = None, metadata: Optional[Dict[str, Any]] = None) -> str:
+        """Get a readable document name, sanitized for filesystem use."""
+        # First priority: Check for original filename in provided metadata
+        if metadata:
+            original_filename = metadata.get('original_filename')
+            if original_filename:
+                name = Path(original_filename).stem
+                return sanitize_filename(name)
+
+        # Second priority: Check for original filename in document metadata (if Document wrapper)
+        if hasattr(document, 'get_metadata'):
+            try:
+                doc_metadata = document.get_metadata()
+                original_filename = doc_metadata.get('original_filename')
+                if original_filename:
+                    name = Path(original_filename).stem
+                    return sanitize_filename(name)
+            except Exception:
+                # Metadata access might fail if session is closed
+                pass
+
+        # Third priority: Check if document model has a proper name set (from metadata during creation)
+        if hasattr(document, 'name') and document.name and not document.name.startswith('/tmp/'):
+            # If document.name looks like a proper filename (not a temp path), use it
+            name = Path(document.name).stem
+            # Avoid using temp filenames that might have been set during creation
+            if not name.startswith('temp') and not name.startswith('tmp'):
+                return sanitize_filename(name)
+
+        # Fourth priority: Use provided file_path (for new uploads)
+        if file_path:
+            # Use original filename (without extension)
+            name = Path(file_path).stem
+            return sanitize_filename(name)
+
+        # Fifth priority: Fallback to document name even if it looks like a temp file
+        if hasattr(document, 'name') and document.name:
+            name = Path(document.name).stem
+            return sanitize_filename(name)
+
+        # Final fallback
+        return f"document_{document.id[:8]}"
+
+    def _parse_tenant_basket_name(self) -> tuple[str, str]:
+        """
+        Parse basket name to extract tenant_id and basket_name.
+
+        Basket name format: {tenant_id}_{basket_name}
+        Example: "test-tenant-003_resume_raw" -> ("test-tenant-003", "resume_raw")
+
+        Returns:
+            Tuple of (tenant_id, basket_name)
+        """
+        # Split on first underscore to separate tenant from basket
+        parts = self.name.split('_', 1)
+        if len(parts) == 2:
+            tenant_id, basket_name = parts
+            return tenant_id, basket_name
+        else:
+            # Fallback if parsing fails
+            logger.warning(f"Unable to parse tenant from basket name: {self.name}")
+            return "unknown_tenant", self.name
 
     def add(self, file_path: str, document_type: str = 'file', metadata: Optional[Dict[str, Any]] = None) -> Document:
         """
@@ -488,9 +639,13 @@ class DocBasket:
                     storage_service=self.storage_service,
                     db=self.db  # Pass tenant-aware database to document
                 )
+            # Generate the correct readable name using metadata
+            readable_name = self._get_readable_document_name(document=None, file_path=str(file_path), metadata=metadata)
+            document_filename = f"{readable_name}{Path(str(file_path)).suffix}"
+
             document = DocumentModel(
                 basket_id=self.id,
-                name=file_path.name,
+                name=document_filename,  # Use the correct readable filename
                 source=str(file_path),
                 path='',
                 document_type=document_type,
@@ -503,12 +658,24 @@ class DocBasket:
             )
             session.add(document)
             session.flush()
-            # Document path should be relative to the basket's storage root
-            # The basket storage path already includes the base path (e.g., storage/docex/basket_{id})
-            # So we only need the document ID as the path
-            document_path = str(document.id)
+            document_path = self._get_document_path(document, str(file_path), metadata)
             stored_path = self.storage_service.store_document(str(file_path), document_path)
             document.path = stored_path
+
+            # Update document name to reflect the correct readable name
+            # This ensures the document record shows the right filename
+            readable_name = self._get_readable_document_name(document, str(file_path), metadata)
+            document.name = f"{readable_name}{Path(str(file_path)).suffix}"
+
+            # Prepare metadata with original filename
+            if metadata is None:
+                metadata = {}
+            # Store the original filename for future reference
+            # If not provided in metadata, use the file_path name
+            if 'original_filename' not in metadata:
+                original_filename = file_path.name if hasattr(file_path, 'name') else str(file_path)
+                metadata['original_filename'] = original_filename
+
             if metadata:
                 # Store metadata in same session - serialize values to JSON
                 import json

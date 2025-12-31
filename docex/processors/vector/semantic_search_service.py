@@ -103,9 +103,13 @@ class SemanticSearchService:
     def _init_pgvector(self):
         """Initialize pgvector connection"""
         from docex.db.connection import Database
-        # Try to get tenant_id from doc_ex context if available
+        # Try to get tenant_id from multiple sources
         tenant_id = None
-        if hasattr(self.doc_ex, 'user_context') and self.doc_ex.user_context:
+        # First check vector_db_config
+        if self.vector_db_config and 'tenant_id' in self.vector_db_config:
+            tenant_id = self.vector_db_config['tenant_id']
+        # Then check doc_ex context if available
+        elif hasattr(self.doc_ex, 'user_context') and self.doc_ex.user_context:
             tenant_id = getattr(self.doc_ex.user_context, 'tenant_id', None)
         db = Database(tenant_id=tenant_id) if tenant_id else Database()
         return {'type': 'pgvector', 'db': db}
@@ -167,7 +171,7 @@ class SemanticSearchService:
             
             # Apply minimum similarity threshold early
             filtered_results = [
-                r for r in vector_results 
+                r for r in vector_results
                 if r['similarity'] >= min_similarity
             ]
             
@@ -253,41 +257,41 @@ class SemanticSearchService:
             # Validate top_k
             if top_k <= 0 or top_k > 10000:
                 raise ValueError(f"Invalid top_k value: {top_k} (must be between 1 and 10000)")
-            
+
             # Validate basket_id if provided
             if basket_id:
                 if not isinstance(basket_id, str) or not basket_id.strip():
                     raise ValueError("Invalid basket_id")
                 basket_id = basket_id.strip()
-            
+
             # Build parameterized query to prevent SQL injection
             # Optimized: Include basket_id in SELECT and apply metadata filters at database level
             query_str = """
-                SELECT 
+                SELECT
                     d.id,
                     d.basket_id,
                     1 - (d.embedding <=> CAST(:embedding_json::jsonb AS public.vector)) AS similarity
                 FROM document d
             """
-            
+
             params = {
                 'embedding_json': embedding_json,
                 'limit': int(top_k)
             }
-            
+
             # Build WHERE clause
             where_clauses = ["d.embedding IS NOT NULL"]
-            
+
             if basket_id:
                 where_clauses.append("d.basket_id = :basket_id")
                 params['basket_id'] = basket_id
-            
+
             # Apply metadata filters at database level for better performance
             if filters:
                 from docex.db.models import DocumentMetadata
                 # Join with metadata table
                 query_str += " INNER JOIN document_metadata dm ON dm.document_id = d.id"
-                
+
                 # Add metadata filter conditions
                 filter_idx = 0
                 for key, value in filters.items():
@@ -301,25 +305,25 @@ class SemanticSearchService:
                         query_str += f" INNER JOIN document_metadata {alias} ON {alias}.document_id = d.id"
                         where_clauses.append(f"{alias}.key = :filter_key_{filter_idx}")
                         where_clauses.append(f"{alias}.value = :filter_value_{filter_idx}")
-                    
+
                     params[f'filter_key_{filter_idx}'] = key
                     params[f'filter_value_{filter_idx}'] = str(value)
                     filter_idx += 1
-            
+
             # Combine WHERE clauses
             query_str += " WHERE " + " AND ".join(where_clauses)
-            
+
             # Add ORDER BY and LIMIT with parameterized values
             query_str += " ORDER BY d.embedding <=> CAST(:embedding_json::jsonb AS public.vector) LIMIT :limit"
-            
+
             query_sql = text(query_str)
-            
+
             # Validate top_k
             if params['limit'] <= 0 or params['limit'] > 10000:
                 raise ValueError(f"Invalid top_k value: {top_k} (must be between 1 and 10000)")
-            
+
             results = session.execute(query_sql, params).fetchall()
-            
+
             # Return results with basket_id included for batch retrieval optimization
             return [
                 {

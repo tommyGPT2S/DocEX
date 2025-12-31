@@ -1,0 +1,64 @@
+# Files to Merge - S3 Tenant-Aware Path Structure Feature
+
+## Core Implementation Files
+
+### Modified
+docex/docbasket.py
+docex/utils/__init__.py
+docex/config/default_config.yaml
+
+### New Files
+docex/utils/s3_prefix_builder.py
+docex/utils/tenant_basket_helper.py
+
+## Documentation
+
+### New Documentation
+docs/S3_APPLICATION_NAME_CONFIGURATION.md
+docs/S3_BUCKET_AUTO_CREATION.md
+docs/S3_BUCKET_NAMING_RECOMMENDATIONS.md
+docs/S3_PATH_IMPLEMENTATION_SUMMARY.md
+
+### Updated Documentation
+docs/S3_BUCKET_STRUCTURE_EVALUATION.md
+docs/S3_TENANT_CONFIGURATION_GUIDE.md
+docs/S3_TENANT_QUICK_REFERENCE.md
+
+## Test Scripts (Optional - can be separate commit)
+
+### New Test Scripts
+test_s3_with_application_name.py
+test_s3_multi_tenant_comparison.py
+tests/test_s3_tenant_path_structure.py
+
+### Updated Test Scripts
+test_s3_quick.py
+test_s3_tenant_002.py
+
+## Helper Files
+
+### New Helper Files
+AWS_CREDENTIALS_SETUP.md
+TEST_S3_PATHS.md
+MERGE_SUMMARY.md
+MERGE_CHECKLIST.md
+
+## Git Commands
+
+### Stage Core Files
+git add docex/docbasket.py
+git add docex/utils/s3_prefix_builder.py
+git add docex/utils/tenant_basket_helper.py
+git add docex/utils/__init__.py
+git add docex/config/default_config.yaml
+
+### Stage Documentation
+git add docs/S3_*.md
+
+### Stage Test Scripts (optional)
+git add test_s3_*.py
+git add tests/test_s3_tenant_path_structure.py
+
+### Stage Helper Files (optional)
+git add MERGE_SUMMARY.md MERGE_CHECKLIST.md
+git add AWS_CREDENTIALS_SETUP.md TEST_S3_PATHS.md
