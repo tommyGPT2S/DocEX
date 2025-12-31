@@ -291,16 +291,12 @@ Be precise and extract only what you can clearly identify. Set confidence_score 
             # Build prompt
             user_prompt = self._prompt_template.replace('{{ content }}', text[:10000])  # Limit text length
             
-            # Call LLM
-            messages = [
-                {'role': 'system', 'content': self._system_prompt},
-                {'role': 'user', 'content': user_prompt}
-            ]
-            
-            response = await self.llm_adapter.generate(
-                messages,
-                temperature=self.processing_config.llm_temperature,
-                max_tokens=self.processing_config.max_tokens
+            # Call LLM - support different adapter interfaces
+            response = await self._call_llm(
+                self._system_prompt,
+                user_prompt,
+                self.processing_config.llm_temperature,
+                self.processing_config.max_tokens
             )
             
             # Parse JSON response
@@ -317,7 +313,9 @@ Be precise and extract only what you can clearly identify. Set confidence_score 
                 }
             
             # Determine if needs review
-            confidence = raw_json.get('confidence_score', 0)
+            confidence = raw_json.get('confidence_score')
+            if confidence is None:
+                confidence = 0.5  # Default confidence if not provided
             needs_review = confidence < self.processing_config.confidence_threshold
             
             review_reasons = []
@@ -379,6 +377,55 @@ Be precise and extract only what you can clearly identify. Set confidence_score 
         
         return None
     
+    async def _call_llm(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        temperature: float = 0.0,
+        max_tokens: int = 4000
+    ) -> str:
+        """
+        Call LLM with support for different adapter interfaces.
+        
+        Supports:
+        - LocalLLMService with generate_completion()
+        - OllamaAdapter with generate()
+        - OpenAI-style with generate() taking messages list
+        - Adapter with llm_service attribute
+        """
+        # Check if adapter has an llm_service attribute (like LocalLLMAdapter)
+        if hasattr(self.llm_adapter, 'llm_service'):
+            service = self.llm_adapter.llm_service
+            if hasattr(service, 'generate_completion'):
+                return await service.generate_completion(
+                    prompt=user_prompt,
+                    system_prompt=system_prompt,
+                    temperature=temperature
+                )
+        
+        # Check for generate_completion method directly
+        if hasattr(self.llm_adapter, 'generate_completion'):
+            return await self.llm_adapter.generate_completion(
+                prompt=user_prompt,
+                system_prompt=system_prompt,
+                temperature=temperature
+            )
+        
+        # Check for generate method (OllamaAdapter style)
+        if hasattr(self.llm_adapter, 'generate'):
+            full_prompt = f"{system_prompt}\n\n{user_prompt}"
+            return await self.llm_adapter.generate(full_prompt, temperature=temperature)
+        
+        # Check for chat method (OpenAI style)
+        if hasattr(self.llm_adapter, 'chat'):
+            messages = [
+                {'role': 'system', 'content': system_prompt},
+                {'role': 'user', 'content': user_prompt}
+            ]
+            return await self.llm_adapter.chat(messages, temperature=temperature)
+        
+        raise ValueError(f"Unsupported LLM adapter type: {type(self.llm_adapter).__name__}")
+    
     def _get_model_name(self) -> str:
         """Get name of the LLM model being used"""
         if self.llm_adapter:
@@ -386,6 +433,10 @@ Be precise and extract only what you can clearly identify. Set confidence_score 
                 return self.llm_adapter.model
             if hasattr(self.llm_adapter, 'model_name'):
                 return self.llm_adapter.model_name
+            if hasattr(self.llm_adapter, 'llm_service'):
+                service = self.llm_adapter.llm_service
+                if hasattr(service, 'model'):
+                    return service.model
         return 'unknown'
 
 

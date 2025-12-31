@@ -19,7 +19,8 @@ from pathlib import Path
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from docex import DocEX, DocBasket
+from docex import DocEX
+from docex.docbasket import DocBasket
 from docex.document import Document
 from docex.services.invoice_service import InvoiceService
 from docex.processors.invoice import (
@@ -106,18 +107,22 @@ async def example_single_invoice():
     # Create a basket for invoices
     basket = docex.create_basket(
         name=f"invoices_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
-        storage_type='local',
         storage_config={'base_path': './storage/invoices'}
     )
     
     print(f"[OK] Created basket: {basket.name}")
     
-    # Create a test document
-    doc = basket.create_document(
-        name="sample_invoice.txt",
-        content=SAMPLE_INVOICE_TEXT,
-        content_type="text/plain"
-    )
+    # Create a test document by writing to a temp file first
+    import tempfile
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
+        f.write(SAMPLE_INVOICE_TEXT)
+        temp_path = f.name
+    
+    doc = basket.add(temp_path)
+    
+    # Clean up temp file
+    import os
+    os.unlink(temp_path)
     
     print(f"[OK] Created document: {doc.name}")
     
@@ -210,7 +215,8 @@ async def example_single_invoice():
     except Exception as e:
         print(f"[WARN] Validation failed: {e}")
     
-    return basket
+    # Return doc for use in later examples
+    return doc
 
 
 async def example_invoice_service():
@@ -254,7 +260,7 @@ async def example_invoice_service():
     return service
 
 
-async def example_job_queue():
+async def example_job_queue(doc_id: str = None):
     """Example: Use job queue for async processing"""
     print("\n" + "="*60)
     print("Example 3: Job Queue for Async Processing")
@@ -267,17 +273,24 @@ async def example_job_queue():
     queue = JobQueue(docex.db)
     print("[OK] JobQueue initialized")
     
-    # Enqueue some test jobs
-    job_ids = []
-    for i in range(3):
-        job_id = queue.enqueue(
-            document_id=f"test_doc_{i}",
-            operation_type='INVOICE_EXTRACTION',
-            priority=JobPriority.NORMAL,
-            idempotency_key=f"test_job_{i}_{datetime.now().timestamp()}"
-        )
-        job_ids.append(job_id)
-        print(f"[OK] Enqueued job: {job_id}")
+    # If no document ID provided, just show queue stats
+    if not doc_id:
+        print("[INFO] Skipping job enqueue - no document ID provided")
+        stats = queue.get_queue_stats()
+        print(f"\nQueue Statistics:")
+        print(f"    Total Jobs: {stats['total']}")
+        print(f"    By Status: {stats['by_status']}")
+        print(f"    By Type: {stats['by_type']}")
+        return queue
+    
+    # Enqueue a job for the actual document
+    job_id = queue.enqueue(
+        document_id=doc_id,
+        operation_type='INVOICE_EXTRACTION',
+        priority=JobPriority.NORMAL,
+        idempotency_key=f"invoice_job_{doc_id}_{datetime.now().timestamp()}"
+    )
+    print(f"[OK] Enqueued job: {job_id}")
     
     # Check queue stats
     stats = queue.get_queue_stats()
@@ -287,11 +300,10 @@ async def example_job_queue():
     print(f"    By Type: {stats['by_type']}")
     
     # Check job status
-    for job_id in job_ids[:1]:
-        status = queue.get_job_status(job_id)
-        print(f"\nJob {job_id}:")
-        print(f"    Status: {status.get('status')}")
-        print(f"    Created: {status.get('created_at')}")
+    status = queue.get_job_status(job_id)
+    print(f"\nJob {job_id}:")
+    print(f"    Status: {status.get('status')}")
+    print(f"    Created: {status.get('created_at')}")
     
     return queue
 
@@ -408,10 +420,12 @@ async def main():
     print("#"*60)
     
     try:
-        # Run examples
-        await example_single_invoice()
+        # Run examples and capture document ID for later use
+        doc = await example_single_invoice()
+        doc_id = doc.id if doc and hasattr(doc, 'id') else None
+        
         await example_invoice_service()
-        await example_job_queue()
+        await example_job_queue(doc_id)
         await example_rate_limiter()
         await example_normalizer()
         
