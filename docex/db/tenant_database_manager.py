@@ -211,7 +211,9 @@ class TenantDatabaseManager:
         from urllib.parse import quote_plus
         user_encoded = quote_plus(user)
         password_encoded = quote_plus(password)
-        connection_url = f'postgresql://{user_encoded}:{password_encoded}@{host}:{port}/{database}?sslmode=require'
+        # Use sslmode=disable for local connections, require for remote
+        sslmode = postgres_config.get('sslmode', 'disable' if host in ['localhost', '127.0.0.1'] else 'require')
+        connection_url = f'postgresql://{user_encoded}:{password_encoded}@{host}:{port}/{database}?sslmode={sslmode}'
         
         # Create engine with schema in search_path
         engine = create_engine(

@@ -1,7 +1,12 @@
 from typing import Dict, Any, Optional, Union, List
 from pathlib import Path
-from datetime import datetime, UTC
+from datetime import datetime, timezone
 import json
+
+try:  # Python 3.11+ exposes datetime.UTC
+    from datetime import UTC
+except ImportError:  # Fallback for older runtimes (e.g., macOS system Python 3.9)
+    UTC = timezone.utc
 
 from docex.services.storage_service import StorageService
 from docex.config.config_manager import ConfigManager

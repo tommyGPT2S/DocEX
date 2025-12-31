@@ -574,11 +574,24 @@ class VectorIndexingProcessor(BaseProcessor):
         # Get basket_id from document's basket if available
         basket_id = None
         try:
+            # Try to get from document's basket attribute
             if hasattr(document, 'basket') and document.basket:
                 basket_id = document.basket.id if hasattr(document.basket, 'id') else str(document.basket)
+            # Try to get from document's basket_id attribute
             elif hasattr(document, 'basket_id'):
                 basket_id = document.basket_id
-        except Exception:
+            # Try to get from database
+            else:
+                from docex.db.connection import Database
+                from docex.db.models import Document as DocumentModel
+                from sqlalchemy import select
+                db = self.db or Database()
+                with db.session() as session:
+                    doc_model = session.get(DocumentModel, document.id)
+                    if doc_model and doc_model.basket_id:
+                        basket_id = doc_model.basket_id
+        except Exception as e:
+            logger.debug(f"Could not get basket_id for document {document.id}: {e}")
             pass
         
         vectors[document.id] = {

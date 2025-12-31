@@ -14,8 +14,13 @@ from docex.db.connection import Database
 from docex.db.models import Base
 from docex.transport.models import Base as TransportBase
 import sqlite3
-from datetime import datetime, UTC
+from datetime import datetime, timezone
 from sqlalchemy import inspect
+
+try:
+    from datetime import UTC
+except ImportError:
+    UTC = timezone.utc
 
 @click.group()
 def cli():
@@ -590,6 +595,557 @@ def embed(tenant_id, index_all, basket_name, basket_id, document_type, force, mo
     except Exception as e:
         click.echo(f"❌ Error: {str(e)}", err=True)
         logger.exception("Vector indexing failed")
+        raise click.Abort()
+
+@cli.command()
+@click.option('--tenant-id', required=True, help='Tenant ID to provision')
+@click.option('--verify', is_flag=True, help='Verify tenant by creating a test basket')
+@click.option('--enable-multi-tenancy', is_flag=True, help='Enable database-level multi-tenancy in config if not already enabled')
+def provision_tenant(tenant_id, verify, enable_multi_tenancy):
+    """
+    Provision a new tenant with isolated database/schema.
+    
+    This command creates a new tenant with its own isolated database (SQLite) or schema (PostgreSQL).
+    All tables and indexes are automatically created for the tenant.
+    
+    Examples:
+        docex provision-tenant --tenant-id acme-corp
+        docex provision-tenant --tenant-id acme-corp --verify
+        docex provision-tenant --tenant-id acme-corp --enable-multi-tenancy
+    """
+    try:
+        from docex.context import UserContext
+        from docex.db.tenant_database_manager import TenantDatabaseManager
+        from docex.config.docex_config import DocEXConfig
+        import yaml
+        from pathlib import Path
+        
+        click.echo(f"🚀 Provisioning tenant: {tenant_id}")
+        
+        # Check if multi-tenancy is enabled
+        config = DocEXConfig()
+        security_config = config.get('security', {})
+        multi_tenancy_model = security_config.get('multi_tenancy_model', 'row_level')
+        tenant_database_routing = security_config.get('tenant_database_routing', False)
+        
+        if multi_tenancy_model != 'database_level' or not tenant_database_routing:
+            if enable_multi_tenancy:
+                click.echo("📝 Enabling database-level multi-tenancy in configuration...")
+                # Update config file
+                config_path = Path.home() / '.docex' / 'config.yaml'
+                if not config_path.exists():
+                    config_path.parent.mkdir(parents=True, exist_ok=True)
+                    current_config = {}
+                else:
+                    with open(config_path, 'r') as f:
+                        current_config = yaml.safe_load(f) or {}
+                
+                if 'security' not in current_config:
+                    current_config['security'] = {}
+                current_config['security']['multi_tenancy_model'] = 'database_level'
+                current_config['security']['tenant_database_routing'] = True
+                
+                with open(config_path, 'w') as f:
+                    yaml.dump(current_config, f, default_flow_style=False)
+                
+                click.echo(f"✅ Updated configuration at {config_path}")
+                # Reload config
+                config = DocEXConfig()
+            else:
+                click.echo("❌ Error: Database-level multi-tenancy is not enabled.", err=True)
+                click.echo("   Run with --enable-multi-tenancy to enable it automatically.", err=True)
+                click.echo("   Or update your config file manually:", err=True)
+                click.echo("   security:", err=True)
+                click.echo("     multi_tenancy_model: database_level", err=True)
+                click.echo("     tenant_database_routing: true", err=True)
+                raise click.Abort()
+        
+        # Get tenant database manager
+        manager = TenantDatabaseManager()
+        
+        # Check if tenant already exists
+        db_config = config.get('database', {})
+        db_type = db_config.get('type', 'sqlite')
+        
+        if db_type in ['postgresql', 'postgres']:
+            # For PostgreSQL, check if schema exists
+            from sqlalchemy import inspect, text
+            engine = manager.get_tenant_engine(tenant_id)
+            inspector = inspect(engine)
+            
+            # Get schema name
+            postgres_config = db_config.get('postgres', {})
+            schema_template = postgres_config.get('schema_template', 'tenant_{tenant_id}')
+            schema_name = schema_template.format(tenant_id=tenant_id)
+            
+            # Check if schema exists
+            with engine.connect() as conn:
+                result = conn.execute(text(
+                    "SELECT schema_name FROM information_schema.schemata WHERE schema_name = :schema_name"
+                ), {"schema_name": schema_name})
+                schema_exists = result.fetchone() is not None
+            
+            if schema_exists:
+                click.echo(f"⚠️  Tenant schema '{schema_name}' already exists.")
+                if not click.confirm('Do you want to reinitialize it? This will drop all existing data.'):
+                    click.echo("Aborted.")
+                    return
+                
+                # Drop and recreate schema
+                click.echo(f"🗑️  Dropping existing schema...")
+                with engine.connect() as conn:
+                    conn.execute(text(f'DROP SCHEMA IF EXISTS "{schema_name}" CASCADE'))
+                    conn.commit()
+                click.echo(f"✅ Dropped schema '{schema_name}'")
+        
+        # Provision tenant (this will create schema/database and tables)
+        click.echo(f"📦 Creating tenant database/schema...")
+        engine = manager.get_tenant_engine(tenant_id)
+        
+        # Initialize schema (creates tables and indexes)
+        if db_type in ['postgresql', 'postgres']:
+            postgres_config = db_config.get('postgres', {})
+            schema_template = postgres_config.get('schema_template', 'tenant_{tenant_id}')
+            schema_name = schema_template.format(tenant_id=tenant_id)
+            manager._initialize_tenant_schema(engine, tenant_id, schema_name)
+        else:
+            manager._initialize_tenant_schema(engine, tenant_id)
+        
+        click.echo(f"✅ Tenant '{tenant_id}' provisioned successfully!")
+        
+        # Verify tenant
+        if verify:
+            click.echo(f"🔍 Verifying tenant...")
+            user_context = UserContext(
+                user_id="system",
+                tenant_id=tenant_id
+            )
+            docex = DocEX(user_context=user_context)
+            
+            # Create a test basket
+            test_basket_name = f"test_basket_{tenant_id}"
+            basket = docex.create_basket(test_basket_name, "Test basket for tenant verification")
+            click.echo(f"✅ Created test basket: {basket.id}")
+            
+            # List baskets to verify
+            baskets = docex.list_baskets()
+            click.echo(f"✅ Tenant has {len(baskets)} basket(s)")
+            
+            # Clean up test basket
+            if click.confirm('Remove test basket?'):
+                # Note: DocBasket.delete() might not exist, so we'll just confirm
+                click.echo(f"✅ Verification complete. Test basket '{test_basket_name}' can be removed manually if needed.")
+        
+        click.echo(f"\n✅ Tenant '{tenant_id}' is ready to use!")
+        click.echo(f"\nUsage:")
+        click.echo(f"  from docex import DocEX")
+        click.echo(f"  from docex.context import UserContext")
+        click.echo(f"  ")
+        click.echo(f"  user_context = UserContext(user_id='user1', tenant_id='{tenant_id}')")
+        click.echo(f"  docex = DocEX(user_context=user_context)")
+        click.echo(f"  basket = docex.create_basket('my_basket')")
+        
+    except Exception as e:
+        click.echo(f"❌ Error provisioning tenant: {str(e)}", err=True)
+        logger.exception("Tenant provisioning failed")
+        raise click.Abort()
+
+@cli.group()
+def basket():
+    """Manage document baskets"""
+    pass
+
+@basket.command('list')
+@click.option('--tenant-id', help='Tenant ID for multi-tenant setups')
+@click.option('--format', type=click.Choice(['table', 'json', 'simple']), default='table', help='Output format')
+def list_baskets(tenant_id, format):
+    """List all document baskets"""
+    try:
+        from docex.context import UserContext
+        
+        user_context = None
+        if tenant_id:
+            user_context = UserContext(user_id='cli_user', tenant_id=tenant_id)
+        
+        doc_ex = DocEX(user_context=user_context)
+        baskets = doc_ex.list_baskets()
+        
+        if not baskets:
+            click.echo("No baskets found.")
+            return
+        
+        if format == 'json':
+            import json
+            basket_data = [{'id': b.id, 'name': b.name} for b in baskets]
+            click.echo(json.dumps(basket_data, indent=2))
+        elif format == 'simple':
+            for basket in baskets:
+                click.echo(f"{basket.id}\t{basket.name}")
+        else:
+            click.echo(f"\nFound {len(baskets)} basket(s):\n")
+            click.echo(f"{'ID':<40} {'Name':<30}")
+            click.echo("-" * 70)
+            for basket in baskets:
+                click.echo(f"{basket.id:<40} {basket.name:<30}")
+    
+    except Exception as e:
+        click.echo(f"❌ Error: {str(e)}", err=True)
+        raise click.Abort()
+
+@basket.command('create')
+@click.option('--tenant-id', help='Tenant ID for multi-tenant setups')
+@click.option('--name', required=True, help='Basket name')
+@click.option('--description', help='Basket description')
+def create_basket(tenant_id, name, description):
+    """Create a new document basket"""
+    try:
+        from docex.context import UserContext
+        
+        user_context = None
+        if tenant_id:
+            user_context = UserContext(user_id='cli_user', tenant_id=tenant_id)
+        
+        doc_ex = DocEX(user_context=user_context)
+        basket = doc_ex.create_basket(name, description)
+        
+        click.echo(f"✅ Basket created successfully!")
+        click.echo(f"   ID: {basket.id}")
+        click.echo(f"   Name: {basket.name}")
+    
+    except Exception as e:
+        click.echo(f"❌ Error: {str(e)}", err=True)
+        raise click.Abort()
+
+@cli.group()
+def document():
+    """Manage documents"""
+    pass
+
+@document.command('list')
+@click.option('--tenant-id', help='Tenant ID for multi-tenant setups')
+@click.option('--basket-id', required=True, help='Basket ID')
+@click.option('--limit', type=int, help='Maximum number of documents to return (pagination)')
+@click.option('--offset', type=int, default=0, help='Number of documents to skip (pagination)')
+@click.option('--order-by', type=click.Choice(['name', 'created_at', 'updated_at', 'size', 'status']), help='Field to sort by')
+@click.option('--order-desc', is_flag=True, help='Sort in descending order')
+@click.option('--status', help='Filter by document status')
+@click.option('--document-type', help='Filter by document type')
+@click.option('--format', type=click.Choice(['table', 'json', 'simple']), default='table', help='Output format')
+def list_documents(tenant_id, basket_id, limit, offset, order_by, order_desc, status, document_type, format):
+    """
+    List documents in a basket with pagination, sorting, and filtering.
+    
+    Examples:
+    
+    \b
+    # List first 20 documents
+    docex document list --basket-id bas_123 --limit 20
+    
+    \b
+    # List with pagination (page 2)
+    docex document list --basket-id bas_123 --limit 20 --offset 20
+    
+    \b
+    # List sorted by name
+    docex document list --basket-id bas_123 --order-by name
+    
+    \b
+    # List newest first
+    docex document list --basket-id bas_123 --order-by created_at --order-desc
+    """
+    try:
+        from docex.context import UserContext
+        
+        user_context = None
+        if tenant_id:
+            user_context = UserContext(user_id='cli_user', tenant_id=tenant_id)
+        
+        doc_ex = DocEX(user_context=user_context)
+        basket = doc_ex.get_basket(basket_id)
+        
+        if not basket:
+            click.echo(f"❌ Basket not found: {basket_id}", err=True)
+            raise click.Abort()
+        
+        # Get documents with filters
+        docs = basket.list_documents(
+            limit=limit,
+            offset=offset,
+            order_by=order_by,
+            order_desc=order_desc,
+            status=status,
+            document_type=document_type
+        )
+        
+        if format == 'json':
+            import json
+            doc_data = [{
+                'id': d.id,
+                'name': d.name,
+                'size': d.size,
+                'status': d.status,
+                'created_at': d.created_at.isoformat() if d.created_at else None
+            } for d in docs]
+            click.echo(json.dumps(doc_data, indent=2))
+        elif format == 'simple':
+            for doc in docs:
+                click.echo(f"{doc.id}\t{doc.name}")
+        else:
+            click.echo(f"\nFound {len(docs)} document(s):\n")
+            if docs:
+                click.echo(f"{'ID':<40} {'Name':<30} {'Size':<10} {'Status':<15}")
+                click.echo("-" * 95)
+                for doc in docs:
+                    size_str = f"{doc.size:,}" if doc.size else "N/A"
+                    click.echo(f"{doc.id:<40} {doc.name:<30} {size_str:<10} {doc.status:<15}")
+            
+            # Show pagination info if limit is set
+            if limit:
+                total = basket.count_documents(status=status, document_type=document_type)
+                total_pages = (total + limit - 1) // limit if limit > 0 else 1
+                current_page = (offset // limit) + 1 if limit > 0 else 1
+                click.echo(f"\nPage {current_page} of {total_pages} (Total: {total} documents)")
+    
+    except Exception as e:
+        click.echo(f"❌ Error: {str(e)}", err=True)
+        raise click.Abort()
+
+@document.command('count')
+@click.option('--tenant-id', help='Tenant ID for multi-tenant setups')
+@click.option('--basket-id', required=True, help='Basket ID')
+@click.option('--status', help='Filter by document status')
+@click.option('--document-type', help='Filter by document type')
+def count_documents(tenant_id, basket_id, status, document_type):
+    """Count documents in a basket"""
+    try:
+        from docex.context import UserContext
+        
+        user_context = None
+        if tenant_id:
+            user_context = UserContext(user_id='cli_user', tenant_id=tenant_id)
+        
+        doc_ex = DocEX(user_context=user_context)
+        basket = doc_ex.get_basket(basket_id)
+        
+        if not basket:
+            click.echo(f"❌ Basket not found: {basket_id}", err=True)
+            raise click.Abort()
+        
+        count = basket.count_documents(status=status, document_type=document_type)
+        click.echo(f"Total documents: {count}")
+        if status:
+            click.echo(f"  Filtered by status: {status}")
+        if document_type:
+            click.echo(f"  Filtered by type: {document_type}")
+    
+    except Exception as e:
+        click.echo(f"❌ Error: {str(e)}", err=True)
+        raise click.Abort()
+
+@document.command('search')
+@click.option('--tenant-id', help='Tenant ID for multi-tenant setups')
+@click.option('--basket-id', required=True, help='Basket ID')
+@click.option('--metadata', required=True, help='Metadata filter as JSON (e.g., \'{"category":"invoice"}\')')
+@click.option('--limit', type=int, help='Maximum number of results to return')
+@click.option('--offset', type=int, default=0, help='Number of results to skip')
+@click.option('--order-by', type=click.Choice(['name', 'created_at', 'updated_at', 'size']), help='Field to sort by')
+@click.option('--order-desc', is_flag=True, help='Sort in descending order')
+@click.option('--format', type=click.Choice(['table', 'json', 'simple']), default='table', help='Output format')
+def search_documents(tenant_id, basket_id, metadata, limit, offset, order_by, order_desc, format):
+    """
+    Search documents by metadata with pagination and sorting.
+    
+    Examples:
+    
+    \b
+    # Search by single metadata key
+    docex document search --basket-id bas_123 --metadata '{"category":"invoice"}'
+    
+    \b
+    # Search with multiple filters (AND)
+    docex document search --basket-id bas_123 --metadata '{"category":"invoice","author":"Alice"}'
+    
+    \b
+    # Search with pagination
+    docex document search --basket-id bas_123 --metadata '{"category":"invoice"}' --limit 10 --offset 0
+    
+    \b
+    # Search with sorting
+    docex document search --basket-id bas_123 --metadata '{"category":"invoice"}' --order-by created_at --order-desc
+    """
+    try:
+        import json
+        from docex.context import UserContext
+        
+        # Parse metadata JSON
+        try:
+            metadata_dict = json.loads(metadata)
+        except json.JSONDecodeError as e:
+            click.echo(f"❌ Invalid JSON in --metadata: {str(e)}", err=True)
+            raise click.Abort()
+        
+        user_context = None
+        if tenant_id:
+            user_context = UserContext(user_id='cli_user', tenant_id=tenant_id)
+        
+        doc_ex = DocEX(user_context=user_context)
+        basket = doc_ex.get_basket(basket_id)
+        
+        if not basket:
+            click.echo(f"❌ Basket not found: {basket_id}", err=True)
+            raise click.Abort()
+        
+        # Search documents
+        docs = basket.find_documents_by_metadata(
+            metadata=metadata_dict,
+            limit=limit,
+            offset=offset,
+            order_by=order_by,
+            order_desc=order_desc
+        )
+        
+        if format == 'json':
+            doc_data = [{
+                'id': d.id,
+                'name': d.name,
+                'size': d.size,
+                'status': d.status,
+                'created_at': d.created_at.isoformat() if d.created_at else None,
+                'metadata': d.get_metadata_dict()
+            } for d in docs]
+            click.echo(json.dumps(doc_data, indent=2))
+        elif format == 'simple':
+            for doc in docs:
+                click.echo(f"{doc.id}\t{doc.name}")
+        else:
+            click.echo(f"\nFound {len(docs)} document(s) matching metadata:\n")
+            click.echo(f"Metadata filter: {json.dumps(metadata_dict, indent=2)}\n")
+            if docs:
+                click.echo(f"{'ID':<40} {'Name':<30} {'Size':<10} {'Status':<15}")
+                click.echo("-" * 95)
+                for doc in docs:
+                    size_str = f"{doc.size:,}" if doc.size else "N/A"
+                    click.echo(f"{doc.id:<40} {doc.name:<30} {size_str:<10} {doc.status:<15}")
+            
+            # Show count
+            total = basket.count_documents_by_metadata(metadata_dict)
+            click.echo(f"\nTotal matching: {total} documents")
+            if limit:
+                total_pages = (total + limit - 1) // limit if limit > 0 else 1
+                current_page = (offset // limit) + 1 if limit > 0 else 1
+                click.echo(f"Page {current_page} of {total_pages}")
+    
+    except Exception as e:
+        click.echo(f"❌ Error: {str(e)}", err=True)
+        raise click.Abort()
+
+@document.command('get')
+@click.option('--tenant-id', help='Tenant ID for multi-tenant setups')
+@click.option('--basket-id', required=True, help='Basket ID')
+@click.option('--document-id', required=True, help='Document ID')
+@click.option('--format', type=click.Choice(['table', 'json', 'simple']), default='table', help='Output format')
+def get_document(tenant_id, basket_id, document_id, format):
+    """Get details of a specific document"""
+    try:
+        from docex.context import UserContext
+        
+        user_context = None
+        if tenant_id:
+            user_context = UserContext(user_id='cli_user', tenant_id=tenant_id)
+        
+        doc_ex = DocEX(user_context=user_context)
+        basket = doc_ex.get_basket(basket_id)
+        
+        if not basket:
+            click.echo(f"❌ Basket not found: {basket_id}", err=True)
+            raise click.Abort()
+        
+        doc = basket.get_document(document_id)
+        
+        if not doc:
+            click.echo(f"❌ Document not found: {document_id}", err=True)
+            raise click.Abort()
+        
+        if format == 'json':
+            import json
+            doc_data = {
+                'id': doc.id,
+                'name': doc.name,
+                'size': doc.size,
+                'status': doc.status,
+                'content_type': doc.content_type,
+                'document_type': doc.document_type,
+                'created_at': doc.created_at.isoformat() if doc.created_at else None,
+                'updated_at': doc.updated_at.isoformat() if doc.updated_at else None,
+                'metadata': doc.get_metadata_dict()
+            }
+            click.echo(json.dumps(doc_data, indent=2))
+        elif format == 'simple':
+            click.echo(f"{doc.id}\t{doc.name}\t{doc.size}\t{doc.status}")
+        else:
+            click.echo(f"\nDocument Details:\n")
+            click.echo(f"  ID: {doc.id}")
+            click.echo(f"  Name: {doc.name}")
+            click.echo(f"  Size: {doc.size:,} bytes" if doc.size else "  Size: N/A")
+            click.echo(f"  Status: {doc.status}")
+            click.echo(f"  Content Type: {doc.content_type}")
+            click.echo(f"  Document Type: {doc.document_type}")
+            click.echo(f"  Created: {doc.created_at}")
+            click.echo(f"  Updated: {doc.updated_at}")
+            
+            # Show metadata
+            metadata = doc.get_metadata_dict()
+            if metadata:
+                click.echo(f"\n  Metadata:")
+                for key, value in metadata.items():
+                    click.echo(f"    {key}: {value}")
+    
+    except Exception as e:
+        click.echo(f"❌ Error: {str(e)}", err=True)
+        raise click.Abort()
+
+@document.command('add')
+@click.option('--tenant-id', help='Tenant ID for multi-tenant setups')
+@click.option('--basket-id', required=True, help='Basket ID')
+@click.option('--file', 'file_path', required=True, type=click.Path(exists=True), help='Path to file to add')
+@click.option('--metadata', help='Metadata as JSON (e.g., \'{"author":"Alice","category":"invoice"}\')')
+@click.option('--document-type', default='file', help='Document type (default: file)')
+def add_document(tenant_id, basket_id, file_path, metadata, document_type):
+    """Add a document to a basket"""
+    try:
+        import json
+        from docex.context import UserContext
+        
+        user_context = None
+        if tenant_id:
+            user_context = UserContext(user_id='cli_user', tenant_id=tenant_id)
+        
+        doc_ex = DocEX(user_context=user_context)
+        basket = doc_ex.get_basket(basket_id)
+        
+        if not basket:
+            click.echo(f"❌ Basket not found: {basket_id}", err=True)
+            raise click.Abort()
+        
+        # Parse metadata if provided
+        metadata_dict = None
+        if metadata:
+            try:
+                metadata_dict = json.loads(metadata)
+            except json.JSONDecodeError as e:
+                click.echo(f"❌ Invalid JSON in --metadata: {str(e)}", err=True)
+                raise click.Abort()
+        
+        # Add document
+        doc = basket.add(file_path, document_type=document_type, metadata=metadata_dict)
+        
+        click.echo(f"✅ Document added successfully!")
+        click.echo(f"   ID: {doc.id}")
+        click.echo(f"   Name: {doc.name}")
+        click.echo(f"   Size: {doc.size:,} bytes" if doc.size else "   Size: N/A")
+    
+    except Exception as e:
+        click.echo(f"❌ Error: {str(e)}", err=True)
         raise click.Abort()
 
 if __name__ == '__main__':

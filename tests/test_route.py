@@ -1,6 +1,11 @@
 import pytest
-from datetime import datetime, UTC
+from datetime import datetime, timezone
 from enum import Enum
+
+try:
+    from datetime import UTC
+except ImportError:
+    UTC = timezone.utc
 
 # Minimal enums for testing
 class TransportType(str, Enum):

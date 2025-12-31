@@ -8,7 +8,7 @@
 
 ![DocEX Architecture](docs/DocEX_Architecture.jpeg)
 
-**DocEX** is a robust, extensible document management and transport system for Python. It supports multiple storage backends, metadata management, and operation tracking, with a unified API for local, SFTP, HTTP, and other protocols. **Version 2.2.0** introduces database-level multi-tenancy, enhanced security with UserContext, and LLM-powered document processing capabilities.
+**DocEX** is a robust, extensible document management and transport system for Python. It supports multiple storage backends, metadata management, and operation tracking, with a unified API for local, SFTP, HTTP, and other protocols. **Version 2.6.0** introduces lightweight installation options, optimized dependencies, and enhanced query performance with pagination and filtering.
 
 ## Features
 
@@ -28,22 +28,88 @@
 
 ## Installation
 
-Install from PyPI:
+### Base Installation (Lightweight)
+
+Install the lightweight base package from PyPI:
 
 ```sh
 pip install docex
 ```
 
+This installs only the core dependencies needed for basic document management with SQLite. Perfect for getting started or when you don't need advanced features.
+
 ### Optional Dependencies
 
-For PDF processing features:
+DocEX uses optional dependency groups to keep the base installation lightweight. Install only what you need:
+
 ```sh
-pip install pdfminer.six
+# PostgreSQL database support
+pip install docex[postgres]
+
+# Vector indexing and semantic search
+pip install docex[vector]
+
+# LLM/Embedding support (OpenAI, etc.)
+pip install docex[llm]
+
+# Amazon S3 storage backend
+pip install docex[storage-s3]
+
+# HTTP transport method
+pip install docex[transport-http]
+
+# SFTP transport method
+pip install docex[transport-sftp]
+
+# PDF text extraction
+pip install docex[pdf]
+
+# All optional features
+pip install docex[all]
+
+# Development dependencies (testing, linting, etc.)
+pip install docex[dev]
 ```
 
-For LLM features (included by default in 2.2.0+):
-- `openai>=1.0.0` - OpenAI API integration
-- `jinja2>=3.1.0` - Prompt templating
+**Combine multiple features:**
+```sh
+pip install docex[postgres,vector,llm]
+pip install docex[all,dev]  # All features + dev tools
+```
+
+### Development Installation (Editable)
+
+For development, install in editable mode:
+
+```sh
+# Lightweight editable install
+pip install -e .
+
+# Editable with all features
+pip install -e ".[all,dev]"
+```
+
+This allows you to edit the source code and see changes immediately without reinstalling.
+
+### What's Included in Base Installation?
+
+The base installation includes:
+- ✅ SQLite database support
+- ✅ Filesystem storage
+- ✅ Local transport
+- ✅ Core document management
+- ✅ Metadata management
+- ✅ Basic CLI commands
+
+**Not included** (install via optional dependencies):
+- ❌ PostgreSQL support → `docex[postgres]`
+- ❌ Vector indexing/semantic search → `docex[vector]`
+- ❌ LLM/embedding capabilities → `docex[llm]`
+- ❌ S3 storage → `docex[storage-s3]`
+- ❌ HTTP/SFTP transport → `docex[transport-http]` / `docex[transport-sftp]`
+- ❌ PDF processing → `docex[pdf]`
+
+See [Dependency Optimization Guide](docs/DEPENDENCY_OPTIMIZATION.md) for detailed information.
 
 ## Quick Start
 
@@ -81,7 +147,7 @@ hello_file.unlink()
 
 ### Security and Multi-Tenancy
 
-DocEX 2.2.0+ includes enhanced security features and multi-tenancy support:
+DocEX includes enhanced security features and multi-tenancy support:
 
 ```python
 from docex import DocEX
@@ -110,7 +176,7 @@ See [Multi-Tenancy Guide](docs/MULTI_TENANCY_GUIDE.md) and [Security Best Practi
 
 ### LLM-Powered Document Processing
 
-DocEX 2.2.0+ includes LLM adapters for intelligent document processing:
+DocEX includes LLM adapters for intelligent document processing (requires `docex[llm]`):
 
 ```python
 from docex import DocEX
@@ -173,7 +239,7 @@ user_prompt_template: |
 
 ### Vector Indexing and Semantic Search
 
-DocEX 2.2.0+ includes vector indexing and semantic search capabilities:
+DocEX includes vector indexing and semantic search capabilities (requires `docex[vector,llm]`):
 
 ```python
 from docex import DocEX
@@ -253,6 +319,7 @@ transport_config:
 - [Developer Guide](docs/Developer_Guide.md)
 - [Design Document](docs/DocEX_Design.md)
 - [Multi-Tenancy Guide](docs/MULTI_TENANCY_GUIDE.md)
+- [Dependency Optimization Guide](docs/DEPENDENCY_OPTIMIZATION.md) - Lightweight installation and optional dependencies
 - [Security Best Practices](examples/SECURITY_BEST_PRACTICES.md)
 - [LLM Adapter Implementation](docs/LLM_ADAPTER_IMPLEMENTATION.md)
 - [LLM Adapter Proposal](docs/LLM_ADAPTER_PROPOSAL.md)

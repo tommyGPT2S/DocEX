@@ -278,32 +278,115 @@ class DocBasket:
                 db=basket_db  # Pass tenant-aware database to basket instance
             )
     
-    def find_documents_by_metadata(self, metadata: Union[Dict[str, Any], str]) -> List[Document]:
+    def find_documents_by_metadata(
+        self,
+        metadata: Union[Dict[str, Any], str],
+        limit: Optional[int] = None,
+        offset: Optional[int] = None,
+        order_by: Optional[str] = None,
+        order_desc: bool = False
+    ) -> List[Document]:
         """
-        Find documents by metadata. Accepts either a dictionary of key-value pairs or a single string value.
+        Find documents by metadata with pagination and sorting support.
+        Optimized for large datasets with proper basket_id filtering.
+        
+        Args:
+            metadata: Dictionary of key-value pairs or a single string value
+            limit: Maximum number of results to return (for pagination)
+            offset: Number of results to skip (for pagination)
+            order_by: Field to sort by ('created_at', 'updated_at', 'name', 'size')
+            order_desc: If True, sort in descending order
+            
+        Returns:
+            List of Document instances matching the metadata criteria
         """
         with self.db.transaction() as session:
-            query = select(DocumentModel).join(DocumentMetadata)
+            # Start with documents in this basket - CRITICAL for performance
+            query = select(DocumentModel).where(DocumentModel.basket_id == self.id)
             
             if isinstance(metadata, dict):
-                # Handle dictionary input
+                # Handle dictionary input - multiple key-value pairs (AND logic)
+                # For AND logic with multiple metadata filters, we need to ensure
+                # the document has ALL specified key-value pairs
+                metadata_filters = []
                 for key, value in metadata.items():
                     if isinstance(value, MetaModel):
                         value = value.to_dict()
                     if isinstance(value, dict) and 'extra' in value:
                         value = value['extra'].get('value', None)
-                    query = query.where(
-                        DocumentMetadata.key == key,
-                        DocumentMetadata.value == str(value)
+                    
+                    # Metadata values are stored as JSON strings, so we need to JSON-encode the search value
+                    import json
+                    try:
+                        # Try to encode as JSON to match how it's stored
+                        value_json = json.dumps(value, default=str)
+                    except (TypeError, ValueError):
+                        # Fallback to string if JSON encoding fails
+                        value_json = json.dumps(str(value))
+                    
+                    # Create subquery for each metadata key-value pair
+                    # This ensures AND logic: document must match ALL filters
+                    subquery = select(DocumentMetadata.document_id).where(
+                        and_(
+                            DocumentMetadata.key == key,
+                            DocumentMetadata.value == value_json,
+                            DocumentMetadata.document_id.in_(
+                                select(DocumentModel.id).where(DocumentModel.basket_id == self.id)
+                            )
+                        )
                     )
+                    metadata_filters.append(subquery)
+                
+                # Intersect all subqueries to get documents matching ALL metadata criteria
+                if metadata_filters:
+                    # Start with first filter
+                    base_subquery = metadata_filters[0]
+                    # Intersect with remaining filters
+                    for subquery in metadata_filters[1:]:
+                        base_subquery = base_subquery.intersect(subquery)
+                    
+                    # Filter documents by IDs from intersected subqueries
+                    query = query.where(DocumentModel.id.in_(base_subquery))
+                else:
+                    # No valid metadata filters, return empty
+                    return []
             elif isinstance(metadata, str):
                 # Handle string input (search across all metadata values)
-                query = query.where(DocumentMetadata.value == metadata)
+                # Join with metadata table for string search
+                # Metadata values are stored as JSON strings, so we need to search for JSON-encoded value
+                import json
+                search_value_json = json.dumps(metadata)
+                query = query.join(DocumentMetadata, DocumentMetadata.document_id == DocumentModel.id)
+                query = query.where(DocumentMetadata.value == search_value_json)
             else:
                 raise ValueError("Metadata must be a dictionary or a string.")
             
-            # Execute query
+            # Add sorting
+            if order_by:
+                order_field = getattr(DocumentModel, order_by, None)
+                if order_field is not None:
+                    if order_desc:
+                        query = query.order_by(order_field.desc())
+                    else:
+                        query = query.order_by(order_field.asc())
+                else:
+                    logger.warning(f"Invalid order_by field: {order_by}, using default")
+                    query = query.order_by(DocumentModel.created_at.desc())
+            else:
+                # Default sorting by creation date (newest first)
+                query = query.order_by(DocumentModel.created_at.desc())
+            
+            # Add pagination
+            if limit is not None:
+                query = query.limit(limit)
+            if offset is not None:
+                query = query.offset(offset)
+            
+            # Execute query - use distinct() to avoid duplicates from joins (if any)
+            if isinstance(metadata, str):
+                query = query.distinct()
             documents = session.execute(query).scalars().all()
+            
             return [Document(
                 id=doc.id,
                 name=doc.name,
@@ -642,17 +725,62 @@ class DocBasket:
                 db=self.db  # Pass tenant-aware database to document
             )
     
-    def list_documents(self) -> List[Document]:
+    def list_documents(
+        self,
+        limit: Optional[int] = None,
+        offset: Optional[int] = None,
+        order_by: Optional[str] = None,
+        order_desc: bool = False,
+        status: Optional[str] = None,
+        document_type: Optional[str] = None
+    ) -> List[Document]:
         """
-        List all documents in this basket
+        List documents in this basket with pagination, sorting, and filtering.
+        Optimized for large datasets using indexed queries.
         
+        Args:
+            limit: Maximum number of results to return (for pagination)
+            offset: Number of results to skip (for pagination)
+            order_by: Field to sort by ('created_at', 'updated_at', 'name', 'size', 'status')
+            order_desc: If True, sort in descending order
+            status: Optional filter by document status
+            document_type: Optional filter by document type
+            
         Returns:
             List of Document instances
         """
         with self.db.session() as session:
-            documents = session.execute(
-                select(DocumentModel).where(DocumentModel.basket_id == self.id)
-            ).scalars().all()
+            query = select(DocumentModel).where(DocumentModel.basket_id == self.id)
+            
+            # Add filters
+            if status:
+                query = query.where(DocumentModel.status == status)
+            if document_type:
+                query = query.where(DocumentModel.document_type == document_type)
+            
+            # Add sorting
+            if order_by:
+                order_field = getattr(DocumentModel, order_by, None)
+                if order_field is not None:
+                    if order_desc:
+                        query = query.order_by(order_field.desc())
+                    else:
+                        query = query.order_by(order_field.asc())
+                else:
+                    logger.warning(f"Invalid order_by field: {order_by}, using default")
+                    query = query.order_by(DocumentModel.created_at.desc())
+            else:
+                # Default sorting by creation date (newest first)
+                query = query.order_by(DocumentModel.created_at.desc())
+            
+            # Add pagination
+            if limit is not None:
+                query = query.limit(limit)
+            if offset is not None:
+                query = query.offset(offset)
+            
+            documents = session.execute(query).scalars().all()
+            
             return [Document(
                 id=doc.id,
                 name=doc.name,
@@ -669,32 +797,104 @@ class DocBasket:
                 db=self.db  # Pass tenant-aware database to document
             ) for doc in documents]
     
-    def list_documents(self) -> List[Document]:
+    def count_documents(
+        self,
+        status: Optional[str] = None,
+        document_type: Optional[str] = None
+    ) -> int:
         """
-        List all documents in this basket
+        Count documents in this basket with optional filters.
+        Optimized for performance using COUNT query.
         
+        Args:
+            status: Optional filter by document status
+            document_type: Optional filter by document type
+            
         Returns:
-            List of Document instances
+            Total count of documents matching the criteria
         """
         with self.db.session() as session:
-            documents = session.execute(
-                select(DocumentModel).where(DocumentModel.basket_id == self.id)
-            ).scalars().all()
-            return [Document(
-                id=doc.id,
-                name=doc.name,
-                path=doc.path,
-                content_type=doc.content_type,
-                document_type=doc.document_type,
-                size=doc.size,
-                checksum=doc.checksum,
-                status=doc.status,
-                created_at=doc.created_at,
-                updated_at=doc.updated_at,
-                model=doc,
-                storage_service=self.storage_service,
-                db=self.db  # Pass tenant-aware database to document
-            ) for doc in documents]
+            query = select(func.count(DocumentModel.id)).where(
+                DocumentModel.basket_id == self.id
+            )
+            
+            # Add filters
+            if status:
+                query = query.where(DocumentModel.status == status)
+            if document_type:
+                query = query.where(DocumentModel.document_type == document_type)
+            
+            result = session.execute(query).scalar()
+            return result or 0
+    
+    def count_documents_by_metadata(
+        self,
+        metadata: Union[Dict[str, Any], str]
+    ) -> int:
+        """
+        Count documents matching metadata criteria.
+        Optimized for large datasets.
+        
+        Args:
+            metadata: Dictionary of key-value pairs or a single string value
+            
+        Returns:
+            Count of documents matching the metadata criteria
+        """
+        with self.db.transaction() as session:
+            # Start with documents in this basket
+            query = select(DocumentModel).where(DocumentModel.basket_id == self.id)
+            
+            if isinstance(metadata, dict):
+                # Handle dictionary input - multiple key-value pairs (AND logic)
+                metadata_filters = []
+                for key, value in metadata.items():
+                    if isinstance(value, MetaModel):
+                        value = value.to_dict()
+                    if isinstance(value, dict) and 'extra' in value:
+                        value = value['extra'].get('value', None)
+                    
+                    # Metadata values are stored as JSON strings, so we need to JSON-encode the search value
+                    import json
+                    try:
+                        value_json = json.dumps(value, default=str)
+                    except (TypeError, ValueError):
+                        value_json = json.dumps(str(value))
+                    
+                    # Create subquery for each metadata key-value pair
+                    subquery = select(DocumentMetadata.document_id).where(
+                        and_(
+                            DocumentMetadata.key == key,
+                            DocumentMetadata.value == value_json,
+                            DocumentMetadata.document_id.in_(
+                                select(DocumentModel.id).where(DocumentModel.basket_id == self.id)
+                            )
+                        )
+                    )
+                    metadata_filters.append(subquery)
+                
+                # Intersect all subqueries to get documents matching ALL metadata criteria
+                if metadata_filters:
+                    base_subquery = metadata_filters[0]
+                    for subquery in metadata_filters[1:]:
+                        base_subquery = base_subquery.intersect(subquery)
+                    query = query.where(DocumentModel.id.in_(base_subquery))
+                else:
+                    return 0
+            elif isinstance(metadata, str):
+                # Handle string input (search across all metadata values)
+                # Metadata values are stored as JSON strings
+                import json
+                search_value_json = json.dumps(metadata)
+                query = query.join(DocumentMetadata, DocumentMetadata.document_id == DocumentModel.id)
+                query = query.where(DocumentMetadata.value == search_value_json)
+            else:
+                raise ValueError("Metadata must be a dictionary or a string.")
+            
+            # Count distinct documents
+            count_query = select(func.count()).select_from(query.subquery())
+            result = session.execute(count_query).scalar()
+            return result or 0
     
     # Instance method list() for listing documents - this shadows the classmethod
     # but Python's method resolution will use the classmethod when called on the class

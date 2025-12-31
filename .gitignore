@@ -74,3 +74,31 @@ temp_download/
 example_docs/ storage/
 .env
 .env.example
+
+# Test files and demos
+*_test.py
+*_demo.py
+claude_api_test.py
+complete_workflow_test.py
+demo_complete_workflow.py
+fixed_workflow_test.py
+perfect_demo.py
+simple_llm_test.py
+ultimate_docex_test.py
+test_direct_local_llm.py
+test_e2e_local_llm.py
+test_llm_with_local_fs.py
+test_meeting_notes.txt
+
+# API keys and secrets
+*api_key*
+*secret*
+sk-ant-*
+KB_Implementation_Proposal.html
+
+# Documentation files (email responses, summaries, etc.)
+EMAIL_RESPONSE_*.md
+*_SUMMARY.md
+DOCEX_KB_RELATIONSHIP.md
+GENERIC_KB_SERVICE_SUMMARY.md
+PR_DESCRIPTION.md
