@@ -3,6 +3,24 @@ Base Connector
 
 Abstract base class for all export connectors.
 Provides common functionality for delivery tracking and exactly-once semantics.
+
+IMPORTANT: Connectors vs Storage
+--------------------------------
+Connectors export STRUCTURED DATA (JSON, CSV) to external systems.
+Storage components (docex.storage) handle raw DOCUMENT CONTENT.
+
+Use Connectors for:
+- Webhook notifications with extracted invoice data
+- Exporting parsed data to external databases  
+- CSV exports of processing results
+
+Use Storage (docex.storage) for:
+- Storing original document files (PDF, Word, etc.)
+- S3/filesystem document storage
+- Document retrieval and archival
+
+For S3 structured data export, use StorageExporter from storage_export.py
+which leverages existing S3Storage infrastructure.
 """
 
 import logging
@@ -163,7 +181,7 @@ class DeliveryTracker:
         document_id: str
     ) -> List[Dict[str, Any]]:
         """Get delivery history for a document"""
-        from sqlalchemy import select
+        from sqlalchemy import select, and_
         
         with self.db.session() as session:
             query = select(Operation).where(
