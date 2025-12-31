@@ -1,12 +1,25 @@
 """
 Database Connector
 
-Delivers processed documents directly to a database table.
+Exports STRUCTURED DATA from processed documents to EXTERNAL database tables.
+This is NOT for DocEX internal storage - use docex.db for that.
+
+Purpose:
+- Export extracted invoice data to customer ERP systems
+- Push processed results to data warehouses
+- Insert structured data into external reporting databases
+
+For DocEX internal data (documents, metadata, operations), use:
+- docex.db.Database - Internal document/operation storage
+- docex.db.PostgresDatabase - PostgreSQL backend for DocEX
+- docex.db.SQLiteDatabase - SQLite backend for DocEX
+
 Supports:
-- Custom table mapping
+- Custom table mapping (e.g., 'processed_invoices', 'invoice_exports')
 - Upsert operations
 - Batch inserts
-- Multiple database backends (via SQLAlchemy)
+- Multiple database backends (via SQLAlchemy connection strings)
+- Can use DocEX db instance OR separate external connection
 """
 
 import json
@@ -54,19 +67,33 @@ class DatabaseConfig(ConnectorConfig):
 
 class DatabaseConnector(BaseConnector):
     """
-    Connector for delivering documents to a database.
+    Connector for exporting structured data to EXTERNAL database tables.
     
-    Usage:
+    This is for exporting processed/extracted data (e.g., invoice details)
+    to external systems, NOT for DocEX internal storage.
+    
+    Two modes of operation:
+    1. External Database: Provide connection_string to connect to external DB
+    2. Custom Table in DocEX DB: Use DocEX db instance but write to custom table
+    
+    Usage (External Database):
         config = DatabaseConfig(
-            connection_string="postgresql://user:pass@localhost/invoices",
+            connection_string="postgresql://user:pass@erp-server/invoices",
             table_name="processed_invoices",
             column_mapping={
                 'invoice_number': 'inv_num',
                 'total_amount': 'amount'
             }
         )
-        
         connector = DatabaseConnector(config)
+        result = await connector.deliver(doc_id, invoice_data)
+    
+    Usage (Custom Table in DocEX DB):
+        config = DatabaseConfig(
+            table_name="invoice_exports",  # Custom table, NOT DocEX internal
+            column_mapping={...}
+        )
+        connector = DatabaseConnector(config, db=docex.db)  # Uses DocEX connection
         result = await connector.deliver(doc_id, invoice_data)
     """
     
