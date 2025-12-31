@@ -119,6 +119,8 @@ class StorageExporter(BaseConnector):
         start_time = time.time()
         
         try:
+            from io import BytesIO
+            
             # Generate storage key
             key = self._generate_key(document_id)
             
@@ -131,8 +133,10 @@ class StorageExporter(BaseConnector):
             }
             
             # Use existing storage to save
+            # FileSystemStorage expects file-like object, S3Storage accepts bytes/str
             content = json.dumps(payload, indent=2, default=str)
-            self._storage.save(key, content)
+            content_bytes = BytesIO(content.encode('utf-8'))
+            self._storage.save(key, content_bytes)
             
             duration_ms = int((time.time() - start_time) * 1000)
             
