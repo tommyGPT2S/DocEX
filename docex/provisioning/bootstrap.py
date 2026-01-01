@@ -44,12 +44,23 @@ class BootstrapTenantManager:
         self.db_config = self.config.get('database', {})
         self.db_type = self.db_config.get('type', 'sqlite')
         
-        # Get default database connection (will become bootstrap tenant's)
+        # Get database connection for bootstrap tenant operations
+        # Check if v3.0 multi-tenancy is enabled
+        multi_tenancy_config = self.config.get('multi_tenancy', {})
+        multi_tenancy_enabled = multi_tenancy_config.get('enabled', False)
+        
         # Check if v2.x database-level multi-tenancy is enabled
         security_config = self.config.get('security', {})
         v2_multi_tenancy = security_config.get('multi_tenancy_model', 'row_level') == 'database_level'
         
-        if v2_multi_tenancy:
+        if multi_tenancy_enabled:
+            # v3.0: For bootstrap initialization, we need to create the database directly
+            # because the tenant doesn't exist yet (chicken-and-egg problem)
+            # We'll create the database connection manually during initialization
+            # For now, use default connection to create tenant registry table
+            # Then switch to bootstrap tenant's database after it's created
+            self.db = Database.get_default_connection(config=self.config)
+        elif v2_multi_tenancy:
             # For v2.x, use default tenant "docex_first_tenant" for bootstrap operations
             # This tenant is automatically created/used in v2.x mode
             self.db = Database(config=self.config, tenant_id='docex_first_tenant')
@@ -124,6 +135,34 @@ class BootstrapTenantManager:
                 self._create_bootstrap_schema(schema_name)
             else:
                 self._create_bootstrap_database(database_path)
+            
+            # Switch to bootstrap tenant's database for v3.0 mode
+            # After creating the database, we need to use it for the tenant registry
+            multi_tenancy_config = self.config.get('multi_tenancy', {})
+            multi_tenancy_enabled = multi_tenancy_config.get('enabled', False)
+            if multi_tenancy_enabled:
+                bootstrap_tenant_id = multi_tenancy_config.get('bootstrap_tenant', {}).get('id', '_docex_system_')
+                # Now we can use the bootstrap tenant's database (it's been created)
+                # Create engine directly without validation
+                from docex.db.tenant_database_manager import TenantDatabaseManager
+                tenant_manager = TenantDatabaseManager()
+                # Get engine directly by calling internal method (bypasses validation)
+                # Use the method that creates engine without validation
+                if self.db_type == 'sqlite':
+                    bootstrap_engine = tenant_manager._create_sqlite_engine(bootstrap_tenant_id, self.db_config)
+                elif self.db_type in ['postgresql', 'postgres']:
+                    bootstrap_engine = tenant_manager._create_postgres_engine(bootstrap_tenant_id, self.db_config)
+                else:
+                    raise RuntimeError(f"Unsupported database type: {self.db_type}")
+                from sqlalchemy.orm import sessionmaker
+                Session = sessionmaker(bind=bootstrap_engine)
+                # Create a temporary Database-like object
+                bootstrap_db = Database.__new__(Database)
+                bootstrap_db.config = self.config
+                bootstrap_db.tenant_id = bootstrap_tenant_id
+                bootstrap_db.engine = bootstrap_engine
+                bootstrap_db.Session = Session
+                self.db = bootstrap_db
             
             # Initialize schema (create all tables including tenant_registry)
             self._initialize_bootstrap_schema(schema_name)
