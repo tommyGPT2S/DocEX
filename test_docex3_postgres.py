@@ -182,11 +182,21 @@ def test_tenant_provisioning_postgres(test_dir):
         print("   ✅ TenantProvisioner created")
         
         print("\n2.2 Provisioning test tenant 'acme'...")
-        tenant_registry = provisioner.create(
-            tenant_id='acme',
-            display_name='Acme Corporation',
-            created_by='test_user'
-        )
+        # Check if tenant already exists (from previous test run)
+        from docex.db.connection import Database
+        from docex.db.tenant_registry_model import TenantRegistry
+        bootstrap_db = Database(config=config, tenant_id='_docex_system_')
+        with bootstrap_db.session() as session:
+            existing = session.query(TenantRegistry).filter_by(tenant_id='acme').first()
+            if existing:
+                print("   ℹ️  Tenant 'acme' already exists, skipping creation")
+                tenant_registry = existing
+            else:
+                tenant_registry = provisioner.create(
+                    tenant_id='acme',
+                    display_name='Acme Corporation',
+                    created_by='test_user'
+                )
         print(f"   ✅ Tenant provisioned: {tenant_registry.tenant_id}")
         print(f"   Display name: {tenant_registry.display_name}")
         print(f"   Isolation strategy: {tenant_registry.isolation_strategy}")
@@ -205,11 +215,19 @@ def test_tenant_provisioning_postgres(test_dir):
             print("   ✅ Correctly rejected duplicate tenant")
         
         print("\n2.4 Provisioning another tenant 'contoso'...")
-        tenant_registry2 = provisioner.create(
-            tenant_id='contoso',
-            display_name='Contoso Ltd',
-            created_by='test_user'
-        )
+        # Check if tenant already exists (from previous test run)
+        bootstrap_db = Database(config=config, tenant_id='_docex_system_')
+        with bootstrap_db.session() as session:
+            existing = session.query(TenantRegistry).filter_by(tenant_id='contoso').first()
+            if existing:
+                print("   ℹ️  Tenant 'contoso' already exists, skipping creation")
+                tenant_registry2 = existing
+            else:
+                tenant_registry2 = provisioner.create(
+                    tenant_id='contoso',
+                    display_name='Contoso Ltd',
+                    created_by='test_user'
+                )
         print(f"   ✅ Second tenant provisioned: {tenant_registry2.tenant_id}")
         print(f"   Schema name: {tenant_registry2.schema_name}")
         
