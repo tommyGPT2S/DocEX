@@ -236,6 +236,7 @@ class TenantDatabaseManager:
         user_encoded = quote_plus(user)
         password_encoded = quote_plus(password)
         # SSL mode: prefer (use SSL if available, otherwise allow non-SSL)
+        # This works for both local Docker (no SSL) and AWS RDS (with SSL)
         sslmode = postgres_config.get('sslmode', 'prefer')
         connection_url = f'postgresql://{user_encoded}:{password_encoded}@{host}:{port}/{database}?sslmode={sslmode}'
         

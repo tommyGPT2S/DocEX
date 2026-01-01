@@ -355,6 +355,22 @@ class DocEX:
                 if key not in defaults:
                     logger.warning(f"Unexpected configuration key: {key}")
                 elif isinstance(value, dict) and key in defaults:
+                    # Special handling for storage - allow S3 parameters in both nested and flattened format
+                    if key == 'storage':
+                        # Check if this is S3 storage configuration
+                        if value.get('type') == 's3':
+                            # For S3, allow common parameters whether nested or flattened
+                            allowed_s3_keys = {'type', 'bucket', 'region', 'prefix', 'access_key', 'secret_key',
+                                             'session_token', 'max_retries', 'retry_delay', 'connect_timeout',
+                                             'read_timeout', 'application_name', 's3'}
+                            for subkey in value:
+                                if subkey not in allowed_s3_keys:
+                                    logger.warning(f"Unexpected subkey in {key}: {subkey}")
+                            continue
+                        elif 's3' in value:
+                            # Nested S3 config - allow any S3 parameters
+                            continue
+                    # For other nested configs, check subkeys
                     for subkey in value:
                         if subkey not in defaults[key]:
                             logger.warning(f"Unexpected subkey in {key}: {subkey}")

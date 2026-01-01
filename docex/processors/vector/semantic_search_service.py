@@ -6,6 +6,8 @@ leveraging DocEX's document retrieval and metadata systems.
 """
 
 import logging
+import time
+import hashlib
 from typing import Dict, Any, Optional, List, Tuple
 
 try:
@@ -79,6 +81,15 @@ class SemanticSearchService:
         
         # Initialize vector database connection
         self.vector_db = self._initialize_vector_db()
+        
+        # Performance optimization: Cache for basket lookups
+        self._basket_cache: Dict[str, Any] = {}
+        self._basket_id_cache: Dict[str, str] = {}  # document_id -> basket_id cache
+        
+        # Query result cache for repeated searches
+        self._query_cache: Dict[str, Tuple[List[SemanticSearchResult], float]] = {}
+        self._cache_max_size = 100  # Maximum number of cached queries
+        self._cache_ttl = 3600  # Cache TTL in seconds (1 hour)
     
     def _initialize_vector_db(self):
         """Initialize vector database based on type"""
@@ -92,9 +103,13 @@ class SemanticSearchService:
     def _init_pgvector(self):
         """Initialize pgvector connection"""
         from docex.db.connection import Database
-        # Try to get tenant_id from doc_ex context if available
+        # Try to get tenant_id from multiple sources
         tenant_id = None
-        if hasattr(self.doc_ex, 'user_context') and self.doc_ex.user_context:
+        # First check vector_db_config
+        if self.vector_db_config and 'tenant_id' in self.vector_db_config:
+            tenant_id = self.vector_db_config['tenant_id']
+        # Then check doc_ex context if available
+        elif hasattr(self.doc_ex, 'user_context') and self.doc_ex.user_context:
             tenant_id = getattr(self.doc_ex.user_context, 'tenant_id', None)
         db = Database(tenant_id=tenant_id) if tenant_id else Database()
         return {'type': 'pgvector', 'db': db}
@@ -112,7 +127,8 @@ class SemanticSearchService:
         top_k: int = 10,
         basket_id: Optional[str] = None,
         filters: Optional[Dict[str, Any]] = None,
-        min_similarity: float = 0.0
+        min_similarity: float = 0.0,
+        use_cache: bool = True
     ) -> List[SemanticSearchResult]:
         """
         Perform semantic search
@@ -123,11 +139,20 @@ class SemanticSearchService:
             basket_id: Optional basket ID to limit search
             filters: Optional metadata filters
             min_similarity: Minimum similarity score (0.0 to 1.0)
+            use_cache: Whether to use query result cache
             
         Returns:
             List of SemanticSearchResult objects
         """
         try:
+            # Check cache first
+            if use_cache:
+                cache_key = self._get_query_cache_key(query, basket_id, filters, top_k, min_similarity)
+                cached_result = self._get_cached_query(cache_key)
+                if cached_result is not None:
+                    logger.debug(f"Returning cached search results for query: {query[:50]}...")
+                    return cached_result
+            
             # Generate query embedding
             logger.info(f"Generating embedding for query: {query[:50]}...")
             query_embedding = await self.llm_adapter.llm_service.generate_embedding(query)
@@ -144,50 +169,25 @@ class SemanticSearchService:
                 filters=filters
             )
             
-            # Retrieve documents from DocEX and filter
-            results = []
-            for vector_result in vector_results:
-                doc_id = vector_result['document_id']
-                similarity = vector_result['similarity']
-                
-                # Apply minimum similarity threshold
-                if similarity < min_similarity:
-                    continue
-                
-                # Get document from DocEX
-                try:
-                    # Try to get basket first
-                    if basket_id:
-                        try:
-                            basket = self.doc_ex.get_basket(basket_id)
-                        except Exception:
-                            basket = None
-                    else:
-                        # Find basket by searching all baskets
-                        basket = self._find_basket_for_document(doc_id)
-                    
-                    if basket:
-                        document = basket.get_document(doc_id)
-                        if document:
-                            # Apply additional filters if needed
-                            if self._matches_filters(document, filters):
-                                results.append(SemanticSearchResult(
-                                    document=document,
-                                    similarity_score=similarity,
-                                    metadata=vector_result.get('metadata', {})
-                                ))
-                except Exception as e:
-                    logger.warning(f"Failed to retrieve document {doc_id}: {e}")
-                    continue
-                
-                # Stop if we have enough results
-                if len(results) >= top_k:
-                    break
+            # Apply minimum similarity threshold early
+            filtered_results = [
+                r for r in vector_results
+                if r['similarity'] >= min_similarity
+            ]
             
-            # Sort by similarity (descending)
-            results.sort(key=lambda x: x.similarity_score, reverse=True)
+            # Batch retrieve documents for better performance
+            results = await self._batch_retrieve_documents(
+                filtered_results,
+                basket_id=basket_id,
+                filters=filters,
+                top_k=top_k
+            )
             
-            return results[:top_k]
+            # Cache results
+            if use_cache:
+                self._cache_query(cache_key, results)
+            
+            return results
             
         except Exception as e:
             logger.error(f"Semantic search failed: {e}")
@@ -257,48 +257,79 @@ class SemanticSearchService:
             # Validate top_k
             if top_k <= 0 or top_k > 10000:
                 raise ValueError(f"Invalid top_k value: {top_k} (must be between 1 and 10000)")
-            
+
             # Validate basket_id if provided
             if basket_id:
                 if not isinstance(basket_id, str) or not basket_id.strip():
                     raise ValueError("Invalid basket_id")
                 basket_id = basket_id.strip()
-            
+
             # Build parameterized query to prevent SQL injection
-            # Use CAST with parameterized JSON array instead of string interpolation
-            # Build query string with conditional WHERE clause
+            # Optimized: Include basket_id in SELECT and apply metadata filters at database level
             query_str = """
-                SELECT 
-                    id,
-                    1 - (embedding <=> CAST(:embedding_json::jsonb AS public.vector)) AS similarity
-                FROM document
-                WHERE embedding IS NOT NULL
+                SELECT
+                    d.id,
+                    d.basket_id,
+                    1 - (d.embedding <=> CAST(:embedding_json::jsonb AS public.vector)) AS similarity
+                FROM document d
             """
-            
+
             params = {
                 'embedding_json': embedding_json,
                 'limit': int(top_k)
             }
-            
+
+            # Build WHERE clause
+            where_clauses = ["d.embedding IS NOT NULL"]
+
             if basket_id:
-                query_str += " AND basket_id = :basket_id"
+                where_clauses.append("d.basket_id = :basket_id")
                 params['basket_id'] = basket_id
-            
+
+            # Apply metadata filters at database level for better performance
+            if filters:
+                from docex.db.models import DocumentMetadata
+                # Join with metadata table
+                query_str += " INNER JOIN document_metadata dm ON dm.document_id = d.id"
+
+                # Add metadata filter conditions
+                filter_idx = 0
+                for key, value in filters.items():
+                    alias = f"dm{filter_idx}"
+                    if filter_idx == 0:
+                        # First filter uses the existing join
+                        where_clauses.append("dm.key = :filter_key_0")
+                        where_clauses.append("dm.value = :filter_value_0")
+                    else:
+                        # Additional filters need separate joins
+                        query_str += f" INNER JOIN document_metadata {alias} ON {alias}.document_id = d.id"
+                        where_clauses.append(f"{alias}.key = :filter_key_{filter_idx}")
+                        where_clauses.append(f"{alias}.value = :filter_value_{filter_idx}")
+
+                    params[f'filter_key_{filter_idx}'] = key
+                    params[f'filter_value_{filter_idx}'] = str(value)
+                    filter_idx += 1
+
+            # Combine WHERE clauses
+            query_str += " WHERE " + " AND ".join(where_clauses)
+
             # Add ORDER BY and LIMIT with parameterized values
-            query_str += " ORDER BY embedding <=> CAST(:embedding_json::jsonb AS public.vector) LIMIT :limit"
-            
+            query_str += " ORDER BY d.embedding <=> CAST(:embedding_json::jsonb AS public.vector) LIMIT :limit"
+
             query_sql = text(query_str)
-            
+
             # Validate top_k
             if params['limit'] <= 0 or params['limit'] > 10000:
                 raise ValueError(f"Invalid top_k value: {top_k} (must be between 1 and 10000)")
-            
+
             results = session.execute(query_sql, params).fetchall()
-            
+
+            # Return results with basket_id included for batch retrieval optimization
             return [
                 {
                     'document_id': row[0],
-                    'similarity': float(row[1]),
+                    'basket_id': row[1],  # Include basket_id to avoid separate lookup
+                    'similarity': float(row[2]),
                     'metadata': {}
                 }
                 for row in results
@@ -311,32 +342,39 @@ class SemanticSearchService:
         basket_id: Optional[str] = None,
         filters: Optional[Dict[str, Any]] = None
     ) -> List[Dict[str, Any]]:
-        """Search in-memory vectors (for testing)"""
+        """Search in-memory vectors (for testing) - Optimized with vectorized operations"""
         vectors = self.vector_db.get('vectors', {})
         
         if not vectors:
             logger.warning("No vectors found in memory database")
             return []
         
-        # Calculate cosine similarity for all vectors
-        similarities = []
+        # Pre-filter by basket_id if provided
+        filtered_vectors = {}
         for doc_id, vector_data in vectors.items():
-            # Apply filters
             if basket_id and vector_data.get('basket_id') != basket_id:
                 continue
-            
             embedding = vector_data.get('embedding')
-            if not embedding:
-                continue
-            
-            # Calculate cosine similarity
-            similarity = self._cosine_similarity(query_embedding, embedding)
-            
-            similarities.append({
-                'document_id': doc_id,
-                'similarity': similarity,
-                'metadata': vector_data.get('metadata', {})
-            })
+            if embedding:
+                filtered_vectors[doc_id] = vector_data
+        
+        if not filtered_vectors:
+            return []
+        
+        # Vectorized similarity calculation using numpy for better performance
+        if HAS_NUMPY and len(filtered_vectors) > 10:  # Use vectorized for larger sets
+            similarities = self._batch_cosine_similarity(query_embedding, filtered_vectors)
+        else:
+            # Fallback to individual calculations for small sets
+            similarities = []
+            for doc_id, vector_data in filtered_vectors.items():
+                similarity = self._cosine_similarity(query_embedding, vector_data['embedding'])
+                similarities.append({
+                    'document_id': doc_id,
+                    'basket_id': vector_data.get('basket_id'),
+                    'similarity': similarity,
+                    'metadata': vector_data.get('metadata', {})
+                })
         
         # Sort by similarity and return top_k
         similarities.sort(key=lambda x: x['similarity'], reverse=True)
@@ -370,19 +408,248 @@ class SemanticSearchService:
             logger.error(f"Error calculating cosine similarity: {e}")
             return 0.0
     
-    def _find_basket_for_document(self, document_id: str):
-        """Find basket containing a document"""
-        # This is a helper method - in practice, you might want to store basket_id in vector metadata
+    def _batch_cosine_similarity(
+        self,
+        query_embedding: List[float],
+        vectors: Dict[str, Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """Calculate cosine similarity for multiple vectors using vectorized operations"""
+        if not HAS_NUMPY:
+            # Fallback to individual calculations
+            return [
+                {
+                    'document_id': doc_id,
+                    'basket_id': vector_data.get('basket_id'),
+                    'similarity': self._cosine_similarity(query_embedding, vector_data['embedding']),
+                    'metadata': vector_data.get('metadata', {})
+                }
+                for doc_id, vector_data in vectors.items()
+            ]
+        
+        try:
+            # Convert query to numpy array
+            query_vec = np.array(query_embedding, dtype=np.float32)
+            query_norm = np.linalg.norm(query_vec)
+            
+            if query_norm == 0:
+                return []
+            
+            # Normalize query vector
+            query_vec = query_vec / query_norm
+            
+            # Prepare all embeddings
+            doc_ids = []
+            embeddings_list = []
+            basket_ids = []
+            metadata_list = []
+            
+            for doc_id, vector_data in vectors.items():
+                doc_ids.append(doc_id)
+                embeddings_list.append(vector_data['embedding'])
+                basket_ids.append(vector_data.get('basket_id'))
+                metadata_list.append(vector_data.get('metadata', {}))
+            
+            # Stack embeddings into a matrix
+            embeddings_matrix = np.array(embeddings_list, dtype=np.float32)
+            
+            # Normalize all embeddings
+            norms = np.linalg.norm(embeddings_matrix, axis=1, keepdims=True)
+            norms[norms == 0] = 1  # Avoid division by zero
+            embeddings_matrix = embeddings_matrix / norms
+            
+            # Calculate dot products (cosine similarity for normalized vectors)
+            similarities = np.dot(embeddings_matrix, query_vec)
+            
+            # Build results
+            results = [
+                {
+                    'document_id': doc_ids[i],
+                    'basket_id': basket_ids[i],
+                    'similarity': float(similarities[i]),
+                    'metadata': metadata_list[i]
+                }
+                for i in range(len(doc_ids))
+            ]
+            
+            return results
+            
+        except Exception as e:
+            logger.warning(f"Vectorized similarity calculation failed, falling back: {e}")
+            # Fallback to individual calculations
+            return [
+                {
+                    'document_id': doc_id,
+                    'basket_id': vector_data.get('basket_id'),
+                    'similarity': self._cosine_similarity(query_embedding, vector_data['embedding']),
+                    'metadata': vector_data.get('metadata', {})
+                }
+                for doc_id, vector_data in vectors.items()
+            ]
+    
+    async def _batch_retrieve_documents(
+        self,
+        vector_results: List[Dict[str, Any]],
+        basket_id: Optional[str] = None,
+        filters: Optional[Dict[str, Any]] = None,
+        top_k: int = 10
+    ) -> List[SemanticSearchResult]:
+        """Batch retrieve documents for better performance"""
+        if not vector_results:
+            return []
+        
+        # Group by basket_id for efficient batch retrieval
+        basket_groups: Dict[str, List[Dict[str, Any]]] = {}
+        for result in vector_results:
+            result_basket_id = result.get('basket_id') or basket_id
+            if not result_basket_id:
+                # Need to look up basket_id
+                result_basket_id = self._get_basket_id_for_document(result['document_id'])
+            
+            if result_basket_id:
+                if result_basket_id not in basket_groups:
+                    basket_groups[result_basket_id] = []
+                basket_groups[result_basket_id].append(result)
+        
+        # Retrieve documents in batches per basket
+        results = []
+        for result_basket_id, group_results in basket_groups.items():
+            try:
+                basket = self._get_basket_cached(result_basket_id)
+                if not basket:
+                    continue
+                
+                # Batch get documents
+                doc_ids = [r['document_id'] for r in group_results]
+                documents = {}
+                
+                # Try to get documents in batch if possible
+                for doc_id in doc_ids:
+                    try:
+                        doc = basket.get_document(doc_id)
+                        if doc:
+                            documents[doc_id] = doc
+                    except Exception as e:
+                        logger.debug(f"Failed to get document {doc_id}: {e}")
+                        continue
+                
+                # Create results for successfully retrieved documents
+                for result in group_results:
+                    doc_id = result['document_id']
+                    if doc_id in documents:
+                        document = documents[doc_id]
+                        # Apply filters if needed
+                        if self._matches_filters(document, filters):
+                            results.append(SemanticSearchResult(
+                                document=document,
+                                similarity_score=result['similarity'],
+                                metadata=result.get('metadata', {})
+                            ))
+                            
+                            # Stop if we have enough results
+                            if len(results) >= top_k:
+                                break
+                
+                if len(results) >= top_k:
+                    break
+                    
+            except Exception as e:
+                logger.warning(f"Failed to retrieve documents from basket {result_basket_id}: {e}")
+                continue
+        
+        # Sort by similarity (descending) and return top_k
+        results.sort(key=lambda x: x.similarity_score, reverse=True)
+        return results[:top_k]
+    
+    def _get_basket_cached(self, basket_id: str):
+        """Get basket with caching"""
+        if basket_id in self._basket_cache:
+            return self._basket_cache[basket_id]
+        
+        try:
+            basket = self.doc_ex.get_basket(basket_id)
+            self._basket_cache[basket_id] = basket
+            return basket
+        except Exception:
+            return None
+    
+    def _get_basket_id_for_document(self, document_id: str) -> Optional[str]:
+        """Get basket_id for a document with caching"""
+        if document_id in self._basket_id_cache:
+            return self._basket_id_cache[document_id]
+        
         from docex.db.connection import Database
         from docex.db.models import Document as DocumentModel
-        from sqlalchemy import select
         
-        db = Database()
-        with db.session() as session:
-            doc = session.get(DocumentModel, document_id)
-            if doc:
-                return self.doc_ex.get_basket(doc.basket_id)
+        try:
+            db = Database()
+            with db.session() as session:
+                doc = session.get(DocumentModel, document_id)
+                if doc:
+                    self._basket_id_cache[document_id] = doc.basket_id
+                    return doc.basket_id
+        except Exception as e:
+            logger.debug(f"Failed to get basket_id for document {document_id}: {e}")
+        
         return None
+    
+    def _find_basket_for_document(self, document_id: str):
+        """Find basket containing a document - uses cache"""
+        basket_id = self._get_basket_id_for_document(document_id)
+        if basket_id:
+            return self._get_basket_cached(basket_id)
+        return None
+    
+    def clear_cache(self):
+        """Clear the basket, basket_id, and query result caches"""
+        self._basket_cache.clear()
+        self._basket_id_cache.clear()
+        self._query_cache.clear()
+    
+    def _get_query_cache_key(
+        self,
+        query: str,
+        basket_id: Optional[str],
+        filters: Optional[Dict[str, Any]],
+        top_k: int,
+        min_similarity: float
+    ) -> str:
+        """Generate cache key for query"""
+        key_parts = [
+            query,
+            str(basket_id) if basket_id else '',
+            str(sorted(filters.items())) if filters else '',
+            str(top_k),
+            str(min_similarity)
+        ]
+        key_string = '|'.join(key_parts)
+        return hashlib.md5(key_string.encode()).hexdigest()
+    
+    def _get_cached_query(self, cache_key: str) -> Optional[List[SemanticSearchResult]]:
+        """Get cached query result if available and not expired"""
+        if cache_key in self._query_cache:
+            cached_results, timestamp = self._query_cache[cache_key]
+            current_time = time.time()
+            
+            if current_time - timestamp < self._cache_ttl:
+                return cached_results
+            else:
+                # Remove expired cache entry
+                self._query_cache.pop(cache_key, None)
+        
+        return None
+    
+    def _cache_query(self, cache_key: str, results: List[SemanticSearchResult]):
+        """Cache query result"""
+        # Limit cache size
+        if len(self._query_cache) >= self._cache_max_size:
+            # Remove oldest entries (simple FIFO)
+            oldest_key = min(
+                self._query_cache.keys(),
+                key=lambda k: self._query_cache[k][1]
+            )
+            self._query_cache.pop(oldest_key, None)
+        
+        self._query_cache[cache_key] = (results, time.time())
     
     def _matches_filters(self, document: Document, filters: Optional[Dict[str, Any]]) -> bool:
         """Check if document matches filters"""

@@ -15,7 +15,6 @@ from docex.db.connection import Database
 from docex.db.models import Operation
 from docex.transport.models import RouteOperation
 from sqlalchemy import text
-from docex.models.document_metadata import DocumentMetadata as MetaModel
 
 class Document:
     """Represents a document in DocEX"""
@@ -123,29 +122,17 @@ class Document:
             "updated_at": self.updated_at
         }
 
-    def get_metadata(self) -> Dict[str, MetaModel]:
-        """Get all metadata for this document from the database as DocumentMetadata models."""
+    def get_metadata(self) -> Dict[str, Any]:
+        """Get all metadata for this document from the database as direct values."""
         # Use tenant-aware database if available, otherwise create new one
         doc_db = self.db or Database()
         service = MetadataService(doc_db)
         return service.get_metadata(self.id)
 
     def get_metadata_dict(self) -> Dict[str, Any]:
-        """Get all metadata as a plain dict (for backward compatibility)."""
-        meta = self.get_metadata()
-        result = {}
-        for k, v in meta.items():
-            # Handle both MetaModel objects and plain values
-            if hasattr(v, 'to_dict'):
-                # MetaModel object - convert to dict
-                result[k] = v.to_dict()
-            elif isinstance(v, dict):
-                # Already a dict
-                result[k] = v
-            else:
-                # Plain value (string, int, etc.)
-                result[k] = v
-        return result
+        """Get all metadata as a plain dict."""
+        # MetadataService.get_metadata() returns Dict[str, Any] with direct values
+        return self.get_metadata()
     
     def update_metadata(self, metadata: Dict[str, Any]) -> None:
         """Update metadata for this document.

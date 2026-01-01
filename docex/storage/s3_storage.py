@@ -84,21 +84,36 @@ class S3Storage(AbstractStorage):
             read_timeout=config.get('read_timeout', 60)
         )
         
-        # Initialize S3 client
-        client_kwargs = {
-            'service_name': 's3',
-            'region_name': self.region,
-            'config': boto_config
-        }
-        
-        # Add credentials if provided (otherwise boto3 uses IAM role or default profile)
+        # Initialize S3 client with proper credential handling
         if credentials['access_key'] and credentials['secret_key']:
-            client_kwargs['aws_access_key_id'] = credentials['access_key']
-            client_kwargs['aws_secret_access_key'] = credentials['secret_key']
+            # Use explicit credentials from config
+            client_kwargs = {
+                'service_name': 's3',
+                'region_name': self.region,
+                'config': boto_config,
+                'aws_access_key_id': credentials['access_key'],
+                'aws_secret_access_key': credentials['secret_key']
+            }
             if credentials['session_token']:
                 client_kwargs['aws_session_token'] = credentials['session_token']
-        
-        self.s3 = boto3.client(**client_kwargs)
+
+            self.s3 = boto3.client(**client_kwargs)
+        else:
+            # Use boto3's default credential chain (includes profiles, IAM roles, etc.)
+            try:
+                # Try to get profile from environment
+                profile_name = os.getenv('AWS_PROFILE')
+                if profile_name:
+                    session = boto3.Session(profile_name=profile_name)
+                else:
+                    session = boto3.Session()
+
+                self.s3 = session.client('s3', region_name=self.region, config=boto_config)
+                logger.info(f"S3 client initialized using boto3 session (profile: {profile_name or 'default'})")
+            except Exception as e:
+                # Fall back to basic client (should still use default credential chain)
+                logger.warning(f"Could not create boto3 session: {e}, falling back to basic client")
+                self.s3 = boto3.client('s3', region_name=self.region, config=boto_config)
         
         # Ensure bucket exists
         self.ensure_storage_exists()

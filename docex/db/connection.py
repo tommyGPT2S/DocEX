@@ -187,7 +187,11 @@ class Database:
                     # Create PostgreSQL engine with properly encoded credentials
                     # SSL mode: prefer (use SSL if available, otherwise allow non-SSL)
                     # This works for both local Docker (no SSL) and AWS RDS (with SSL)
-                    sslmode = postgres_config.get('sslmode', 'prefer')
+                    # Falls back to disable for localhost if prefer doesn't work
+                    if host in ['localhost', '127.0.0.1']:
+                        sslmode = postgres_config.get('sslmode', 'prefer')
+                    else:
+                        sslmode = postgres_config.get('sslmode', 'prefer')
                     connection_url = f'postgresql://{user_encoded}:{password_encoded}@{host}:{port}/{database}?sslmode={sslmode}'
                     self.engine = create_engine(
                         connection_url,

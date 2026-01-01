@@ -15,33 +15,71 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 requires-python = ">=3.11"
+# Core dependencies - minimal set required for basic document management
 dependencies = [
     "sqlalchemy>=2.0.0",
-    "psycopg2-binary>=2.9.0",
     "pyyaml>=6.0.0",
-    "pytest>=7.0.0",
-    "boto3>=1.26.0",
-    "moto>=4.0.0",
     "pydantic>=2.0.0",
-    "paramiko>=3.4.0",
-    "aiohttp>=3.9.0",
     "python-dotenv>=1.0.0",
     "click>=8.0.0",
-    "openai>=1.0.0",
     "jinja2>=3.1.0",
     "python-docx>=1.0.0",
 ]
 
 [project.optional-dependencies]
-dev = [
-    "pytest>=7.0.0",
-    "black>=22.0.0",
-    "isort>=5.0.0",
-    "mypy>=0.900",
+# PostgreSQL support (required for PostgreSQL database)
+postgres = [
+    "psycopg2-binary>=2.9.0",
 ]
+
+# Vector indexing and semantic search (heavy dependencies)
 vector = [
     "numpy>=1.24.0",
     "pgvector>=0.2.0",
+]
+
+# LLM/Embedding support (required for vector indexing and embeddings)
+llm = [
+    "openai>=1.0.0",
+]
+
+# Storage backends
+storage-s3 = [
+    "boto3>=1.26.0",
+]
+
+# Transport methods
+transport-http = [
+    "aiohttp>=3.9.0",
+]
+transport-sftp = [
+    "paramiko>=3.4.0",
+]
+
+# PDF processing
+pdf = [
+    "pdfminer.six>=20221105",
+]
+
+# All optional features (convenience group)
+all = [
+    "psycopg2-binary>=2.9.0",
+    "numpy>=1.24.0",
+    "pgvector>=0.2.0",
+    "openai>=1.0.0",
+    "boto3>=1.26.0",
+    "aiohttp>=3.9.0",
+    "paramiko>=3.4.0",
+    "pdfminer.six>=20221105",
+]
+
+# Development dependencies
+dev = [
+    "pytest>=7.0.0",
+    "moto>=4.0.0",  # For mocking AWS services in tests
+    "black>=22.0.0",
+    "isort>=5.0.0",
+    "mypy>=0.900",
 ]
 
 [tool.setuptools]

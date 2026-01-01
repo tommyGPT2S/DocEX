@@ -35,30 +35,7 @@ class MetadataService:
                 try:
                     # Parse JSON value - stored directly, no wrapping
                     value = json.loads(record.value)
-                    
-                    # Recursively unwrap old nested format if present
-                    def unwrap_value(v):
-                        """Recursively unwrap nested DocumentMetadata format"""
-                        if isinstance(v, dict):
-                            if 'extra' in v and isinstance(v['extra'], dict):
-                                nested = v['extra'].get('value', v)
-                                # Recursively unwrap if still nested
-                                if isinstance(nested, dict) and nested != v:
-                                    return unwrap_value(nested)
-                                return nested
-                        return v
-                    
-                    unwrapped_value = unwrap_value(value)
-                    metadata[record.key] = unwrapped_value
-                    
-                    # Migrate to new format on read if unwrapped
-                    if unwrapped_value != value:
-                        try:
-                            value_json = json.dumps(unwrapped_value, default=str)
-                            record.value = value_json
-                            session.commit()
-                        except Exception:
-                            pass  # If migration fails, continue with unwrapped value
+                    metadata[record.key] = value
                 except (json.JSONDecodeError, TypeError):
                     # Fallback: treat as plain string if JSON parsing fails
                     metadata[record.key] = record.value

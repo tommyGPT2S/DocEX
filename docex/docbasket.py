@@ -29,6 +29,7 @@ from docex.transport.transport_result import TransportResult
 from docex.document import Document
 from docex.utils.file_utils import is_binary_file, get_content_type
 from docex.models.document_metadata import DocumentMetadata as MetaModel
+from docex.utils.s3_prefix_builder import sanitize_basket_name, sanitize_filename
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -108,25 +109,32 @@ class DocBasket:
     def create(cls, name: str, description: Optional[str] = None, storage_config: Optional[Dict[str, Any]] = None, db: Optional[Database] = None) -> 'DocBasket':
         """
         Create a new document basket
-        
+
         Args:
-            name: Basket name
+            name: Basket name (will be sanitized for filesystem safety)
             description: Optional basket description
             storage_config: Optional storage configuration
-            
+
         Returns:
             Created basket
-            
+
         Raises:
             ValueError: If a basket with the same name already exists
         """
+        # Sanitize basket name for filesystem safety
+        original_name = name
+        name = sanitize_basket_name(name)
+
+        if name != original_name:
+            logger.info(f"Basket name sanitized: '{original_name}' -> '{name}'")
+
         # Get config instance
         config = DocEXConfig()
-        
+
         # Use default storage config if none provided
         if storage_config is None:
             storage_config = config.get('storage', {})
-        
+
         # Ensure storage type is set
         if 'type' not in storage_config:
             storage_config['type'] = 'filesystem'
@@ -177,7 +185,7 @@ class DocBasket:
                             base_path = config.get('storage', {}).get('filesystem', {}).get('path', 'storage/docex')
                             storage_config['path'] = str(Path(base_path) / f"basket_{basket_model.id}")
                 elif storage_config['type'] == 's3':
-                    # For S3, ensure s3 config is properly nested
+                    # For S3, handle both flattened and nested formats
                     if 's3' not in storage_config:
                         # If s3 config is at top level, move it under 's3' key
                         s3_config = {k: v for k, v in storage_config.items() if k != 'type'}
@@ -185,6 +193,16 @@ class DocBasket:
                             'type': 's3',
                             's3': s3_config
                         }
+                    else:
+                        # Handle hybrid format: both flattened and nested values exist
+                        # Update nested s3 config with any flattened values that are set
+                        s3_config = storage_config['s3']
+                        for key in ['bucket', 'region', 'prefix', 'access_key', 'secret_key', 'session_token']:
+                            if key in storage_config and storage_config[key] is not None:
+                                s3_config[key] = storage_config[key]
+                                # Remove from top level to avoid duplication
+                                del storage_config[key]
+                    
                     # Use path resolver for consistent S3 prefix construction
                     if tenant_id:
                         # Get tenant-aware basket prefix from resolver
@@ -281,32 +299,115 @@ class DocBasket:
                 db=basket_db  # Pass tenant-aware database to basket instance
             )
     
-    def find_documents_by_metadata(self, metadata: Union[Dict[str, Any], str]) -> List[Document]:
+    def find_documents_by_metadata(
+        self,
+        metadata: Union[Dict[str, Any], str],
+        limit: Optional[int] = None,
+        offset: Optional[int] = None,
+        order_by: Optional[str] = None,
+        order_desc: bool = False
+    ) -> List[Document]:
         """
-        Find documents by metadata. Accepts either a dictionary of key-value pairs or a single string value.
+        Find documents by metadata with pagination and sorting support.
+        Optimized for large datasets with proper basket_id filtering.
+        
+        Args:
+            metadata: Dictionary of key-value pairs or a single string value
+            limit: Maximum number of results to return (for pagination)
+            offset: Number of results to skip (for pagination)
+            order_by: Field to sort by ('created_at', 'updated_at', 'name', 'size')
+            order_desc: If True, sort in descending order
+            
+        Returns:
+            List of Document instances matching the metadata criteria
         """
         with self.db.transaction() as session:
-            query = select(DocumentModel).join(DocumentMetadata)
+            # Start with documents in this basket - CRITICAL for performance
+            query = select(DocumentModel).where(DocumentModel.basket_id == self.id)
             
             if isinstance(metadata, dict):
-                # Handle dictionary input
+                # Handle dictionary input - multiple key-value pairs (AND logic)
+                # For AND logic with multiple metadata filters, we need to ensure
+                # the document has ALL specified key-value pairs
+                metadata_filters = []
                 for key, value in metadata.items():
                     if isinstance(value, MetaModel):
                         value = value.to_dict()
                     if isinstance(value, dict) and 'extra' in value:
                         value = value['extra'].get('value', None)
-                    query = query.where(
-                        DocumentMetadata.key == key,
-                        DocumentMetadata.value == str(value)
+                    
+                    # Metadata values are stored as JSON strings, so we need to JSON-encode the search value
+                    import json
+                    try:
+                        # Try to encode as JSON to match how it's stored
+                        value_json = json.dumps(value, default=str)
+                    except (TypeError, ValueError):
+                        # Fallback to string if JSON encoding fails
+                        value_json = json.dumps(str(value))
+                    
+                    # Create subquery for each metadata key-value pair
+                    # This ensures AND logic: document must match ALL filters
+                    subquery = select(DocumentMetadata.document_id).where(
+                        and_(
+                            DocumentMetadata.key == key,
+                            DocumentMetadata.value == value_json,
+                            DocumentMetadata.document_id.in_(
+                                select(DocumentModel.id).where(DocumentModel.basket_id == self.id)
+                            )
+                        )
                     )
+                    metadata_filters.append(subquery)
+                
+                # Intersect all subqueries to get documents matching ALL metadata criteria
+                if metadata_filters:
+                    # Start with first filter
+                    base_subquery = metadata_filters[0]
+                    # Intersect with remaining filters
+                    for subquery in metadata_filters[1:]:
+                        base_subquery = base_subquery.intersect(subquery)
+                    
+                    # Filter documents by IDs from intersected subqueries
+                    query = query.where(DocumentModel.id.in_(base_subquery))
+                else:
+                    # No valid metadata filters, return empty
+                    return []
             elif isinstance(metadata, str):
                 # Handle string input (search across all metadata values)
-                query = query.where(DocumentMetadata.value == metadata)
+                # Join with metadata table for string search
+                # Metadata values are stored as JSON strings, so we need to search for JSON-encoded value
+                import json
+                search_value_json = json.dumps(metadata)
+                query = query.join(DocumentMetadata, DocumentMetadata.document_id == DocumentModel.id)
+                query = query.where(DocumentMetadata.value == search_value_json)
             else:
                 raise ValueError("Metadata must be a dictionary or a string.")
             
-            # Execute query
+            # Add sorting
+            if order_by:
+                order_field = getattr(DocumentModel, order_by, None)
+                if order_field is not None:
+                    if order_desc:
+                        query = query.order_by(order_field.desc())
+                    else:
+                        query = query.order_by(order_field.asc())
+                else:
+                    logger.warning(f"Invalid order_by field: {order_by}, using default")
+                    query = query.order_by(DocumentModel.created_at.desc())
+            else:
+                # Default sorting by creation date (newest first)
+                query = query.order_by(DocumentModel.created_at.desc())
+            
+            # Add pagination
+            if limit is not None:
+                query = query.limit(limit)
+            if offset is not None:
+                query = query.offset(offset)
+            
+            # Execute query - use distinct() to avoid duplicates from joins (if any)
+            if isinstance(metadata, str):
+                query = query.distinct()
             documents = session.execute(query).scalars().all()
+            
             return [Document(
                 id=doc.id,
                 name=doc.name,
@@ -364,6 +465,139 @@ class DocBasket:
     
     def _get_content_type(self, file_path: Path) -> str:
         return get_content_type(file_path)
+    
+    def _extract_tenant_id(self) -> Optional[str]:
+        """
+        Extract tenant_id from basket name or user context.
+        
+        Basket name format: {tenant_id}_{document_type}_{stage}
+        
+        Returns:
+            Tenant ID if found, None otherwise
+        """
+        # Try to extract from basket name first (most reliable)
+        # Basket name format: {tenant_id}_{document_type}_{stage}
+        basket_name_parts = self.name.split('_', 1)
+        if len(basket_name_parts) == 2:
+            return basket_name_parts[0]
+        
+        return None
+    
+    def _get_document_path(self, document: Any, file_path: Optional[str] = None, metadata: Optional[Dict[str, Any]] = None) -> str:
+        """
+        Generate document path based on storage type.
+
+        For S3 storage:
+        - Default: 'tenant/basket_name/documents/{readable_name}__{document_id}.{ext}' structure
+        - Custom: Uses 'document_path_template' if provided in storage config
+
+        For filesystem storage:
+        - Uses 'docex/basket_{basket_id}/{document_id}' structure (unchanged)
+
+        Args:
+            document: Document model instance with id attribute
+            file_path: Optional file path to extract extension from
+
+        Returns:
+            Document path string
+        """
+        storage_type = self.storage_config.get('type', 'filesystem')
+
+        if storage_type == 's3':
+            s3_config = self.storage_config.get('s3', {})
+
+            # Get readable document name
+            readable_name = self._get_readable_document_name(document, file_path, metadata)
+
+            # Extract file extension
+            file_ext = Path(file_path).suffix if file_path else ''
+
+            # Check for custom path template (optional)
+            path_template = s3_config.get('document_path_template')
+            if path_template:
+                # Use custom template with variable substitution
+                tenant_id = self._extract_tenant_id()
+                return path_template.format(
+                    basket_id=self.id,
+                    basket_name=self.name,
+                    document_id=document.id,
+                    document_name=readable_name,
+                    ext=file_ext,
+                    tenant_id=tenant_id or '',
+                )
+
+            # Parse tenant and basket from basket name (format: {tenant_id}_{basket_name})
+            tenant_id, basket_short_name = self._parse_tenant_basket_name()
+
+            # Default S3 structure: basket_name/{readable_name}__{document_id}.{ext}
+            # Note: Tenant isolation is provided by the S3 prefix, not the document path
+            return f"{basket_short_name}/{readable_name}__{document.id}{file_ext}"
+        else:
+            # Filesystem storage uses original structure (unchanged)
+            return f"docex/basket_{self.id}/{document.id}"
+
+    def _get_readable_document_name(self, document: Any, file_path: Optional[str] = None, metadata: Optional[Dict[str, Any]] = None) -> str:
+        """Get a readable document name, sanitized for filesystem use."""
+        # First priority: Check for original filename in provided metadata
+        if metadata:
+            original_filename = metadata.get('original_filename')
+            if original_filename:
+                name = Path(original_filename).stem
+                return sanitize_filename(name)
+
+        # Second priority: Check for original filename in document metadata (if Document wrapper)
+        if hasattr(document, 'get_metadata'):
+            try:
+                doc_metadata = document.get_metadata()
+                original_filename = doc_metadata.get('original_filename')
+                if original_filename:
+                    name = Path(original_filename).stem
+                    return sanitize_filename(name)
+            except Exception:
+                # Metadata access might fail if session is closed
+                pass
+
+        # Third priority: Check if document model has a proper name set (from metadata during creation)
+        if hasattr(document, 'name') and document.name and not document.name.startswith('/tmp/'):
+            # If document.name looks like a proper filename (not a temp path), use it
+            name = Path(document.name).stem
+            # Avoid using temp filenames that might have been set during creation
+            if not name.startswith('temp') and not name.startswith('tmp'):
+                return sanitize_filename(name)
+
+        # Fourth priority: Use provided file_path (for new uploads)
+        if file_path:
+            # Use original filename (without extension)
+            name = Path(file_path).stem
+            return sanitize_filename(name)
+
+        # Fifth priority: Fallback to document name even if it looks like a temp file
+        if hasattr(document, 'name') and document.name:
+            name = Path(document.name).stem
+            return sanitize_filename(name)
+
+        # Final fallback
+        return f"document_{document.id[:8]}"
+
+    def _parse_tenant_basket_name(self) -> tuple[str, str]:
+        """
+        Parse basket name to extract tenant_id and basket_name.
+
+        Basket name format: {tenant_id}_{basket_name}
+        Example: "test-tenant-003_resume_raw" -> ("test-tenant-003", "resume_raw")
+
+        Returns:
+            Tuple of (tenant_id, basket_name)
+        """
+        # Split on first underscore to separate tenant from basket
+        parts = self.name.split('_', 1)
+        if len(parts) == 2:
+            tenant_id, basket_name = parts
+            return tenant_id, basket_name
+        else:
+            # Fallback if parsing fails
+            logger.warning(f"Unable to parse tenant from basket name: {self.name}")
+            return "unknown_tenant", self.name
 
     def add(self, file_path: str, document_type: str = 'file', metadata: Optional[Dict[str, Any]] = None) -> Document:
         """
@@ -426,9 +660,13 @@ class DocBasket:
                     storage_service=self.storage_service,
                     db=self.db  # Pass tenant-aware database to document
                 )
+            # Generate the correct readable name using metadata
+            readable_name = self._get_readable_document_name(document=None, file_path=str(file_path), metadata=metadata)
+            document_filename = f"{readable_name}{Path(str(file_path)).suffix}"
+
             document = DocumentModel(
                 basket_id=self.id,
-                name=file_path.name,
+                name=document_filename,  # Use the correct readable filename
                 source=str(file_path),
                 path='',
                 document_type=document_type,
@@ -441,12 +679,24 @@ class DocBasket:
             )
             session.add(document)
             session.flush()
-            # Document path should be relative to the basket's storage root
-            # The basket storage path already includes the base path (e.g., storage/docex/basket_{id})
-            # So we only need the document ID as the path
-            document_path = str(document.id)
+            document_path = self._get_document_path(document, str(file_path), metadata)
             stored_path = self.storage_service.store_document(str(file_path), document_path)
             document.path = stored_path
+
+            # Update document name to reflect the correct readable name
+            # This ensures the document record shows the right filename
+            readable_name = self._get_readable_document_name(document, str(file_path), metadata)
+            document.name = f"{readable_name}{Path(str(file_path)).suffix}"
+
+            # Prepare metadata with original filename
+            if metadata is None:
+                metadata = {}
+            # Store the original filename for future reference
+            # If not provided in metadata, use the file_path name
+            if 'original_filename' not in metadata:
+                original_filename = file_path.name if hasattr(file_path, 'name') else str(file_path)
+                metadata['original_filename'] = original_filename
+
             if metadata:
                 # Store metadata in same session - serialize values to JSON
                 import json
@@ -496,17 +746,62 @@ class DocBasket:
                 db=self.db  # Pass tenant-aware database to document
             )
     
-    def list_documents(self) -> List[Document]:
+    def list_documents(
+        self,
+        limit: Optional[int] = None,
+        offset: Optional[int] = None,
+        order_by: Optional[str] = None,
+        order_desc: bool = False,
+        status: Optional[str] = None,
+        document_type: Optional[str] = None
+    ) -> List[Document]:
         """
-        List all documents in this basket
+        List documents in this basket with pagination, sorting, and filtering.
+        Optimized for large datasets using indexed queries.
         
+        Args:
+            limit: Maximum number of results to return (for pagination)
+            offset: Number of results to skip (for pagination)
+            order_by: Field to sort by ('created_at', 'updated_at', 'name', 'size', 'status')
+            order_desc: If True, sort in descending order
+            status: Optional filter by document status
+            document_type: Optional filter by document type
+            
         Returns:
             List of Document instances
         """
         with self.db.session() as session:
-            documents = session.execute(
-                select(DocumentModel).where(DocumentModel.basket_id == self.id)
-            ).scalars().all()
+            query = select(DocumentModel).where(DocumentModel.basket_id == self.id)
+            
+            # Add filters
+            if status:
+                query = query.where(DocumentModel.status == status)
+            if document_type:
+                query = query.where(DocumentModel.document_type == document_type)
+            
+            # Add sorting
+            if order_by:
+                order_field = getattr(DocumentModel, order_by, None)
+                if order_field is not None:
+                    if order_desc:
+                        query = query.order_by(order_field.desc())
+                    else:
+                        query = query.order_by(order_field.asc())
+                else:
+                    logger.warning(f"Invalid order_by field: {order_by}, using default")
+                    query = query.order_by(DocumentModel.created_at.desc())
+            else:
+                # Default sorting by creation date (newest first)
+                query = query.order_by(DocumentModel.created_at.desc())
+            
+            # Add pagination
+            if limit is not None:
+                query = query.limit(limit)
+            if offset is not None:
+                query = query.offset(offset)
+            
+            documents = session.execute(query).scalars().all()
+            
             return [Document(
                 id=doc.id,
                 name=doc.name,
@@ -523,32 +818,104 @@ class DocBasket:
                 db=self.db  # Pass tenant-aware database to document
             ) for doc in documents]
     
-    def list_documents(self) -> List[Document]:
+    def count_documents(
+        self,
+        status: Optional[str] = None,
+        document_type: Optional[str] = None
+    ) -> int:
         """
-        List all documents in this basket
+        Count documents in this basket with optional filters.
+        Optimized for performance using COUNT query.
         
+        Args:
+            status: Optional filter by document status
+            document_type: Optional filter by document type
+            
         Returns:
-            List of Document instances
+            Total count of documents matching the criteria
         """
         with self.db.session() as session:
-            documents = session.execute(
-                select(DocumentModel).where(DocumentModel.basket_id == self.id)
-            ).scalars().all()
-            return [Document(
-                id=doc.id,
-                name=doc.name,
-                path=doc.path,
-                content_type=doc.content_type,
-                document_type=doc.document_type,
-                size=doc.size,
-                checksum=doc.checksum,
-                status=doc.status,
-                created_at=doc.created_at,
-                updated_at=doc.updated_at,
-                model=doc,
-                storage_service=self.storage_service,
-                db=self.db  # Pass tenant-aware database to document
-            ) for doc in documents]
+            query = select(func.count(DocumentModel.id)).where(
+                DocumentModel.basket_id == self.id
+            )
+            
+            # Add filters
+            if status:
+                query = query.where(DocumentModel.status == status)
+            if document_type:
+                query = query.where(DocumentModel.document_type == document_type)
+            
+            result = session.execute(query).scalar()
+            return result or 0
+    
+    def count_documents_by_metadata(
+        self,
+        metadata: Union[Dict[str, Any], str]
+    ) -> int:
+        """
+        Count documents matching metadata criteria.
+        Optimized for large datasets.
+        
+        Args:
+            metadata: Dictionary of key-value pairs or a single string value
+            
+        Returns:
+            Count of documents matching the metadata criteria
+        """
+        with self.db.transaction() as session:
+            # Start with documents in this basket
+            query = select(DocumentModel).where(DocumentModel.basket_id == self.id)
+            
+            if isinstance(metadata, dict):
+                # Handle dictionary input - multiple key-value pairs (AND logic)
+                metadata_filters = []
+                for key, value in metadata.items():
+                    if isinstance(value, MetaModel):
+                        value = value.to_dict()
+                    if isinstance(value, dict) and 'extra' in value:
+                        value = value['extra'].get('value', None)
+                    
+                    # Metadata values are stored as JSON strings, so we need to JSON-encode the search value
+                    import json
+                    try:
+                        value_json = json.dumps(value, default=str)
+                    except (TypeError, ValueError):
+                        value_json = json.dumps(str(value))
+                    
+                    # Create subquery for each metadata key-value pair
+                    subquery = select(DocumentMetadata.document_id).where(
+                        and_(
+                            DocumentMetadata.key == key,
+                            DocumentMetadata.value == value_json,
+                            DocumentMetadata.document_id.in_(
+                                select(DocumentModel.id).where(DocumentModel.basket_id == self.id)
+                            )
+                        )
+                    )
+                    metadata_filters.append(subquery)
+                
+                # Intersect all subqueries to get documents matching ALL metadata criteria
+                if metadata_filters:
+                    base_subquery = metadata_filters[0]
+                    for subquery in metadata_filters[1:]:
+                        base_subquery = base_subquery.intersect(subquery)
+                    query = query.where(DocumentModel.id.in_(base_subquery))
+                else:
+                    return 0
+            elif isinstance(metadata, str):
+                # Handle string input (search across all metadata values)
+                # Metadata values are stored as JSON strings
+                import json
+                search_value_json = json.dumps(metadata)
+                query = query.join(DocumentMetadata, DocumentMetadata.document_id == DocumentModel.id)
+                query = query.where(DocumentMetadata.value == search_value_json)
+            else:
+                raise ValueError("Metadata must be a dictionary or a string.")
+            
+            # Count distinct documents
+            count_query = select(func.count()).select_from(query.subquery())
+            result = session.execute(count_query).scalar()
+            return result or 0
     
     # Instance method list() for listing documents - this shadows the classmethod
     # but Python's method resolution will use the classmethod when called on the class

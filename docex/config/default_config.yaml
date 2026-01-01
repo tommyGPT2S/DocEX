@@ -68,16 +68,29 @@ storage:
   
   # S3 storage configuration (when type: s3)
   s3:
-    bucket: my-documents-bucket  # Required: S3 bucket name
-    app_name: my-organization   # Business identifier (organization, business unit, or deployment name)
-    prefix: production            # Optional: Environment prefix (e.g., dev, staging, production)
+    # Required: S3 bucket name
+    bucket: my-documents-bucket
+    # Required: AWS region for S3 bucket
     region: us-east-1
+    # Business identifier (organization, business unit, or deployment name)
     # Note: tenant_id is automatically added to prefix at runtime
     # Final prefix structure: {app_name}/{prefix}/tenant_{tenant_id}/
     # Examples:
     #   - Organization: "acme-corp"
     #   - Business Unit: "finance-department"
     #   - Deployment: "production-instance"
+    app_name: my-organization
+    # Optional: Environment prefix (e.g., dev, staging, production)
+    prefix: production
+    # Optional: AWS credentials (if not using IAM roles or default profile)
+    access_key: null
+    secret_key: null
+    session_token: null
+    # Optional: Boto3 configuration
+    max_retries: 3
+    retry_delay: 1.0
+    connect_timeout: 60
+    read_timeout: 60
 
 logging:
   level: DEBUG
