@@ -45,7 +45,17 @@ class BootstrapTenantManager:
         self.db_type = self.db_config.get('type', 'sqlite')
         
         # Get default database connection (will become bootstrap tenant's)
-        self.db = Database()
+        # Check if v2.x database-level multi-tenancy is enabled
+        security_config = self.config.get('security', {})
+        v2_multi_tenancy = security_config.get('multi_tenancy_model', 'row_level') == 'database_level'
+        
+        if v2_multi_tenancy:
+            # For v2.x, use default tenant "docex_first_tenant" for bootstrap operations
+            # This tenant is automatically created/used in v2.x mode
+            self.db = Database(config=self.config, tenant_id='docex_first_tenant')
+        else:
+            # Single-tenant mode: use default database
+            self.db = Database(config=self.config)
     
     def is_initialized(self) -> bool:
         """

@@ -61,8 +61,26 @@ class TenantProvisioner:
         self.db_type = self.db_config.get('type', 'sqlite')
         
         # Get bootstrap tenant database connection
-        # For now, use default database (will be updated to use bootstrap tenant)
-        self.bootstrap_db = Database()
+        # Check if v3.0 multi-tenancy is enabled
+        multi_tenancy_config = self.config.get('multi_tenancy', {})
+        multi_tenancy_enabled = multi_tenancy_config.get('enabled', False)
+        
+        # Check if v2.x database-level multi-tenancy is enabled
+        security_config = self.config.get('security', {})
+        v2_multi_tenancy = security_config.get('multi_tenancy_model', 'row_level') == 'database_level'
+        
+        if multi_tenancy_enabled:
+            # v3.0: Use bootstrap tenant for tenant registry
+            bootstrap_tenant_id = multi_tenancy_config.get('bootstrap_tenant', {}).get('id', '_docex_system_')
+            self.bootstrap_db = Database(config=self.config, tenant_id=bootstrap_tenant_id)
+        elif v2_multi_tenancy:
+            # v2.x: Use default tenant "docex_first_tenant" for provisioning operations
+            # This tenant is automatically created/used in v2.x mode
+            # TenantDatabaseManager will auto-create the tenant database/schema on first access
+            self.bootstrap_db = Database(config=self.config, tenant_id='docex_first_tenant')
+        else:
+            # Single-tenant mode: use default database
+            self.bootstrap_db = Database(config=self.config)
     
     @staticmethod
     def is_system_tenant(tenant_id: str) -> bool:

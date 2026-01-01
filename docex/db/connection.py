@@ -89,6 +89,31 @@ class Database:
             # Use standard single-tenant initialization
             self._initialize()
     
+    @classmethod
+    def get_default_connection(cls, config: Optional[DocEXConfig] = None) -> 'Database':
+        """
+        Get default database connection, bypassing tenant routing.
+        
+        This is useful for system operations like tenant provisioning where
+        we need to access the default database regardless of multi-tenancy mode.
+        
+        Args:
+            config: Optional DocEXConfig instance. If None, uses default config.
+            
+        Returns:
+            Database instance connected to default database
+        """
+        config = config or DocEXConfig()
+        db = cls.__new__(cls)
+        db.config = config
+        db.tenant_id = None
+        db.engine = None
+        db.Session = None
+        db.multi_tenancy_model = 'row_level'  # Force single-tenant mode
+        db.tenant_database_routing = False
+        db._initialize()
+        return db
+    
     def _initialize(self):
         """Initialize database connection and session"""
         max_retries = 3
