@@ -22,6 +22,7 @@ from docex.services.metadata_service import MetadataService
 from docex.db.database_factory import DatabaseFactory
 from docex.services.storage_service import StorageService
 from docex.config.docex_config import DocEXConfig
+from docex.config.path_resolver import DocEXPathResolver
 from docex.transport.route import Route
 from docex.transport.config import RouteConfig
 from docex.transport.transport_result import TransportResult
@@ -156,11 +157,25 @@ class DocBasket:
                 session.flush()  # Get the ID without committing
                 
                 # Now that we have the ID, set up the storage path/configuration
+                # Use unified path resolver for consistent path construction
+                path_resolver = DocEXPathResolver(config)
+                
+                # Get tenant_id from database if available (for multi-tenancy)
+                tenant_id = getattr(basket_db, 'tenant_id', None)
+                
                 if storage_config['type'] == 'filesystem':
                     if 'path' not in storage_config:
-                        # Create basket-specific path under the default storage path using ID
-                        base_path = config.get('storage.filesystem.path', 'storage/docex')
-                        storage_config['path'] = str(Path(base_path) / f"basket_{basket_model.id}")
+                        # Use path resolver for consistent filesystem path construction
+                        if tenant_id:
+                            # Use tenant-aware path resolver
+                            storage_config['path'] = path_resolver.resolve_filesystem_path(
+                                tenant_id=tenant_id,
+                                basket_id=basket_model.id
+                            )
+                        else:
+                            # Fallback for non-multi-tenant: use base path + basket_id
+                            base_path = config.get('storage', {}).get('filesystem', {}).get('path', 'storage/docex')
+                            storage_config['path'] = str(Path(base_path) / f"basket_{basket_model.id}")
                 elif storage_config['type'] == 's3':
                     # For S3, ensure s3 config is properly nested
                     if 's3' not in storage_config:
@@ -170,9 +185,15 @@ class DocBasket:
                             'type': 's3',
                             's3': s3_config
                         }
-                    # Add prefix for basket organization if not present
-                    if 'prefix' not in storage_config.get('s3', {}):
-                        storage_config['s3']['prefix'] = f"baskets/{basket_model.id}/"
+                    # Use path resolver for consistent S3 prefix construction
+                    if tenant_id:
+                        # Get tenant-aware basket prefix from resolver
+                        basket_prefix = path_resolver.resolve_s3_basket_prefix(tenant_id, basket_model.id)
+                        storage_config['s3']['prefix'] = basket_prefix.rstrip('/')
+                    else:
+                        # Fallback for non-multi-tenant: use baskets/ prefix
+                        if 'prefix' not in storage_config.get('s3', {}):
+                            storage_config['s3']['prefix'] = f"baskets/{basket_model.id}/"
                 
                 # Update the storage config
                 basket_model.storage_config = json.dumps(storage_config)

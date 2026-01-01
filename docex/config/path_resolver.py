@@ -64,17 +64,17 @@ class DocEXPathResolver:
     
     # ==================== Filesystem Path Resolution ====================
     
-    def resolve_filesystem_path(self, tenant_id: str, basket_id: Optional[str] = None) -> str:
+    def resolve_filesystem_path(self, tenant_id: Optional[str] = None, basket_id: Optional[str] = None) -> str:
         """
         Resolve filesystem storage path for a tenant and optional basket.
         
-        Structure: {base_path}/tenant_{tenant_id}/{basket_id}/
+        Structure: {base_path}/tenant_{tenant_id}/basket_{basket_id}/
         - base_path: Base storage path from config
-        - tenant_id: Tenant identifier (runtime parameter)
+        - tenant_id: Optional tenant identifier (runtime parameter)
         - basket_id: Optional basket identifier
         
         Args:
-            tenant_id: Tenant identifier (only runtime parameter)
+            tenant_id: Optional tenant identifier (only runtime parameter)
             basket_id: Optional basket identifier for basket-specific paths
             
         Returns:
@@ -87,7 +87,7 @@ class DocEXPathResolver:
         # Build path parts
         path_parts = [base_path]
         
-        # Add tenant path
+        # Add tenant path if tenant_id provided
         if tenant_id:
             path_parts.append(f"tenant_{tenant_id}")
         
@@ -100,6 +100,24 @@ class DocEXPathResolver:
         
         logger.debug(f"Resolved filesystem path for tenant '{tenant_id}', basket '{basket_id}': {full_path}")
         return str(full_path)
+    
+    def resolve_s3_basket_prefix(self, tenant_id: str, basket_id: str) -> str:
+        """
+        Resolve S3 prefix for a basket within a tenant.
+        
+        Structure: {app_name}/{prefix}/tenant_{tenant_id}/baskets/{basket_id}/
+        
+        Args:
+            tenant_id: Tenant identifier (only runtime parameter)
+            basket_id: Basket identifier (only runtime parameter)
+            
+        Returns:
+            S3 prefix string for the basket
+        """
+        tenant_prefix = self.resolve_s3_prefix(tenant_id)
+        basket_prefix = f"{tenant_prefix}baskets/{basket_id}/"
+        logger.debug(f"Resolved S3 basket prefix for tenant '{tenant_id}', basket '{basket_id}': {basket_prefix}")
+        return basket_prefix
     
     # ==================== Database Path Resolution ====================
     
