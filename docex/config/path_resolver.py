@@ -46,13 +46,13 @@ class DocEXPathResolver:
         Resolve S3 prefix for a tenant.
         
         Structure: {app_name}/{prefix}/tenant_{tenant_id}/
-        - app_name: Application identifier (required)
+        - app_name: Business identifier (organization, business unit, or deployment name) - required
         - prefix: Environment prefix (optional, e.g., "production", "staging")
         - tenant_id: Tenant identifier (runtime parameter)
         
         Examples:
-        - With prefix: "docex/production/tenant_acme/"
-        - Without prefix: "docex/tenant_acme/"
+        - With prefix: "acme-corp/production/tenant_acme/"
+        - Without prefix: "acme-corp/tenant_acme/"
         
         Args:
             tenant_id: Tenant identifier (only runtime parameter)

@@ -69,11 +69,15 @@ storage:
   # S3 storage configuration (when type: s3)
   s3:
     bucket: my-documents-bucket  # Required: S3 bucket name
-    app_name: docex              # Application namespace
+    app_name: my-organization   # Business identifier (organization, business unit, or deployment name)
     prefix: production            # Optional: Environment prefix (e.g., dev, staging, production)
     region: us-east-1
     # Note: tenant_id is automatically added to prefix at runtime
     # Final prefix structure: {app_name}/{prefix}/tenant_{tenant_id}/
+    # Examples:
+    #   - Organization: "acme-corp"
+    #   - Business Unit: "finance-department"
+    #   - Deployment: "production-instance"
 
 logging:
   level: DEBUG

@@ -39,18 +39,19 @@ class ConfigResolver:
         All parts come from config.yaml except tenant_id.
         
         Rationale:
-        - app_name: Application-level namespace (required for multi-application deployments)
+        - app_name: Business identifier (organization, business unit, or deployment name)
+                    Required for multi-application deployments and S3 bucket organization
         - prefix: Environment-level namespace (optional, e.g., "production", "staging", "dev")
         
         Examples:
-        - With prefix: "docex/production/tenant_acme/"
-        - Without prefix: "docex/tenant_acme/"
+        - With prefix: "acme-corp/production/tenant_acme/"
+        - Without prefix: "acme-corp/tenant_acme/"
         
         Args:
             tenant_id: Tenant identifier (only runtime parameter)
             
         Returns:
-            S3 prefix string (e.g., "docex/production/tenant_acme/" or "docex/tenant_acme/")
+            S3 prefix string (e.g., "acme-corp/production/tenant_acme/" or "acme-corp/tenant_acme/")
         """
         storage_config = self.config.get('storage', {})
         s3_config = storage_config.get('s3', {})

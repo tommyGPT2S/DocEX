@@ -29,7 +29,7 @@ class S3Storage(AbstractStorage):
         Args:
             config: Configuration dictionary with:
                 - bucket: S3 bucket name (required)
-                - app_name: Application name for namespace organization (recommended)
+                - app_name: Business identifier (organization, business unit, or deployment name) for namespace organization (required)
                 - access_key: AWS access key (optional if using IAM/env vars)
                 - secret_key: AWS secret key (optional if using IAM/env vars)
                 - session_token: AWS session token (optional, for temporary credentials)
