@@ -29,15 +29,23 @@ class S3Storage(AbstractStorage):
         Args:
             config: Configuration dictionary with:
                 - bucket: S3 bucket name (required)
+                - prefix: S3 key prefix (should be pre-resolved using DocEXPathResolver or ConfigResolver)
+                          Prefix should include tenant_id if multi-tenancy is enabled.
+                          Example: "acme-corp/production/tenant_acme/" or "acme-corp/tenant_acme/"
                 - access_key: AWS access key (optional if using IAM/env vars)
                 - secret_key: AWS secret key (optional if using IAM/env vars)
                 - session_token: AWS session token (optional, for temporary credentials)
                 - region: AWS region (default: us-east-1)
-                - prefix: Optional S3 key prefix for organizing files
                 - max_retries: Maximum retry attempts (default: 3)
                 - retry_delay: Delay between retries in seconds (default: 1.0)
                 - connect_timeout: Connection timeout in seconds (default: 60)
                 - read_timeout: Read timeout in seconds (default: 60)
+                
+        Note:
+            S3Storage is a low-level storage abstraction. Path resolution should happen
+            at higher levels (DocBasket, ConfigResolver, DocEXPathResolver) before
+            passing config to S3Storage. This ensures consistent path resolution across
+            the system and avoids one-off path construction logic.
         """
         self.config = config
         
@@ -51,7 +59,17 @@ class S3Storage(AbstractStorage):
         
         # Extract configuration
         self.region = credentials['region']
-        self.prefix = config.get('prefix', '').strip('/')
+        
+        # Get prefix from config
+        # Prefix should be pre-resolved by caller using DocEXPathResolver or ConfigResolver
+        # (e.g., via ConfigResolver.get_storage_config_for_tenant() or DocBasket.create())
+        # S3Storage is a low-level storage class and does not resolve paths itself.
+        prefix = config.get('prefix', '').strip('/')
+        
+        # Set prefix (empty string if not provided)
+        # Note: Prefix resolution should happen at higher level (DocBasket, ConfigResolver)
+        # This ensures consistent path resolution across the system
+        self.prefix = prefix
         if self.prefix and not self.prefix.endswith('/'):
             self.prefix += '/'
         
@@ -146,16 +164,27 @@ class S3Storage(AbstractStorage):
     
     def _get_full_key(self, path: str) -> str:
         """
-        Get full S3 key with prefix
+        Get full S3 key with prefix.
+        
+        The prefix should already be set correctly during initialization
+        (e.g., from ConfigResolver.get_storage_config_for_tenant() or DocEXPathResolver).
+        S3Storage does not resolve paths itself - it uses the prefix provided during initialization.
         
         Args:
-            path: Relative path/key
+            path: Relative path/key (prefix will be added from initialization)
             
         Returns:
             Full S3 key with prefix
+            
+        Note:
+            Path resolution should happen at higher levels using DocEXPathResolver or ConfigResolver.
+            S3Storage is a low-level storage abstraction and should not contain path resolution logic.
         """
         # Remove leading slash if present
         path = path.lstrip('/')
+        
+        # Use prefix set during initialization
+        # Prefix should already include tenant_id if needed (pre-resolved by caller)
         return f"{self.prefix}{path}" if self.prefix else path
     
     def _retry_on_error(self, func, *args, **kwargs):

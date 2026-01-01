@@ -22,6 +22,7 @@ from docex.services.metadata_service import MetadataService
 from docex.db.database_factory import DatabaseFactory
 from docex.services.storage_service import StorageService
 from docex.config.docex_config import DocEXConfig
+from docex.config.path_resolver import DocEXPathResolver
 from docex.transport.route import Route
 from docex.transport.config import RouteConfig
 from docex.transport.transport_result import TransportResult
@@ -164,11 +165,31 @@ class DocBasket:
                 session.flush()  # Get the ID without committing
                 
                 # Now that we have the ID, set up the storage path/configuration
+                # Use unified path resolver for consistent path construction
+                path_resolver = DocEXPathResolver(config)
+                
+                # Get tenant_id from database if available (for multi-tenancy)
+                tenant_id = getattr(basket_db, 'tenant_id', None)
+                
+                # Debug logging for tenant_id retrieval
+                if tenant_id:
+                    logger.debug(f"DocBasket.create: Retrieved tenant_id '{tenant_id}' from basket_db")
+                else:
+                    logger.debug("DocBasket.create: No tenant_id found in basket_db")
+                
                 if storage_config['type'] == 'filesystem':
                     if 'path' not in storage_config:
-                        # Create basket-specific path under the default storage path using ID
-                        base_path = config.get('storage.filesystem.path', 'storage/docex')
-                        storage_config['path'] = str(Path(base_path) / f"basket_{basket_model.id}")
+                        # Use path resolver for consistent filesystem path construction
+                        if tenant_id:
+                            # Use tenant-aware path resolver
+                            storage_config['path'] = path_resolver.resolve_filesystem_path(
+                                tenant_id=tenant_id,
+                                basket_id=basket_model.id
+                            )
+                        else:
+                            # Fallback for non-multi-tenant: use base path + basket_id
+                            base_path = config.get('storage', {}).get('filesystem', {}).get('path', 'storage/docex')
+                            storage_config['path'] = str(Path(base_path) / f"basket_{basket_model.id}")
                 elif storage_config['type'] == 's3':
                     # For S3, handle both flattened and nested formats
                     if 's3' not in storage_config:
@@ -181,16 +202,57 @@ class DocBasket:
                     else:
                         # Handle hybrid format: both flattened and nested values exist
                         # Update nested s3 config with any flattened values that are set
+                        # IMPORTANT: Do NOT overwrite 'prefix' if it's already set in s3 config,
+                        # as it may have been pre-resolved by ConfigResolver.get_storage_config_for_tenant()
                         s3_config = storage_config['s3']
-                        for key in ['bucket', 'region', 'prefix', 'access_key', 'secret_key', 'session_token']:
+                        for key in ['bucket', 'region', 'access_key', 'secret_key', 'session_token']:
                             if key in storage_config and storage_config[key] is not None:
                                 s3_config[key] = storage_config[key]
                                 # Remove from top level to avoid duplication
                                 del storage_config[key]
-
-                    # Add prefix for basket organization if not present
-                    if 'prefix' not in storage_config.get('s3', {}):
-                        storage_config['s3']['prefix'] = f"baskets/{basket_model.id}/"
+                        # Handle prefix separately - only use top-level prefix if s3.prefix is not set
+                        if 'prefix' in storage_config and storage_config['prefix'] is not None:
+                            if 'prefix' not in s3_config or not s3_config['prefix']:
+                                # Only use top-level prefix if s3.prefix is not already set
+                                s3_config['prefix'] = storage_config['prefix']
+                            # Always remove from top level to avoid duplication
+                            del storage_config['prefix']
+                    
+                    # Use path resolver for consistent S3 prefix construction
+                    # Check if prefix already contains tenant-aware path (from get_storage_config_for_tenant)
+                    existing_prefix = storage_config.get('s3', {}).get('prefix', '')
+                    
+                    logger.debug(f"DocBasket.create: S3 prefix resolution - tenant_id='{tenant_id}', existing_prefix='{existing_prefix}'")
+                    
+                    if tenant_id:
+                        # Check if existing prefix already contains the correct tenant_id
+                        expected_tenant_in_prefix = f"tenant_{tenant_id}"
+                        if existing_prefix and expected_tenant_in_prefix in existing_prefix:
+                            # Prefix already has correct tenant - just add basket suffix if not present
+                            if f"baskets/{basket_model.id}" not in existing_prefix:
+                                # Add basket suffix to existing tenant-aware prefix
+                                new_prefix = f"{existing_prefix.rstrip('/')}/baskets/{basket_model.id}/"
+                                logger.debug(f"DocBasket.create: Adding basket suffix to existing prefix: '{new_prefix}'")
+                                storage_config['s3']['prefix'] = new_prefix
+                            # else: prefix already has basket, keep it as is
+                        else:
+                            # Prefix doesn't have correct tenant_id or is empty - use resolver
+                            # This can happen if prefix was set incorrectly or tenant_id doesn't match
+                            logger.warning(
+                                f"DocBasket.create: Prefix '{existing_prefix}' doesn't contain 'tenant_{tenant_id}'. "
+                                f"Resolving with path_resolver using tenant_id='{tenant_id}'"
+                            )
+                            basket_prefix = path_resolver.resolve_s3_basket_prefix(tenant_id, basket_model.id)
+                            logger.debug(f"DocBasket.create: Resolved basket prefix: '{basket_prefix}'")
+                            storage_config['s3']['prefix'] = basket_prefix.rstrip('/')
+                    else:
+                        # Fallback for non-multi-tenant: use baskets/ prefix
+                        if not existing_prefix or 'baskets' not in existing_prefix:
+                            if not existing_prefix:
+                                storage_config['s3']['prefix'] = f"baskets/{basket_model.id}/"
+                            else:
+                                # Add basket to existing prefix
+                                storage_config['s3']['prefix'] = f"{existing_prefix.rstrip('/')}/baskets/{basket_model.id}/"
                 
                 # Update the storage config
                 basket_model.storage_config = json.dumps(storage_config)

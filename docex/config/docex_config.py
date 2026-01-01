@@ -43,7 +43,10 @@ class DocEXConfig:
     @classmethod
     def setup(cls, **kwargs) -> None:
         """
-        Set up DocEX configuration
+        Set up DocEX configuration.
+        
+        NOTE: In DocEX 3.0, configuration should primarily be managed via config.yaml file.
+        This method is provided for backward compatibility and initial setup only.
         
         Args:
             database: Database configuration
@@ -60,29 +63,18 @@ class DocEXConfig:
             logging: Logging configuration
                 - level: Logging level
                 - file: Path to log file
+            storage: Storage configuration
+            multi_tenancy: Multi-tenancy configuration
         """
         instance = cls()
         
-        # Deep update database configuration
-        if 'database' in kwargs:
-            instance._update_config_recursive(instance.config['database'], kwargs['database'])
-        
-        # Deep update logging configuration
-        if 'logging' in kwargs:
-            instance._update_config_recursive(instance.config['logging'], kwargs['logging'])
-
-        # Deep update storage configuration
-        if 'storage' in kwargs:
-            instance._update_config_recursive(instance.config['storage'], kwargs['storage'])
-
-        # Deep update security configuration
-        if 'security' in kwargs:
-            instance._update_config_recursive(instance.config['security'], kwargs['security'])
-
-        # Deep update app configuration
-        if 'app' in kwargs:
-            instance._update_config_recursive(instance.config['app'], kwargs['app'])
-
+        # Deep update all provided configuration sections
+        # Use loop approach for cleaner code, but ensure all sections are handled
+        for section in ['database', 'logging', 'storage', 'multi_tenancy', 'security', 'app']:
+            if section in kwargs:
+                if section not in instance.config:
+                    instance.config[section] = {}
+                instance._update_config_recursive(instance.config[section], kwargs[section])
         # Ensure configuration directory exists
         config_dir = instance.config_file.parent
         config_dir.mkdir(parents=True, exist_ok=True)
@@ -134,7 +126,8 @@ class DocEXConfig:
             if 'type' not in db_config:
                 raise RuntimeError("Database type not specified")
             
-            if db_config['type'] in ['postgres']:
+            if db_config['type'] in ['postgres', 'postgresql']:
+                # PostgreSQL config is nested under 'postgres' key
                 if 'postgres' not in db_config:
                     raise RuntimeError("PostgreSQL configuration section missing")
                 postgres_config = db_config['postgres']
