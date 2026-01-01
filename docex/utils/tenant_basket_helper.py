@@ -22,13 +22,15 @@ def create_tenant_basket(
     description: Optional[str] = None,
     bucket: Optional[str] = None,
     region: Optional[str] = None,
-    application_name: Optional[str] = None
+    path_namespace: Optional[str] = None
 ) -> "DocBasket":
     """
     Create a tenant-aware basket with proper S3 path structure.
     
     Basket naming: {tenant_id}_{document_type}_{stage}
-    S3 Path: {application_name}/tenant_{tenant_id}/{document_type}_{stage}/
+    S3 Path: {tenant_id}/{path_namespace}/{prefix}/{basket_friendly_name}_{last_4_of_basket_id}/
+    
+    Tenant ID is FIRST in the path for better tenant isolation.
     
     Args:
         docEX: DocEX instance with user_context containing tenant_id
@@ -37,7 +39,7 @@ def create_tenant_basket(
         description: Optional basket description
         bucket: Optional S3 bucket name (defaults to config)
         region: Optional AWS region (defaults to config)
-        application_name: Optional application name (defaults to config, can override)
+        path_namespace: Optional path namespace (defaults to config.path_namespace, can override)
         
     Returns:
         Created DocBasket instance
@@ -45,8 +47,10 @@ def create_tenant_basket(
     Example:
         basket = create_tenant_basket(docEX, "invoice", "raw")
         # Creates basket: "test-tenant-001_invoice_raw"
-        # S3 prefix: "llamasee-dp-dev/tenant_test-tenant-001/invoice_raw/" (if app_name set)
-        # S3 prefix: "tenant_test-tenant-001/invoice_raw/" (if app_name not set)
+        # S3 prefix: "test-tenant-001/acme-corp/production/invoice_raw/" (if path_namespace and prefix set)
+        # S3 prefix: "test-tenant-001/acme-corp/invoice_raw/" (if only path_namespace set)
+        # S3 prefix: "test-tenant-001/invoice_raw/" (if neither set)
+        # Note: Actual basket path will be: {friendly_name}_{last_4_of_basket_id}/
     """
     if not docEX.user_context or not docEX.user_context.tenant_id:
         raise ValueError("DocEX instance must have user_context with tenant_id")
@@ -60,12 +64,12 @@ def create_tenant_basket(
     # Get configuration
     config = DocEXConfig()
     
-    # Get application_name from parameter, config, or None
-    if application_name is None:
-        application_name = config.get('storage.s3.application_name')
+    # Get path_namespace from parameter, config, or None
+    if path_namespace is None:
+        path_namespace = config.get('storage.s3.path_namespace')
         # Convert empty string to None
-        if application_name == '':
-            application_name = None
+        if path_namespace == '':
+            path_namespace = None
     
     # Get bucket and region from config if not provided
     if bucket is None:
@@ -78,8 +82,8 @@ def create_tenant_basket(
             "S3 bucket must be specified either in storage_config or config.yaml"
         )
     
-    # Build S3 prefix with application name
-    prefix = build_s3_prefix(tenant_id, document_type, stage, application_name)
+    # Build S3 prefix with path namespace
+    prefix = build_s3_prefix(tenant_id, document_type, stage, path_namespace)
     
     # Create basket with tenant-aware S3 prefix
     basket = docEX.create_basket(
@@ -98,13 +102,13 @@ def create_tenant_basket(
     return basket
 
 
-def get_application_name_from_config() -> Optional[str]:
+def get_path_namespace_from_config() -> Optional[str]:
     """
-    Get application name from DocEX configuration.
+    Get path namespace from DocEX configuration.
     
     Returns:
-        Application name if configured, None otherwise
+        Path namespace if configured, None otherwise
     """
     config = DocEXConfig()
-    app_name = config.get('storage.s3.application_name')
-    return app_name if app_name else None
+    path_namespace = config.get('storage.s3.path_namespace')
+    return path_namespace if path_namespace else None

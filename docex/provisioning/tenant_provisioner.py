@@ -317,8 +317,22 @@ class TenantProvisioner:
             database_path: SQLite database path (if using database-per-tenant)
         """
         # Get tenant-specific database connection
+        # IMPORTANT: During provisioning, we bypass validation because the tenant
+        # hasn't been registered yet. We use _create_tenant_engine directly.
         tenant_db_manager = TenantDatabaseManager()
-        engine = tenant_db_manager.get_tenant_engine(tenant_id)
+        # Use internal method to bypass validation during provisioning
+        engine = tenant_db_manager._create_tenant_engine(tenant_id)
+        
+        # Cache the engine and create session factory for this tenant
+        if tenant_id not in tenant_db_manager._tenant_engines:
+            tenant_db_manager._tenant_engines[tenant_id] = engine
+            from sqlalchemy.orm import sessionmaker
+            tenant_db_manager._tenant_sessions[tenant_id] = sessionmaker(
+                bind=engine,
+                expire_on_commit=False,
+                autocommit=False,
+                autoflush=False
+            )
         
         # Set schema on tables if using PostgreSQL
         if schema_name:
@@ -357,7 +371,13 @@ class TenantProvisioner:
             from docex.db.tenant_database_manager import TenantDatabaseManager
             
             tenant_db_manager = TenantDatabaseManager()
-            engine = tenant_db_manager.get_tenant_engine(tenant_id)
+            # During provisioning, use cached engine or create directly (bypasses validation)
+            if tenant_id in tenant_db_manager._tenant_engines:
+                engine = tenant_db_manager._tenant_engines[tenant_id]
+            else:
+                # Create engine directly during provisioning (bypasses validation)
+                engine = tenant_db_manager._create_tenant_engine(tenant_id)
+                tenant_db_manager._tenant_engines[tenant_id] = engine
             
             # Use the same index creation logic from TenantDatabaseManager
             # For SQLite, schema_name will be None, which is handled by the method
@@ -383,7 +403,13 @@ class TenantProvisioner:
             from sqlalchemy import inspect
             
             tenant_db_manager = TenantDatabaseManager()
-            engine = tenant_db_manager.get_tenant_engine(tenant_id)
+            # During provisioning, use cached engine or create directly (bypasses validation)
+            if tenant_id in tenant_db_manager._tenant_engines:
+                engine = tenant_db_manager._tenant_engines[tenant_id]
+            else:
+                # Create engine directly during provisioning (bypasses validation)
+                engine = tenant_db_manager._create_tenant_engine(tenant_id)
+                tenant_db_manager._tenant_engines[tenant_id] = engine
             
             inspector = inspect(engine)
             tables = inspector.get_table_names()

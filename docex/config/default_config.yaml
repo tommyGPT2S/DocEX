@@ -68,19 +68,39 @@ storage:
   
   # S3 storage configuration (when type: s3)
   s3:
-    # Required: S3 bucket name
+    # ==================== S3 Bucket Configuration ====================
+    # Option 1: Direct bucket name (if bucket already exists)
+    # Use this if you have an existing S3 bucket
     bucket: my-documents-bucket
+    
+    # Option 2: Build bucket name from bucket_application (if bucket is not specified)
+    # Bucket name will be automatically built as: {bucket_application}-documents-bucket
+    # Example: If bucket_application is "acme-corp", bucket becomes "acme-corp-documents-bucket"
+    # Note: If both 'bucket' and 'bucket_application' are provided, 'bucket' takes precedence
+    bucket_application: null  # Used to BUILD bucket name: {bucket_application}-documents-bucket
+    
     # Required: AWS region for S3 bucket
     region: us-east-1
-    # Business identifier (organization, business unit, or deployment name)
-    # Note: tenant_id is automatically added to prefix at runtime
-    # Final prefix structure: {app_name}/{prefix}/tenant_{tenant_id}/
-    # Examples:
+    
+    # ==================== S3 Path Prefix Configuration ====================
+    # S3 path structure: {tenant_id}/{path_namespace}/{prefix}/{basket}/{document}
+    # 
+    # Tenant ID is FIRST in the path for better tenant isolation, IAM policies, and cost tracking.
+    # 
+    # DISTINCTION:
+    #   - bucket_application: Used to BUILD bucket name (e.g., "acme-corp" -> "acme-corp-documents-bucket")
+    #   - path_namespace: Used for S3 path prefix (optional, for multi-application deployments)
+    #   - prefix: Environment prefix (optional, e.g., "production", "staging")
+    #
+    # Examples for path_namespace:
     #   - Organization: "acme-corp"
     #   - Business Unit: "finance-department"
     #   - Deployment: "production-instance"
-    app_name: my-organization
-    # Optional: Environment prefix (e.g., dev, staging, production)
+    path_namespace: finance_dept  # Optional: Business identifier for S3 path prefix
+    
+    # Optional: Environment prefix for S3 path (e.g., dev, staging, production)
+    # Final S3 key structure: {tenant_id}/{path_namespace}/{prefix}/{basket_friendly_name}_{last_4}/{friendly_name}_{last_6}.{ext}
+    # Example: "acme_corp/acme-corp/production/invoices_a1b2/invoice_c3d4e5.pdf"
     prefix: production
     # Optional: AWS credentials (if not using IAM roles or default profile)
     access_key: null

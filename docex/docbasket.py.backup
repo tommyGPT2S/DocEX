@@ -23,6 +23,7 @@ from docex.db.database_factory import DatabaseFactory
 from docex.services.storage_service import StorageService
 from docex.config.docex_config import DocEXConfig
 from docex.config.path_resolver import DocEXPathResolver
+from docex.storage.path_builder import DocEXPathBuilder
 from docex.transport.route import Route
 from docex.transport.config import RouteConfig
 from docex.transport.transport_result import TransportResult
@@ -94,6 +95,38 @@ class DocBasket:
         
         # Initialize metadata service
         self.metadata_service = MetadataService(self.db)
+        
+        # Initialize path builder for building full paths from IDs
+        # This ensures all storage operations use full paths built from basket_id and document_id
+        self.path_builder = DocEXPathBuilder()
+    
+    @property
+    def storage_type(self) -> str:
+        """
+        Get the storage type for this basket.
+        
+        Each basket has exactly ONE storage type: 'filesystem' or 's3'.
+        This is stored in the basket's storage_config and cannot be changed after creation.
+        
+        Returns:
+            Storage type string ('filesystem' or 's3')
+            
+        Raises:
+            ValueError: If storage type is not set or invalid
+        """
+        storage_type = self.storage_config.get('type')
+        if not storage_type:
+            raise ValueError(
+                f"Basket '{self.name}' (ID: {self.id}) does not have a storage type set. "
+                "This should not happen - baskets must have exactly one storage type."
+            )
+        allowed_types = ['filesystem', 's3']
+        if storage_type not in allowed_types:
+            raise ValueError(
+                f"Basket '{self.name}' (ID: {self.id}) has invalid storage type '{storage_type}'. "
+                f"Must be one of: {', '.join(allowed_types)}"
+            )
+        return storage_type
     
     def get_basket_path(self) -> str:
         """
@@ -135,9 +168,35 @@ class DocBasket:
         if storage_config is None:
             storage_config = config.get('storage', {})
 
-        # Ensure storage type is set
+        # Validate and ensure storage type is set
+        # Each basket must have exactly ONE storage type
         if 'type' not in storage_config:
             storage_config['type'] = 'filesystem'
+        
+        # Validate storage type is one of the allowed values
+        allowed_types = ['filesystem', 's3']
+        storage_type = storage_config.get('type')
+        if storage_type not in allowed_types:
+            raise ValueError(
+                f"Invalid storage type '{storage_type}'. "
+                f"Must be one of: {', '.join(allowed_types)}"
+            )
+        
+        # Ensure storage_config only contains configuration for the specified type
+        # Remove any configuration for other storage types to prevent confusion
+        if storage_type == 'filesystem':
+            # Remove S3-specific keys if present
+            storage_config.pop('s3', None)
+            storage_config.pop('bucket', None)
+            storage_config.pop('region', None)
+            storage_config.pop('access_key', None)
+            storage_config.pop('secret_key', None)
+            storage_config.pop('session_token', None)
+        elif storage_type == 's3':
+            # Ensure filesystem-specific keys are not present at top level
+            # (they should only be in nested 'filesystem' key if needed)
+            # For now, we'll keep 'path' removal optional as it might be used for other purposes
+            pass
         
         # Create basket in database first to get the ID
         # Use provided db (tenant-aware) or create new one
@@ -179,17 +238,19 @@ class DocBasket:
                 
                 if storage_config['type'] == 'filesystem':
                     if 'path' not in storage_config:
-                        # Use path resolver for consistent filesystem path construction
+                        # Build simplified filesystem path: {base_path}/{tenant_id}/{basket_friendly_name}_{last_4_of_basket_id}
+                        # Note: sanitize_basket_name is already imported at module level
+                        base_path = config.get('storage', {}).get('filesystem', {}).get('path', 'storage/my-organization')
+                        basket_id_suffix = basket_model.id.replace('bas_', '')[-4:] if basket_model.id.startswith('bas_') else basket_model.id[-4:]
+                        sanitized_name = sanitize_basket_name(name)
+                        basket_path = f"{sanitized_name}_{basket_id_suffix}"
+                        
                         if tenant_id:
-                            # Use tenant-aware path resolver
-                            storage_config['path'] = path_resolver.resolve_filesystem_path(
-                                tenant_id=tenant_id,
-                                basket_id=basket_model.id
-                            )
+                            # Multi-tenant: {base_path}/{tenant_id}/{basket_path}
+                            storage_config['path'] = str(Path(base_path) / tenant_id / basket_path)
                         else:
-                            # Fallback for non-multi-tenant: use base path + basket_id
-                            base_path = config.get('storage', {}).get('filesystem', {}).get('path', 'storage/docex')
-                            storage_config['path'] = str(Path(base_path) / f"basket_{basket_model.id}")
+                            # Non-multi-tenant: {base_path}/{basket_path}
+                            storage_config['path'] = str(Path(base_path) / basket_path)
                 elif storage_config['type'] == 's3':
                     # For S3, handle both flattened and nested formats
                     if 's3' not in storage_config:
@@ -225,34 +286,38 @@ class DocBasket:
                     logger.debug(f"DocBasket.create: S3 prefix resolution - tenant_id='{tenant_id}', existing_prefix='{existing_prefix}'")
                     
                     if tenant_id:
-                        # Check if existing prefix already contains the correct tenant_id
-                        expected_tenant_in_prefix = f"tenant_{tenant_id}"
-                        if existing_prefix and expected_tenant_in_prefix in existing_prefix:
-                            # Prefix already has correct tenant - just add basket suffix if not present
-                            if f"baskets/{basket_model.id}" not in existing_prefix:
-                                # Add basket suffix to existing tenant-aware prefix
-                                new_prefix = f"{existing_prefix.rstrip('/')}/baskets/{basket_model.id}/"
-                                logger.debug(f"DocBasket.create: Adding basket suffix to existing prefix: '{new_prefix}'")
-                                storage_config['s3']['prefix'] = new_prefix
-                            # else: prefix already has basket, keep it as is
+                        # Check if existing prefix already contains the correct tenant_id (simplified: just tenant_id, no "tenant_" prefix)
+                        # Build expected basket path: {friendly_name}_{last_4_of_basket_id}
+                        # Note: sanitize_basket_name is already imported at module level
+                        basket_id_suffix = basket_model.id.replace('bas_', '')[-4:] if basket_model.id.startswith('bas_') else basket_model.id[-4:]
+                        sanitized_name = sanitize_basket_name(name)
+                        expected_basket_path = f"{sanitized_name}_{basket_id_suffix}"
+                        
+                        # Check if prefix already has the correct tenant and basket path
+                        if existing_prefix and tenant_id in existing_prefix and expected_basket_path in existing_prefix:
+                            # Prefix already has correct tenant and basket - keep it as is
+                            logger.debug(f"DocBasket.create: Prefix already contains correct tenant and basket path")
+                        elif existing_prefix and tenant_id in existing_prefix:
+                            # Prefix has tenant but not basket - add basket path
+                            new_prefix = f"{existing_prefix.rstrip('/')}/{expected_basket_path}/"
+                            logger.debug(f"DocBasket.create: Adding basket path to existing prefix: '{new_prefix}'")
+                            storage_config['s3']['prefix'] = new_prefix
                         else:
                             # Prefix doesn't have correct tenant_id or is empty - use resolver
-                            # This can happen if prefix was set incorrectly or tenant_id doesn't match
-                            logger.warning(
-                                f"DocBasket.create: Prefix '{existing_prefix}' doesn't contain 'tenant_{tenant_id}'. "
-                                f"Resolving with path_resolver using tenant_id='{tenant_id}'"
-                            )
-                            basket_prefix = path_resolver.resolve_s3_basket_prefix(tenant_id, basket_model.id)
+                            basket_prefix = path_resolver.resolve_s3_basket_prefix(tenant_id, basket_model.id, name)
                             logger.debug(f"DocBasket.create: Resolved basket prefix: '{basket_prefix}'")
                             storage_config['s3']['prefix'] = basket_prefix.rstrip('/')
                     else:
-                        # Fallback for non-multi-tenant: use baskets/ prefix
-                        if not existing_prefix or 'baskets' not in existing_prefix:
-                            if not existing_prefix:
-                                storage_config['s3']['prefix'] = f"baskets/{basket_model.id}/"
-                            else:
-                                # Add basket to existing prefix
-                                storage_config['s3']['prefix'] = f"{existing_prefix.rstrip('/')}/baskets/{basket_model.id}/"
+                        # Fallback for non-multi-tenant: use simplified basket path
+                        # Note: sanitize_basket_name is already imported at module level
+                        basket_id_suffix = basket_model.id.replace('bas_', '')[-4:] if basket_model.id.startswith('bas_') else basket_model.id[-4:]
+                        sanitized_name = sanitize_basket_name(name)
+                        basket_path = f"{sanitized_name}_{basket_id_suffix}"
+                        if not existing_prefix:
+                            storage_config['s3']['prefix'] = f"{basket_path}/"
+                        else:
+                            # Add basket to existing prefix
+                            storage_config['s3']['prefix'] = f"{existing_prefix.rstrip('/')}/{basket_path}/"
                 
                 # Update the storage config
                 basket_model.storage_config = json.dumps(storage_config)
@@ -299,11 +364,22 @@ class DocBasket:
             basket = session.get(DocBasketModel, basket_id)
             if basket is None:
                 return None
+            
+            storage_config = json.loads(basket.storage_config)
+            
+            # Validate storage_config has exactly one storage type
+            if 'type' not in storage_config:
+                logger.warning(
+                    f"Basket '{basket.name}' (ID: {basket.id}) missing storage type. "
+                    "Defaulting to 'filesystem'."
+                )
+                storage_config['type'] = 'filesystem'
+            
             return cls(
                 id=basket.id,
                 name=basket.name,
                 description=basket.description,
-                storage_config=json.loads(basket.storage_config),
+                storage_config=storage_config,
                 created_at=basket.created_at,
                 updated_at=basket.updated_at,
                 model=basket,
@@ -329,11 +405,22 @@ class DocBasket:
             ).scalar_one_or_none()
             if basket is None:
                 return None
+            
+            storage_config = json.loads(basket.storage_config)
+            
+            # Validate storage_config has exactly one storage type
+            if 'type' not in storage_config:
+                logger.warning(
+                    f"Basket '{basket.name}' (ID: {basket.id}) missing storage type. "
+                    "Defaulting to 'filesystem'."
+                )
+                storage_config['type'] = 'filesystem'
+            
             return cls(
                 id=basket.id,
                 name=basket.name,
                 description=basket.description,
-                storage_config=json.loads(basket.storage_config),
+                storage_config=storage_config,
                 created_at=basket.created_at,
                 updated_at=basket.updated_at,
                 model=basket,
@@ -493,30 +580,50 @@ class DocBasket:
         basket_db = db or Database()
         with basket_db.session() as session:
             baskets = session.execute(select(DocBasketModel)).scalars().all()
-            return [cls(
-                id=basket.id,
-                name=basket.name,
-                description=basket.description,
-                storage_config=json.loads(basket.storage_config),
-                created_at=basket.created_at,
-                updated_at=basket.updated_at,
-                model=basket,
-                db=basket_db  # Pass tenant-aware database to basket instance
-            ) for basket in baskets]
+            result = []
+            for basket in baskets:
+                storage_config = json.loads(basket.storage_config)
+                
+                # Validate storage_config has exactly one storage type
+                if 'type' not in storage_config:
+                    logger.warning(
+                        f"Basket '{basket.name}' (ID: {basket.id}) missing storage type. "
+                        "Defaulting to 'filesystem'."
+                    )
+                    storage_config['type'] = 'filesystem'
+                
+                result.append(cls(
+                    id=basket.id,
+                    name=basket.name,
+                    description=basket.description,
+                    storage_config=storage_config,
+                    created_at=basket.created_at,
+                    updated_at=basket.updated_at,
+                    model=basket,
+                    db=basket_db  # Pass tenant-aware database to basket instance
+                ))
+            return result
     
     def _get_content_type(self, file_path: Path) -> str:
         return get_content_type(file_path)
     
     def _extract_tenant_id(self) -> Optional[str]:
         """
-        Extract tenant_id from basket name or user context.
+        Extract tenant_id from database instance or basket name.
         
-        Basket name format: {tenant_id}_{document_type}_{stage}
+        Priority:
+        1. Database instance tenant_id (most reliable for multi-tenant setups)
+        2. Basket name format: {tenant_id}_{document_type}_{stage} (legacy support)
         
         Returns:
             Tenant ID if found, None otherwise
         """
-        # Try to extract from basket name first (most reliable)
+        # First, try to get tenant_id from database instance (most reliable)
+        # The database instance is tenant-aware when created by DocEX with UserContext
+        if self.db and hasattr(self.db, 'tenant_id') and self.db.tenant_id:
+            return self.db.tenant_id
+        
+        # Fallback: Try to extract from basket name (legacy support)
         # Basket name format: {tenant_id}_{document_type}_{stage}
         basket_name_parts = self.name.split('_', 1)
         if len(basket_name_parts) == 2:
@@ -526,56 +633,67 @@ class DocBasket:
     
     def _get_document_path(self, document: Any, file_path: Optional[str] = None, metadata: Optional[Dict[str, Any]] = None) -> str:
         """
-        Generate document path based on storage type.
-
-        For S3 storage:
-        - Default: 'tenant/basket_name/documents/{readable_name}__{document_id}.{ext}' structure
-        - Custom: Uses 'document_path_template' if provided in storage config
-
-        For filesystem storage:
-        - Uses 'docex/basket_{basket_id}/{document_id}' structure (unchanged)
-
+        Build full document path using DocEXPathBuilder or existing storage config prefix.
+        
+        This method builds complete storage paths from basket_id and document_id.
+        For S3, if the basket's storage config already has a prefix, use that to avoid duplication.
+        All path building logic is centralized in DocEXPathBuilder to ensure:
+        1. S3Storage receives full paths (no interpretation needed)
+        2. Users work with IDs only (paths are internal)
+        3. Consistent path structure across all storage backends
+        
         Args:
             document: Document model instance with id attribute
             file_path: Optional file path to extract extension from
-
+            metadata: Optional metadata for document name resolution
+            
         Returns:
-            Document path string
+            Full document path (ready for storage backend)
         """
-        storage_type = self.storage_config.get('type', 'filesystem')
-
+        # Get readable document name
+        document_name = self._get_readable_document_name(document, file_path, metadata)
+        
+        # Extract file extension
+        file_ext = Path(file_path).suffix if file_path else ''
+        
+        # Use property to get storage type (validates it exists and is valid)
+        storage_type = self.storage_type
+        
+        # Get tenant_id (required for multi-tenant path building)
+        tenant_id = self._extract_tenant_id()
+        
+        # For S3, check if storage config already has a prefix with basket path
+        # If so, pass it to path builder to avoid duplication
+        existing_prefix = None
         if storage_type == 's3':
-            s3_config = self.storage_config.get('s3', {})
-
-            # Get readable document name
-            readable_name = self._get_readable_document_name(document, file_path, metadata)
-
-            # Extract file extension
-            file_ext = Path(file_path).suffix if file_path else ''
-
-            # Check for custom path template (optional)
-            path_template = s3_config.get('document_path_template')
-            if path_template:
-                # Use custom template with variable substitution
-                tenant_id = self._extract_tenant_id()
-                return path_template.format(
-                    basket_id=self.id,
-                    basket_name=self.name,
-                    document_id=document.id,
-                    document_name=readable_name,
-                    ext=file_ext,
-                    tenant_id=tenant_id or '',
-                )
-
-            # Parse tenant and basket from basket name (format: {tenant_id}_{basket_name})
-            tenant_id, basket_short_name = self._parse_tenant_basket_name()
-
-            # Default S3 structure: basket_name/{readable_name}__{document_id}.{ext}
-            # Note: Tenant isolation is provided by the S3 prefix, not the document path
-            return f"{basket_short_name}/{readable_name}__{document.id}{file_ext}"
-        else:
-            # Filesystem storage uses original structure (unchanged)
-            return f"docex/basket_{self.id}/{document.id}"
+            existing_prefix = self.storage_config.get('s3', {}).get('prefix', '')
+            if existing_prefix:
+                # Check if prefix already includes the basket path
+                # Basket path format: {basket_friendly_name}_{last_4_of_basket_id}
+                from docex.utils.s3_prefix_builder import sanitize_basket_name
+                basket_id_suffix = self.id.replace('bas_', '')[-4:] if self.id.startswith('bas_') else self.id[-4:]
+                sanitized_name = sanitize_basket_name(self.name)
+                expected_basket_path = f"{sanitized_name}_{basket_id_suffix}"
+                
+                if expected_basket_path not in existing_prefix:
+                    # Prefix doesn't include basket path - don't use it
+                    existing_prefix = None
+        
+        # Build full path using DocEXPathBuilder
+        # Pass existing_prefix and storage_type to avoid duplication if storage_config already has basket path
+        # This ensures all paths are built from IDs and are complete (no interpretation needed)
+        full_path = self.path_builder.build_document_path(
+            basket_id=self.id,
+            document_id=document.id,
+            basket_name=self.name,
+            document_name=document_name,
+            file_ext=file_ext,
+            tenant_id=tenant_id,
+            existing_prefix=existing_prefix,
+            storage_type=storage_type  # Use basket's storage type
+        )
+        
+        return full_path
 
     def _get_readable_document_name(self, document: Any, file_path: Optional[str] = None, metadata: Optional[Dict[str, Any]] = None) -> str:
         """Get a readable document name, sanitized for filesystem use."""
@@ -720,8 +838,14 @@ class DocBasket:
             )
             session.add(document)
             session.flush()
-            document_path = self._get_document_path(document, str(file_path), metadata)
-            stored_path = self.storage_service.store_document(str(file_path), document_path)
+            
+            # Build full path from IDs using DocEXPathBuilder
+            # All operations center around basket_id and document_id - paths are built internally
+            full_path = self._get_document_path(document, str(file_path), metadata)
+            
+            # Store document using full path (built from IDs)
+            # StorageService now expects full paths, not IDs
+            stored_path = self.storage_service.store_document(str(file_path), full_path)
             document.path = stored_path
 
             # Update document name to reflect the correct readable name
@@ -976,7 +1100,10 @@ class DocBasket:
     
     def get_document(self, document_id: int) -> Optional[Document]:
         """
-        Get a document by ID
+        Get a document by document_id.
+        
+        All operations center around document_id - path is retrieved from DB
+        but can be rebuilt from IDs if needed for consistency.
         
         Args:
             document_id: Document ID
@@ -988,10 +1115,81 @@ class DocBasket:
             document = session.get(DocumentModel, document_id)
             if document is None:
                 return None
+            
+            # Path is stored in DB, but we can verify/rebuild it from IDs if needed
+            # For now, use stored path (it was built from IDs when document was added)
+            stored_path = document.path
+            
+            # Optionally rebuild path from IDs to ensure consistency
+            # This ensures path matches current configuration even if config changed
+            tenant_id = self._extract_tenant_id()
+            document_name = self._get_readable_document_name(document, None, None)
+            file_ext = Path(document.name).suffix if document.name else ''
+            
+            # Build full path from IDs to verify consistency
+            # Check if storage_config has existing prefix to avoid duplication
+            existing_prefix = None
+            # Use property to get storage type (validates it exists and is valid)
+            storage_type = self.storage_type
+            if storage_type == 's3':
+                existing_prefix = self.storage_config.get('s3', {}).get('prefix', '')
+                if existing_prefix:
+                    # Check if prefix already includes the basket path
+                    from docex.utils.s3_prefix_builder import sanitize_basket_name
+                    basket_id_suffix = self.id.replace('bas_', '')[-4:] if self.id.startswith('bas_') else self.id[-4:]
+                    sanitized_name = sanitize_basket_name(self.name)
+                    expected_basket_path = f"{sanitized_name}_{basket_id_suffix}"
+                    if expected_basket_path in existing_prefix:
+                        # Prefix already includes basket path - use it directly
+                        logger.debug(f"DocBasket.get_document: Using existing prefix with basket path: {existing_prefix}")
+                        # Just add document filename to existing prefix
+                        doc_id_suffix = document.id.replace('doc_', '')[-6:] if document.id.startswith('doc_') else document.id[-6:]
+                        document_filename = f"{document_name}_{doc_id_suffix}{file_ext}"
+                        full_path = f"{existing_prefix.rstrip('/')}/{document_filename}"
+                    else:
+                        # Prefix doesn't include basket path - build from scratch
+                        full_path = self.path_builder.build_document_path(
+                            basket_id=self.id,
+                            document_id=document.id,
+                            basket_name=self.name,
+                            document_name=document_name,
+                            file_ext=file_ext,
+                            tenant_id=tenant_id,
+                            existing_prefix=None,
+                            storage_type=storage_type  # Use basket's storage type
+                        )
+                else:
+                    # No existing prefix - build from scratch
+                    full_path = self.path_builder.build_document_path(
+                        basket_id=self.id,
+                        document_id=document.id,
+                        basket_name=self.name,
+                        document_name=document_name,
+                        file_ext=file_ext,
+                        tenant_id=tenant_id,
+                        existing_prefix=None,
+                        storage_type=storage_type  # Use basket's storage type
+                    )
+            else:
+                # Filesystem - build from scratch
+                # Pass storage_type explicitly to use basket's storage_config, not global config
+                full_path = self.path_builder.build_document_path(
+                    basket_id=self.id,
+                    document_id=document.id,
+                    basket_name=self.name,
+                    document_name=document_name,
+                    file_ext=file_ext,
+                    tenant_id=tenant_id,
+                    existing_prefix=None,
+                    storage_type=storage_type  # Use basket's storage type
+                )
+            
+            # Use the path built from IDs (ensures consistency)
+            # This ensures all operations use paths built from IDs, not stored paths
             return Document(
                 id=document.id,
                 name=document.name,
-                path=document.path,
+                path=full_path,  # Use path built from IDs, not stored path
                 content_type=document.content_type,
                 document_type=document.document_type,
                 size=document.size,
@@ -1082,7 +1280,9 @@ class DocBasket:
     
     def delete_document(self, document_id: int) -> None:
         """
-        Delete a document
+        Delete a document by document_id.
+        
+        All operations center around document_id - path is built from ID.
         
         Args:
             document_id: Document ID
@@ -1091,6 +1291,50 @@ class DocBasket:
             document = session.get(DocumentModel, document_id)
             if document is None:
                 raise ValueError(f"Document with ID {document_id} not found")
+            
+            # Build full path from IDs to ensure we delete the correct file
+            # This ensures consistency: all operations use IDs, paths are built internally
+            tenant_id = self._extract_tenant_id()
+            document_name = self._get_readable_document_name(document, None, None)
+            file_ext = Path(document.name).suffix if document.name else ''
+            
+            # Build full path using DocEXPathBuilder (centers around IDs)
+            # Check if storage_config has existing prefix to avoid duplication
+            existing_prefix = None
+            # Use property to get storage type (validates it exists and is valid)
+            storage_type = self.storage_type
+            if storage_type == 's3':
+                existing_prefix = self.storage_config.get('s3', {}).get('prefix', '')
+                if existing_prefix:
+                    # Check if prefix already includes the basket path
+                    from docex.utils.s3_prefix_builder import sanitize_basket_name
+                    basket_id_suffix = self.id.replace('bas_', '')[-4:] if self.id.startswith('bas_') else self.id[-4:]
+                    sanitized_name = sanitize_basket_name(self.name)
+                    expected_basket_path = f"{sanitized_name}_{basket_id_suffix}"
+                    if expected_basket_path not in existing_prefix:
+                        existing_prefix = None
+            
+            full_path = self.path_builder.build_document_path(
+                basket_id=self.id,
+                document_id=document.id,
+                basket_name=self.name,
+                document_name=document_name,
+                file_ext=file_ext,
+                tenant_id=tenant_id,
+                existing_prefix=existing_prefix,
+                storage_type=storage_type  # Use basket's storage type
+            )
+            
+            # Delete from storage using full path built from IDs
+            if self.storage_service:
+                try:
+                    # Get the underlying storage and delete using full path
+                    storage = self.storage_service.storage
+                    storage.delete(full_path)
+                except Exception as e:
+                    logger.warning(f"Failed to delete document from storage at {full_path}: {e}")
+            
+            # Delete from database
             session.delete(document)
             session.commit()
     
@@ -1110,8 +1354,26 @@ class DocBasket:
             session.delete(self.model)
             session.commit()
             
-            # Clean up storage
-            self.storage_service.cleanup()
+            # Clean up storage - build basket path from IDs
+            tenant_id = self._extract_tenant_id()
+            # Check if storage_config has existing prefix to avoid duplication
+            existing_prefix = None
+            # Use property to get storage type (validates it exists and is valid)
+            storage_type = self.storage_type
+            if storage_type == 's3':
+                existing_prefix = self.storage_config.get('s3', {}).get('prefix', '')
+            
+            basket_path = self.path_builder.build_basket_path(
+                basket_id=self.id,
+                basket_name=self.name,
+                tenant_id=tenant_id,
+                existing_prefix=existing_prefix,
+                storage_type=storage_type  # Use basket's storage type
+            )
+            # For S3, ensure path ends with / for cleanup
+            if self.storage_type == 's3':
+                basket_path = basket_path.rstrip('/') + '/'
+            self.storage_service.cleanup(basket_path)
     
     def get_stats(self) -> Dict[str, Any]:
         """Get basket statistics"""

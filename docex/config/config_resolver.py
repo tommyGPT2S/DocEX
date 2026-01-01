@@ -32,48 +32,63 @@ class ConfigResolver:
         """
         Resolve S3 prefix for a tenant.
         
-        Constructs S3 prefix from configuration templates:
-        - {app_name}/{prefix}/tenant_{tenant_id}/  (if prefix provided)
-        - {app_name}/tenant_{tenant_id}/            (if prefix not provided)
+        Constructs S3 prefix with tenant_id FIRST for better tenant isolation:
+        - {tenant_id}/{path_namespace}/{prefix}/  (if prefix provided)
+        - {tenant_id}/{path_namespace}/            (if prefix not provided)
         
         All parts come from config.yaml except tenant_id.
         
-        Rationale:
-        - app_name: Business identifier (organization, business unit, or deployment name)
-                    Required for multi-application deployments and S3 bucket organization
+        Rationale for tenant_id first:
+        - Better tenant isolation: All tenant data is grouped together
+        - Easier IAM policies: Can grant access to specific tenant paths
+        - Better cost tracking: Can track costs per tenant easily
+        - Easier cleanup: Can delete all data for a tenant in one operation
+        
+        Configuration:
+        - tenant_id: Tenant identifier (runtime parameter, simplified - no "tenant_" prefix)
+                     Example: "acme_corp", "contoso", "tenant_001"
+        - path_namespace: Business identifier (organization, business unit, or deployment name)
+                          Optional, for multi-application deployments
+                          Example: "acme-corp", "finance-department", "production-instance"
         - prefix: Environment-level namespace (optional, e.g., "production", "staging", "dev")
         
         Examples:
-        - With prefix: "acme-corp/production/tenant_acme/"
-        - Without prefix: "acme-corp/tenant_acme/"
+        - With prefix: "acme_corp/acme-corp/production/" 
+          (tenant_id="acme_corp", path_namespace="acme-corp", prefix="production")
+        - Without prefix: "acme_corp/acme-corp/"
+          (tenant_id="acme_corp", path_namespace="acme-corp")
+        - Without path_namespace: "acme_corp/production/"
+          (tenant_id="acme_corp", prefix="production")
+        - Minimal: "acme_corp/"
+          (tenant_id="acme_corp" only)
         
         Args:
-            tenant_id: Tenant identifier (only runtime parameter)
+            tenant_id: Tenant identifier (only runtime parameter, required)
             
         Returns:
-            S3 prefix string (e.g., "acme-corp/production/tenant_acme/" or "acme-corp/tenant_acme/")
+            S3 prefix string (e.g., "acme_corp/acme-corp/production/" or "acme_corp/acme-corp/")
         """
         storage_config = self.config.get('storage', {})
         s3_config = storage_config.get('s3', {})
         
-        # Get app_name and prefix from config
-        app_name = s3_config.get('app_name', '').strip('/')
+        # Get path_namespace and prefix from config
+        path_namespace = s3_config.get('path_namespace', '').strip('/')
         prefix = s3_config.get('prefix', '').strip('/')
         
-        # Validate app_name is provided (required for S3)
-        if not app_name:
-            logger.warning("app_name not provided in S3 config. Using empty app_name prefix.")
-        
-        # Build prefix parts
+        # Build prefix parts with tenant_id FIRST
         prefix_parts = []
-        if app_name:
-            prefix_parts.append(app_name)
-        if prefix:  # prefix is optional
-            prefix_parts.append(prefix)
         
-        # Add tenant_id (only runtime parameter)
+        # 1. tenant_id FIRST (required, runtime parameter)
         if tenant_id:
-            prefix_parts.append(f"tenant_{tenant_id}")
+            prefix_parts.append(tenant_id)
+        
+        # 2. path_namespace (optional, from config)
+        if path_namespace:
+            prefix_parts.append(path_namespace)
+        
+        # 3. prefix (optional, from config)
+        if prefix:
+            prefix_parts.append(prefix)
         
         # Join and ensure trailing slash
         full_prefix = '/'.join(prefix_parts)
@@ -139,11 +154,52 @@ class ConfigResolver:
         logger.debug(f"Resolved DB path for tenant '{tenant_id}': {db_path}")
         return db_path
     
+    def resolve_s3_bucket_name(self) -> str:
+        """
+        Resolve S3 bucket name from configuration.
+        
+        Resolution order:
+        1. Use 'bucket' if explicitly provided
+        2. Build from 'bucket_application' if provided: {bucket_application}-documents-bucket
+        3. Raise error if neither is provided
+        
+        Returns:
+            S3 bucket name
+            
+        Raises:
+            ValueError: If neither bucket nor bucket_application is provided
+        """
+        storage_config = self.config.get('storage', {})
+        s3_config = storage_config.get('s3', {})
+        
+        # Check for explicit bucket name
+        bucket = s3_config.get('bucket')
+        if bucket:
+            return bucket
+        
+        # Build bucket name from bucket_application
+        bucket_application = s3_config.get('bucket_application')
+        if bucket_application:
+            # Build bucket name: {bucket_application}-documents-bucket
+            bucket_name = f"{bucket_application}-documents-bucket"
+            logger.debug(f"Resolved S3 bucket name from bucket_application '{bucket_application}': {bucket_name}")
+            return bucket_name
+        
+        # Neither bucket nor bucket_application provided
+        raise ValueError(
+            "S3 bucket name must be specified. Either provide 'bucket' directly, "
+            "or provide 'bucket_application' to build bucket name as '{bucket_application}-documents-bucket'"
+        )
+    
     def get_storage_config_for_tenant(self, tenant_id: str) -> Dict[str, Any]:
         """
-        Get storage configuration for a tenant with tenant-aware prefix.
+        Get storage configuration for a tenant with tenant-aware prefix and bucket name.
         
-        For S3 storage, automatically includes tenant_id in prefix.
+        For S3 storage:
+        - Resolves bucket name from 'bucket' or 'bucket_application'
+        - Automatically includes tenant_id in prefix using 'path_namespace' (NOT bucket_application)
+        - path_namespace is used for path prefix, bucket_application is used for bucket name
+        
         For filesystem storage, returns as-is.
         
         Args:
@@ -159,15 +215,20 @@ class ConfigResolver:
             # Get S3 config
             s3_config = storage_config.get('s3', {}).copy()
             
-            # Resolve tenant-aware prefix
+            # Resolve bucket name (from bucket or bucket_application)
+            bucket_name = self.resolve_s3_bucket_name()
+            s3_config['bucket'] = bucket_name
+            
+            # Resolve tenant-aware prefix (uses path_namespace, NOT bucket_application)
             tenant_prefix = self.resolve_s3_prefix(tenant_id)
             
             # Update prefix in config
-            # The resolved prefix already includes app_name, base prefix, and tenant_id
-            # So we set prefix to the full resolved prefix and clear app_name to avoid duplication
+            # The resolved prefix already includes path_namespace, base prefix, and tenant_id
+            # So we set prefix to the full resolved prefix and clear path_namespace to avoid duplication
             s3_config['prefix'] = tenant_prefix.rstrip('/')
-            # Clear app_name since it's already in the prefix
-            s3_config.pop('app_name', None)
+            # Clear path_namespace since it's already in the prefix
+            s3_config.pop('path_namespace', None)
+            # Keep bucket_application in config (it's used for bucket name, not path)
             
             storage_config['s3'] = s3_config
         elif storage_type == 'filesystem':
