@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: docex-test-postgres
+    environment:
+      POSTGRES_USER: docex_test
+      POSTGRES_PASSWORD: docex_test_password
+      POSTGRES_DB: docex_test
+    ports:
+      - "5433:5432"  # Use 5433 to avoid conflict with local PostgreSQL
+    volumes:
+      - postgres_test_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U docex_test -d docex_test"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - docex-test-network
+
+volumes:
+  postgres_test_data:
+
+networks:
+  docex-test-network:
+    driver: bridge
+

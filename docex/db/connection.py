@@ -165,19 +165,24 @@ class Database:
                     # PostgreSQL configuration
                     from urllib.parse import quote_plus
                     
-                    host = db_config.get('host', 'localhost')
-                    port = db_config.get('port', 5432)
-                    database = db_config.get('database', 'docex')
-                    user = db_config.get('user', 'postgres')
-                    password = db_config.get('password', '')
+                    # Get PostgreSQL-specific config (nested under 'postgres' key)
+                    postgres_config = db_config.get('postgres', {})
+                    
+                    host = postgres_config.get('host', db_config.get('host', 'localhost'))
+                    port = postgres_config.get('port', db_config.get('port', 5432))
+                    database = postgres_config.get('database', db_config.get('database', 'docex'))
+                    user = postgres_config.get('user', db_config.get('user', 'postgres'))
+                    password = postgres_config.get('password', db_config.get('password', ''))
                     
                     # URL-encode user and password to handle special characters
                     user_encoded = quote_plus(user)
                     password_encoded = quote_plus(password)
                     
                     # Create PostgreSQL engine with properly encoded credentials
-                    # Add SSL mode for RDS connections (required for AWS RDS)
-                    connection_url = f'postgresql://{user_encoded}:{password_encoded}@{host}:{port}/{database}?sslmode=require'
+                    # SSL mode: prefer (use SSL if available, otherwise allow non-SSL)
+                    # This works for both local Docker (no SSL) and AWS RDS (with SSL)
+                    sslmode = postgres_config.get('sslmode', 'prefer')
+                    connection_url = f'postgresql://{user_encoded}:{password_encoded}@{host}:{port}/{database}?sslmode={sslmode}'
                     self.engine = create_engine(
                         connection_url,
                         poolclass=QueuePool,

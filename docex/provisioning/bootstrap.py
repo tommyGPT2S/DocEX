@@ -264,6 +264,11 @@ class BootstrapTenantManager:
         created_by: str
     ) -> TenantRegistry:
         """Register bootstrap tenant in tenant registry."""
+        # Ensure TenantRegistry table schema is None (uses search_path)
+        # This is important because the table schema might have been set during tenant schema creation
+        if TenantRegistry.__table__.schema is not None:
+            TenantRegistry.__table__.schema = None
+        
         with self.db.session() as session:
             bootstrap_tenant = TenantRegistry(
                 tenant_id=BOOTSTRAP_TENANT_ID,

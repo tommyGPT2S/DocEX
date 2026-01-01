@@ -32,6 +32,9 @@ class TenantRegistry(Base):
         last_updated_by: User ID who last updated the tenant
     """
     __tablename__ = 'tenant_registry'
+    # Note: Schema is determined by the database connection's search_path
+    # For PostgreSQL, the search_path is set to the bootstrap tenant's schema
+    # For SQLite, the table is in the bootstrap tenant's database file
     
     # Primary key
     tenant_id = Column(String(255), primary_key=True)

@@ -126,9 +126,11 @@ class DocEXConfig:
             if 'type' not in db_config:
                 raise RuntimeError("Database type not specified")
             
-            if db_config['type'] in ['postgres']:
+            if db_config['type'] in ['postgres', 'postgresql']:
+                # PostgreSQL config is nested under 'postgres' key
+                postgres_config = db_config.get('postgres', {})
                 required_fields = ['user', 'password', 'host', 'port', 'database']
-                missing_fields = [field for field in required_fields if field not in db_config]
+                missing_fields = [field for field in required_fields if field not in postgres_config]
                 if missing_fields:
                     raise RuntimeError(f"Missing required PostgreSQL configuration fields: {', '.join(missing_fields)}")
             elif db_config['type'] == 'sqlite':

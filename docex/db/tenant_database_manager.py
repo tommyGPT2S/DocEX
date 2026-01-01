@@ -89,11 +89,13 @@ class TenantDatabaseManager:
             return self._tenant_engines[tenant_id]
         
         # For v3.0 multi-tenancy, validate tenant exists in registry
-        # Skip validation for v2.x default tenant 'docex_first_tenant' to avoid recursion
+        # Skip validation for:
+        # - v2.x default tenant 'docex_first_tenant' (to avoid recursion)
+        # - bootstrap tenant '_docex_system_' (during initialization, it doesn't exist yet)
         multi_tenancy_config = self.config.get('multi_tenancy', {})
         multi_tenancy_enabled = multi_tenancy_config.get('enabled', False)
         
-        if multi_tenancy_enabled and tenant_id != 'docex_first_tenant':
+        if multi_tenancy_enabled and tenant_id not in ['docex_first_tenant', '_docex_system_']:
             self._validate_tenant_provisioned(tenant_id)
         
         # Create engine for tenant (thread-safe)
@@ -190,7 +192,8 @@ class TenantDatabaseManager:
             cursor.close()
         
         # Initialize schema for tenant
-        self._initialize_tenant_schema(engine, tenant_id)
+        # Exclude tenant_registry table from tenant databases (it only exists in bootstrap database)
+        self._initialize_tenant_schema(engine, tenant_id, exclude_tables=['tenant_registry'])
         
         return engine
     
@@ -215,15 +218,26 @@ class TenantDatabaseManager:
         password = postgres_config.get('password', '')
         
         # Resolve schema name using explicit resolver (all config from config.yaml)
-        from docex.db.schema_resolver import SchemaResolver
-        schema_resolver = SchemaResolver(self.config)
-        schema_name = schema_resolver.resolve_schema_name(tenant_id)
+        # Special handling for bootstrap tenant - use configured schema name, not template
+        multi_tenancy_config = self.config.get('multi_tenancy', {})
+        multi_tenancy_enabled = multi_tenancy_config.get('enabled', False)
+        
+        if multi_tenancy_enabled and tenant_id == '_docex_system_':
+            # Bootstrap tenant uses configured schema name, not template
+            bootstrap_config = multi_tenancy_config.get('bootstrap_tenant', {})
+            schema_name = bootstrap_config.get('schema', 'docex_system')
+        else:
+            from docex.db.schema_resolver import SchemaResolver
+            schema_resolver = SchemaResolver(self.config)
+            schema_name = schema_resolver.resolve_schema_name(tenant_id)
         
         # Create connection URL with URL-encoded credentials
         from urllib.parse import quote_plus
         user_encoded = quote_plus(user)
         password_encoded = quote_plus(password)
-        connection_url = f'postgresql://{user_encoded}:{password_encoded}@{host}:{port}/{database}?sslmode=require'
+        # SSL mode: prefer (use SSL if available, otherwise allow non-SSL)
+        sslmode = postgres_config.get('sslmode', 'prefer')
+        connection_url = f'postgresql://{user_encoded}:{password_encoded}@{host}:{port}/{database}?sslmode={sslmode}'
         
         # Create engine with schema in search_path
         engine = create_engine(
@@ -248,7 +262,8 @@ class TenantDatabaseManager:
         
         # Create schema and initialize for tenant
         self._create_postgres_schema(engine, schema_name, tenant_id)
-        self._initialize_tenant_schema(engine, tenant_id, schema_name)
+        # Exclude tenant_registry table from tenant schemas (it only exists in bootstrap schema)
+        self._initialize_tenant_schema(engine, tenant_id, schema_name, exclude_tables=['tenant_registry'])
         
         return engine
     
@@ -272,7 +287,7 @@ class TenantDatabaseManager:
             logger.error(f"Failed to create schema {schema_name} for tenant {tenant_id}: {e}")
             raise
     
-    def _initialize_tenant_schema(self, engine: Any, tenant_id: str, schema_name: Optional[str] = None) -> None:
+    def _initialize_tenant_schema(self, engine: Any, tenant_id: str, schema_name: Optional[str] = None, exclude_tables: Optional[list] = None) -> None:
         """
         Initialize database schema for tenant (create tables).
         
@@ -280,20 +295,25 @@ class TenantDatabaseManager:
             engine: SQLAlchemy engine
             tenant_id: Tenant identifier
             schema_name: Schema name for tenant (e.g., "tenant_tenant1")
+            exclude_tables: Optional list of table names to exclude from creation
         """
+        exclude_tables = exclude_tables or []
         try:
             # For PostgreSQL, set schema on all tables and ENUM types before creating
             # This ensures ENUM types and tables are created in the tenant schema, not public
             if schema_name:
-                # Set schema on all Base tables
-                for table in Base.metadata.tables.values():
-                    table.schema = schema_name
+                # Set schema on all Base tables (except excluded ones)
+                # Also exclude tenant_registry from schema assignment - it should always use search_path
+                for table_name, table in Base.metadata.tables.items():
+                    if table_name not in exclude_tables and table_name != 'tenant_registry':
+                        table.schema = schema_name
                 
                 # Set schema on all TransportBase tables if available
                 try:
                     from docex.transport.models import TransportBase
-                    for table in TransportBase.metadata.tables.values():
-                        table.schema = schema_name
+                    for table_name, table in TransportBase.metadata.tables.items():
+                        if table_name not in exclude_tables and table_name != 'tenant_registry':
+                            table.schema = schema_name
                 except ImportError:
                     pass
                 
@@ -301,11 +321,11 @@ class TenantDatabaseManager:
                 # PostgreSQL ENUM types must have schema set explicitly
                 from sqlalchemy.dialects.postgresql import ENUM
                 
-                # Collect all tables (Base + TransportBase)
-                all_tables = list(Base.metadata.tables.values())
+                # Collect all tables (Base + TransportBase), excluding specified tables
+                all_tables = [t for name, t in Base.metadata.tables.items() if name not in exclude_tables]
                 try:
                     from docex.transport.models import TransportBase
-                    all_tables.extend(list(TransportBase.metadata.tables.values()))
+                    all_tables.extend([t for name, t in TransportBase.metadata.tables.items() if name not in exclude_tables])
                 except ImportError:
                     pass
                 
