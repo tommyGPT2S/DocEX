@@ -43,7 +43,10 @@ class DocEXConfig:
     @classmethod
     def setup(cls, **kwargs) -> None:
         """
-        Set up DocEX configuration
+        Set up DocEX configuration.
+        
+        NOTE: In DocEX 3.0, configuration should primarily be managed via config.yaml file.
+        This method is provided for backward compatibility and initial setup only.
         
         Args:
             database: Database configuration
@@ -60,16 +63,17 @@ class DocEXConfig:
             logging: Logging configuration
                 - level: Logging level
                 - file: Path to log file
+            storage: Storage configuration
+            multi_tenancy: Multi-tenancy configuration
         """
         instance = cls()
         
-        # Deep update database configuration
-        if 'database' in kwargs:
-            instance._update_config_recursive(instance.config['database'], kwargs['database'])
-        
-        # Deep update logging configuration
-        if 'logging' in kwargs:
-            instance._update_config_recursive(instance.config['logging'], kwargs['logging'])
+        # Deep update all provided configuration sections
+        for section in ['database', 'logging', 'storage', 'multi_tenancy', 'security', 'app']:
+            if section in kwargs:
+                if section not in instance.config:
+                    instance.config[section] = {}
+                instance._update_config_recursive(instance.config[section], kwargs[section])
         
         # Ensure configuration directory exists
         config_dir = instance.config_file.parent

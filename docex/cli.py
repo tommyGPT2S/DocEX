@@ -104,6 +104,23 @@ def init(config, force, db_type, db_path, db_host, db_port, db_name, db_user, db
         
         click.echo(f'DEBUG: Config before setup: {user_config}')
         
+        # Ensure multi-tenancy config exists with defaults
+        if 'multi_tenancy' not in user_config:
+            user_config['multi_tenancy'] = {
+                'enabled': False,
+                'isolation_strategy': 'schema' if db_type == 'postgresql' else 'database',
+                'bootstrap_tenant': {
+                    'id': '_docex_system_',
+                    'display_name': 'DocEX System',
+                    'schema': 'docex_system',
+                    'database_path': 'storage/_docex_system_/docex.db'
+                }
+            }
+        
+        # Add config_version if not present
+        if 'config_version' not in user_config:
+            user_config['config_version'] = 1
+        
         # Initialize DocEX
         DocEX.setup(**user_config)
         
@@ -126,6 +143,21 @@ def init(config, force, db_type, db_path, db_host, db_port, db_name, db_user, db
         
         with open(config_path, 'w') as f:
             yaml.dump(safe_config, f, default_flow_style=False, sort_keys=False)
+        
+        # Initialize bootstrap tenant if multi-tenancy is enabled
+        multi_tenancy_enabled = user_config.get('multi_tenancy', {}).get('enabled', False)
+        if multi_tenancy_enabled:
+            click.echo('\nInitializing bootstrap tenant...')
+            try:
+                from docex.provisioning.bootstrap import BootstrapTenantManager
+                bootstrap_manager = BootstrapTenantManager()
+                bootstrap_tenant = bootstrap_manager.initialize(created_by="system")
+                click.echo(f'  ✅ Bootstrap tenant created: {bootstrap_tenant.tenant_id}')
+                click.echo(f'  Display Name: {bootstrap_tenant.display_name}')
+                click.echo(f'  Isolation Strategy: {bootstrap_tenant.isolation_strategy}')
+            except Exception as e:
+                click.echo(f'  ❌ Failed to initialize bootstrap tenant: {str(e)}', err=True)
+                raise click.Abort()
         
         # Create DocEX instance for verification
         docex = DocEX()
@@ -220,6 +252,82 @@ def init(config, force, db_type, db_path, db_host, db_port, db_name, db_user, db
         
     except Exception as e:
         click.echo(f'Error initializing DocEX: {str(e)}', err=True)
+        raise click.Abort()
+
+@cli.group()
+def tenant():
+    """Manage tenants (DocEX 3.0 multi-tenancy)"""
+    pass
+
+@tenant.command('create')
+@click.option('--tenant-id', required=True, help='Unique identifier for the tenant')
+@click.option('--display-name', required=True, help='Human-readable name for the tenant')
+@click.option('--created-by', default='cli_user', help='User ID who is creating the tenant')
+@click.option('--isolation-strategy', type=click.Choice(['schema', 'database']), help='Isolation strategy (auto-detected if not specified)')
+def create_tenant(tenant_id, display_name, created_by, isolation_strategy):
+    """Create a new tenant"""
+    try:
+        from docex.provisioning.tenant_provisioner import TenantProvisioner, TenantExistsError, InvalidTenantIdError
+        
+        click.echo(f"Provisioning tenant: {tenant_id}...")
+        
+        provisioner = TenantProvisioner()
+        tenant = provisioner.create(
+            tenant_id=tenant_id,
+            display_name=display_name,
+            created_by=created_by,
+            isolation_strategy=isolation_strategy
+        )
+        
+        click.echo(f"✅ Tenant '{tenant_id}' provisioned successfully!")
+        click.echo(f"  Display Name: {tenant.display_name}")
+        click.echo(f"  Isolation Strategy: {tenant.isolation_strategy}")
+        if tenant.schema_name:
+            click.echo(f"  Schema: {tenant.schema_name}")
+        if tenant.database_path:
+            click.echo(f"  Database: {tenant.database_path}")
+        click.echo(f"  Created At: {tenant.created_at}")
+        click.echo(f"  Created By: {tenant.created_by}")
+        
+    except TenantExistsError as e:
+        click.echo(f"❌ Error: {str(e)}", err=True)
+        raise click.Abort()
+    except InvalidTenantIdError as e:
+        click.echo(f"❌ Error: {str(e)}", err=True)
+        raise click.Abort()
+    except Exception as e:
+        click.echo(f"❌ Error provisioning tenant: {str(e)}", err=True)
+        raise click.Abort()
+
+@tenant.command('list')
+def list_tenants():
+    """List all provisioned tenants"""
+    try:
+        from docex.db.connection import Database
+        from docex.db.tenant_registry_model import TenantRegistry
+        
+        db = Database()
+        with db.session() as session:
+            tenants = session.query(TenantRegistry).order_by(TenantRegistry.created_at).all()
+            
+            if not tenants:
+                click.echo("No tenants provisioned.")
+                return
+            
+            click.echo(f"\nProvisioned Tenants ({len(tenants)}):")
+            click.echo("-" * 80)
+            for tenant in tenants:
+                system_marker = " [SYSTEM]" if tenant.is_system else ""
+                click.echo(f"  {tenant.tenant_id}{system_marker}")
+                click.echo(f"    Display Name: {tenant.display_name}")
+                click.echo(f"    Strategy: {tenant.isolation_strategy}")
+                click.echo(f"    Created: {tenant.created_at} by {tenant.created_by}")
+                if tenant.last_updated_by:
+                    click.echo(f"    Updated: {tenant.last_updated_at} by {tenant.last_updated_by}")
+                click.echo()
+                
+    except Exception as e:
+        click.echo(f"❌ Error listing tenants: {str(e)}", err=True)
         raise click.Abort()
 
 @cli.group()

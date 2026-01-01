@@ -11,7 +11,7 @@ from docex.db.models import Base
 from docex.transport.models import Base as TransportBase
 from docex.transport.transport_result import TransportResult
 from docex.context import UserContext
-from sqlalchemy import inspect
+from sqlalchemy import inspect, text
 from datetime import datetime, timezone
 
 # Configure logging
@@ -94,6 +94,81 @@ class DocEX:
             logger.error(f"Failed to initialize DocEX configuration: {str(e)}")
             return False
     
+    @classmethod
+    def is_properly_setup(cls) -> bool:
+        """
+        Check if DocEX is properly set up and ready for use.
+        
+        This performs comprehensive checks:
+        - Configuration file exists and is valid
+        - Database is accessible
+        - Required tables exist
+        - Bootstrap tenant exists (if multi-tenancy enabled)
+        
+        Returns:
+            True if DocEX is properly set up, False otherwise
+        """
+        try:
+            # Check 1: Configuration exists and is valid
+            if not cls.is_initialized():
+                logger.debug("DocEX not initialized: configuration check failed")
+                return False
+            
+            config = DocEXConfig()
+            
+            # Check 2: Database connectivity
+            try:
+                db = Database()
+                engine = db.get_engine()
+                # Test connection
+                with engine.connect() as conn:
+                    conn.execute(text("SELECT 1"))
+            except Exception as e:
+                logger.debug(f"Database connectivity check failed: {e}")
+                return False
+            
+            # Check 3: Required tables exist
+            try:
+                from sqlalchemy import inspect
+                inspector = inspect(engine)
+                tables = inspector.get_table_names()
+                
+                required_tables = [
+                    'docbasket', 'document', 'document_metadata', 
+                    'file_history', 'operations', 'operation_dependencies',
+                    'doc_events', 'processors', 'processing_operations'
+                ]
+                
+                missing_tables = [t for t in required_tables if t not in tables]
+                if missing_tables:
+                    logger.debug(f"Missing required tables: {missing_tables}")
+                    return False
+            except Exception as e:
+                logger.debug(f"Table existence check failed: {e}")
+                return False
+            
+            # Check 4: Bootstrap tenant exists (if multi-tenancy enabled)
+            multi_tenancy_config = config.get('multi_tenancy', {})
+            multi_tenancy_enabled = multi_tenancy_config.get('enabled', False)
+            
+            if multi_tenancy_enabled:
+                try:
+                    from docex.provisioning.bootstrap import BootstrapTenantManager
+                    bootstrap_manager = BootstrapTenantManager()
+                    if not bootstrap_manager.is_initialized():
+                        logger.debug("Multi-tenancy enabled but bootstrap tenant not initialized")
+                        return False
+                except Exception as e:
+                    logger.debug(f"Bootstrap tenant check failed: {e}")
+                    return False
+            
+            # All checks passed
+            return True
+            
+        except Exception as e:
+            logger.debug(f"Setup check failed: {e}")
+            return False
+    
     def __new__(cls, *args, **kwargs):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
@@ -105,23 +180,62 @@ class DocEX:
         
         Args:
             user_context: Optional user context for user-aware operations and auditing.
-                         If database-level multi-tenancy is enabled, tenant_id from
-                         user_context is used for database routing.
+                         If multi-tenancy is enabled (v3.0), user_context with tenant_id
+                         is REQUIRED. If database-level multi-tenancy is enabled (v2.x),
+                         tenant_id from user_context is used for database routing.
+        
+        Raises:
+            RuntimeError: If DocEX is not initialized
+            ValueError: If multi-tenancy is enabled but user_context is missing or invalid
         """
         if not hasattr(self, 'initialized'):
             if not self.is_initialized():
                 raise RuntimeError("DocEX not initialized. Call 'docex init' to setup first.")
             
-            # Get tenant_id for database routing if multi-tenancy is enabled
-            tenant_id = None
-            if user_context and user_context.tenant_id:
-                # Check if database-level multi-tenancy is enabled
-                config = DocEXConfig()
-                security_config = config.get('security', {})
-                multi_tenancy_model = security_config.get('multi_tenancy_model', 'row_level')
-                if multi_tenancy_model == 'database_level':
+            config = DocEXConfig()
+            
+            # Check for v3.0 multi-tenancy (new format)
+            multi_tenancy_config = config.get('multi_tenancy', {})
+            multi_tenancy_enabled = multi_tenancy_config.get('enabled', False)
+            
+            # Check for v2.x multi-tenancy (legacy format)
+            security_config = config.get('security', {})
+            multi_tenancy_model = security_config.get('multi_tenancy_model', 'row_level')
+            legacy_database_level = multi_tenancy_model == 'database_level'
+            
+            # v3.0 multi-tenancy enforcement
+            if multi_tenancy_enabled:
+                if not user_context:
+                    raise ValueError(
+                        "UserContext is required when multi-tenancy is enabled. "
+                        "Please provide a UserContext with tenant_id."
+                    )
+                
+                if not user_context.tenant_id:
+                    raise ValueError(
+                        "tenant_id is required in UserContext when multi-tenancy is enabled. "
+                        "Please provide a valid tenant_id."
+                    )
+                
+                # Reject bootstrap tenant for business operations
+                if user_context.tenant_id == '_docex_system_':
+                    raise ValueError(
+                        "System tenant '_docex_system_' cannot be used for business operations. "
+                        "Use a provisioned business tenant instead."
+                    )
+                
+                # Validate tenant exists in registry
+                self._validate_tenant_exists(user_context.tenant_id)
+                
+                tenant_id = user_context.tenant_id
+                logger.info(f"DocEX 3.0 multi-tenancy: using tenant {tenant_id}")
+            
+            # v2.x legacy database-level multi-tenancy
+            elif legacy_database_level:
+                tenant_id = None
+                if user_context and user_context.tenant_id:
                     tenant_id = user_context.tenant_id
-                    logger.info(f"Database-level multi-tenancy: routing to tenant {tenant_id}")
+                    logger.info(f"Database-level multi-tenancy (v2.x): routing to tenant {tenant_id}")
             
             # Initialize database with tenant routing if applicable
             self.db = Database(tenant_id=tenant_id)
@@ -148,6 +262,33 @@ class DocEX:
                 
                 self.user_context = user_context
                 logger.info(f"UserContext updated for user {user_context.user_id}")
+    
+    def _validate_tenant_exists(self, tenant_id: str) -> None:
+        """
+        Validate that tenant exists in tenant registry.
+        
+        Args:
+            tenant_id: Tenant identifier to validate
+            
+        Raises:
+            ValueError: If tenant does not exist in registry
+        """
+        try:
+            from docex.db.tenant_registry_model import TenantRegistry
+            
+            with self.db.session() as session:
+                tenant = session.query(TenantRegistry).filter_by(tenant_id=tenant_id).first()
+                if not tenant:
+                    raise ValueError(
+                        f"Tenant '{tenant_id}' not found in tenant registry. "
+                        f"Please provision the tenant first using 'docex tenant create'."
+                    )
+        except ImportError:
+            # Tenant registry not available (v2.x or not initialized)
+            logger.warning("Tenant registry not available - skipping tenant validation")
+        except Exception as e:
+            # If validation fails for other reasons, log but don't fail
+            logger.warning(f"Failed to validate tenant existence: {e}")
     
     @classmethod
     def setup(cls, **config) -> None:

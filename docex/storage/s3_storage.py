@@ -29,11 +29,12 @@ class S3Storage(AbstractStorage):
         Args:
             config: Configuration dictionary with:
                 - bucket: S3 bucket name (required)
+                - app_name: Application name for namespace organization (recommended)
                 - access_key: AWS access key (optional if using IAM/env vars)
                 - secret_key: AWS secret key (optional if using IAM/env vars)
                 - session_token: AWS session token (optional, for temporary credentials)
                 - region: AWS region (default: us-east-1)
-                - prefix: Optional S3 key prefix for organizing files
+                - prefix: Optional S3 key prefix for organizing files (environment, etc.)
                 - max_retries: Maximum retry attempts (default: 3)
                 - retry_delay: Delay between retries in seconds (default: 1.0)
                 - connect_timeout: Connection timeout in seconds (default: 60)
@@ -51,7 +52,21 @@ class S3Storage(AbstractStorage):
         
         # Extract configuration
         self.region = credentials['region']
-        self.prefix = config.get('prefix', '').strip('/')
+        
+        # Build prefix structure: {app_name}/{prefix}/
+        # app_name provides application-level namespace
+        # prefix provides environment/instance-level namespace
+        app_name = config.get('app_name', '').strip('/')
+        prefix = config.get('prefix', '').strip('/')
+        
+        # Construct full prefix
+        prefix_parts = []
+        if app_name:
+            prefix_parts.append(app_name)
+        if prefix:
+            prefix_parts.append(prefix)
+        
+        self.prefix = '/'.join(prefix_parts)
         if self.prefix and not self.prefix.endswith('/'):
             self.prefix += '/'
         
@@ -129,18 +144,31 @@ class S3Storage(AbstractStorage):
         
         return credentials
     
-    def _get_full_key(self, path: str) -> str:
+    def _get_full_key(self, path: str, tenant_id: Optional[str] = None) -> str:
         """
-        Get full S3 key with prefix
+        Get full S3 key with prefix.
+        
+        If tenant_id is provided, it will be included in the prefix.
+        Otherwise, uses the prefix set during initialization.
         
         Args:
             path: Relative path/key
+            tenant_id: Optional tenant identifier for tenant-aware prefix resolution
             
         Returns:
             Full S3 key with prefix
         """
         # Remove leading slash if present
         path = path.lstrip('/')
+        
+        # If tenant_id provided, resolve tenant-aware prefix
+        if tenant_id:
+            from docex.config.config_resolver import ConfigResolver
+            resolver = ConfigResolver()
+            tenant_prefix = resolver.resolve_s3_prefix(tenant_id)
+            return f"{tenant_prefix}{path}" if tenant_prefix else path
+        
+        # Use prefix set during initialization
         return f"{self.prefix}{path}" if self.prefix else path
     
     def _retry_on_error(self, func, *args, **kwargs):

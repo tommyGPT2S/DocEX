@@ -5,8 +5,8 @@ database:
   # SQLite configuration
   sqlite:
     path: docex.db
-    # For database-level multi-tenancy (Model B):
-    # path_template: "storage/tenant_{tenant_id}/docex.db"
+    # Path template for multi-tenancy (tenant_id is resolved at runtime)
+    path_template: "storage/tenant_{tenant_id}/docex.db"
     
   # PostgreSQL configuration
   postgres:
@@ -15,8 +15,8 @@ database:
     database: docex
     user: postgres
     password: postgres
-    # For database-level multi-tenancy (Model B):
-    # schema_template: "tenant_{tenant_id}"  # Schema name pattern per tenant
+    # Schema template for multi-tenancy (tenant_id is resolved at runtime)
+    schema_template: "tenant_{tenant_id}"  # Schema name pattern per tenant
     
   # Common settings
   echo: true  # Enable SQL query logging
@@ -28,6 +28,7 @@ database:
 # Security and multi-tenancy configuration
 security:
   # Multi-tenancy model: "row_level" (Model A) or "database_level" (Model B)
+  # Note: v3.0 uses 'multi_tenancy' section below instead
   multi_tenancy_model: row_level
   
   # Enable automatic database routing based on tenant_id (for database_level model)
@@ -37,6 +38,21 @@ security:
   enforce_user_context: false
   context_match_fields:
     - tenant_id
+
+# DocEX 3.0 Multi-tenancy Configuration
+multi_tenancy:
+  # Enable v3.0 explicit multi-tenancy (requires explicit tenant provisioning)
+  enabled: false
+  
+  # Isolation strategy: 'schema' (PostgreSQL) or 'database' (SQLite)
+  isolation_strategy: schema
+  
+  # Bootstrap tenant configuration
+  bootstrap_tenant:
+    id: _docex_system_
+    display_name: DocEX System
+    schema: docex_system  # PostgreSQL schema name
+    database_path: storage/_docex_system_/docex.db  # SQLite database path
 
 # Application settings
 app:
@@ -49,6 +65,15 @@ storage:
   type: filesystem
   filesystem:
     path: storage/docex
+  
+  # S3 storage configuration (when type: s3)
+  s3:
+    bucket: my-documents-bucket  # Required: S3 bucket name
+    app_name: docex              # Application namespace
+    prefix: production            # Optional: Environment prefix (e.g., dev, staging, production)
+    region: us-east-1
+    # Note: tenant_id is automatically added to prefix at runtime
+    # Final prefix structure: {app_name}/{prefix}/tenant_{tenant_id}/
 
 logging:
   level: DEBUG
