@@ -204,14 +204,32 @@ class DocBasket:
                                 del storage_config[key]
                     
                     # Use path resolver for consistent S3 prefix construction
+                    # Check if prefix already contains tenant-aware path (from get_storage_config_for_tenant)
+                    existing_prefix = storage_config.get('s3', {}).get('prefix', '')
+                    
                     if tenant_id:
-                        # Get tenant-aware basket prefix from resolver
-                        basket_prefix = path_resolver.resolve_s3_basket_prefix(tenant_id, basket_model.id)
-                        storage_config['s3']['prefix'] = basket_prefix.rstrip('/')
+                        # Check if existing prefix already contains the correct tenant_id
+                        expected_tenant_in_prefix = f"tenant_{tenant_id}"
+                        if existing_prefix and expected_tenant_in_prefix in existing_prefix:
+                            # Prefix already has correct tenant - just add basket suffix if not present
+                            if f"baskets/{basket_model.id}" not in existing_prefix:
+                                # Add basket suffix to existing tenant-aware prefix
+                                storage_config['s3']['prefix'] = f"{existing_prefix.rstrip('/')}/baskets/{basket_model.id}/"
+                            # else: prefix already has basket, keep it as is
+                        else:
+                            # Prefix doesn't have correct tenant_id or is empty - use resolver
+                            # This can happen if prefix was set incorrectly or tenant_id doesn't match
+                            logger.debug(f"Prefix '{existing_prefix}' doesn't contain 'tenant_{tenant_id}', resolving with path_resolver")
+                            basket_prefix = path_resolver.resolve_s3_basket_prefix(tenant_id, basket_model.id)
+                            storage_config['s3']['prefix'] = basket_prefix.rstrip('/')
                     else:
                         # Fallback for non-multi-tenant: use baskets/ prefix
-                        if 'prefix' not in storage_config.get('s3', {}):
-                            storage_config['s3']['prefix'] = f"baskets/{basket_model.id}/"
+                        if not existing_prefix or 'baskets' not in existing_prefix:
+                            if not existing_prefix:
+                                storage_config['s3']['prefix'] = f"baskets/{basket_model.id}/"
+                            else:
+                                # Add basket to existing prefix
+                                storage_config['s3']['prefix'] = f"{existing_prefix.rstrip('/')}/baskets/{basket_model.id}/"
                 
                 # Update the storage config
                 basket_model.storage_config = json.dumps(storage_config)
