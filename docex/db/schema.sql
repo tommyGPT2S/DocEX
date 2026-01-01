@@ -103,7 +103,6 @@ CREATE TABLE IF NOT EXISTS document_metadata (
 CREATE INDEX IF NOT EXISTS idx_documents_basket_id ON documents(basket_id);
 CREATE INDEX IF NOT EXISTS idx_documents_document_type ON documents(document_type);
 CREATE INDEX IF NOT EXISTS idx_documents_status ON documents(status);
-CREATE INDEX IF NOT EXISTS idx_documents_related_po ON documents(related_po);
 CREATE INDEX IF NOT EXISTS idx_file_history_document_id ON file_history(document_id);
 CREATE INDEX IF NOT EXISTS idx_operations_document_id ON operations(document_id);
 CREATE INDEX IF NOT EXISTS idx_operations_operation_type ON operations(operation_type);
