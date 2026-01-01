@@ -76,13 +76,29 @@ class BootstrapTenantManager:
             True if bootstrap tenant exists in registry, False otherwise
         """
         try:
-            with self.db.session() as session:
-                tenant = session.query(TenantRegistry).filter_by(
-                    tenant_id=BOOTSTRAP_TENANT_ID
-                ).first()
-                return tenant is not None
+            # For v3.0 multi-tenancy, we need to check the bootstrap tenant's database/schema
+            # not the default database
+            multi_tenancy_config = self.config.get('multi_tenancy', {})
+            multi_tenancy_enabled = multi_tenancy_config.get('enabled', False)
+            
+            if multi_tenancy_enabled:
+                # Use bootstrap tenant's database connection
+                bootstrap_tenant_id = multi_tenancy_config.get('bootstrap_tenant', {}).get('id', '_docex_system_')
+                bootstrap_db = Database(config=self.config, tenant_id=bootstrap_tenant_id)
+                with bootstrap_db.session() as session:
+                    tenant = session.query(TenantRegistry).filter_by(
+                        tenant_id=BOOTSTRAP_TENANT_ID
+                    ).first()
+                    return tenant is not None
+            else:
+                # For v2.x or single-tenant, use default database
+                with self.db.session() as session:
+                    tenant = session.query(TenantRegistry).filter_by(
+                        tenant_id=BOOTSTRAP_TENANT_ID
+                    ).first()
+                    return tenant is not None
         except Exception as e:
-            # If table doesn't exist yet, bootstrap is not initialized
+            # If table doesn't exist yet or database doesn't exist, bootstrap is not initialized
             logger.debug(f"Error checking bootstrap tenant: {e}")
             return False
     
@@ -107,10 +123,22 @@ class BootstrapTenantManager:
         """
         if self.is_initialized():
             logger.info("Bootstrap tenant already initialized")
-            with self.db.session() as session:
-                return session.query(TenantRegistry).filter_by(
-                    tenant_id=BOOTSTRAP_TENANT_ID
-                ).first()
+            # Use bootstrap tenant's database connection for v3.0
+            multi_tenancy_config = self.config.get('multi_tenancy', {})
+            multi_tenancy_enabled = multi_tenancy_config.get('enabled', False)
+            
+            if multi_tenancy_enabled:
+                bootstrap_tenant_id = multi_tenancy_config.get('bootstrap_tenant', {}).get('id', '_docex_system_')
+                bootstrap_db = Database(config=self.config, tenant_id=bootstrap_tenant_id)
+                with bootstrap_db.session() as session:
+                    return session.query(TenantRegistry).filter_by(
+                        tenant_id=BOOTSTRAP_TENANT_ID
+                    ).first()
+            else:
+                with self.db.session() as session:
+                    return session.query(TenantRegistry).filter_by(
+                        tenant_id=BOOTSTRAP_TENANT_ID
+                    ).first()
         
         logger.info("Initializing bootstrap tenant...")
         

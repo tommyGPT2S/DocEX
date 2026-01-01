@@ -56,14 +56,20 @@ class Database:
         self.engine = None
         self.Session = None
         
-        # Check if database-level multi-tenancy is enabled
+        # Check if database-level multi-tenancy is enabled (v2.x)
         security_config = self.config.get('security', {})
         self.multi_tenancy_model = security_config.get('multi_tenancy_model', 'row_level')
         self.tenant_database_routing = security_config.get('tenant_database_routing', False)
         
-        # In database-level multi-tenancy mode, tenant_id is required
-        if self.multi_tenancy_model == 'database_level':
-            if not tenant_id:
+        # Check if v3.0 multi-tenancy is enabled
+        multi_tenancy_config = self.config.get('multi_tenancy', {})
+        v3_multi_tenancy_enabled = multi_tenancy_config.get('enabled', False)
+        
+        # Use TenantDatabaseManager if:
+        # 1. v2.x database-level multi-tenancy is enabled, OR
+        # 2. v3.0 multi-tenancy is enabled AND tenant_id is provided
+        if self.multi_tenancy_model == 'database_level' or (v3_multi_tenancy_enabled and tenant_id):
+            if self.multi_tenancy_model == 'database_level' and not tenant_id:
                 raise ValueError(
                     "tenant_id is required when database-level multi-tenancy is enabled. "
                     "Please provide tenant_id when creating Database instance, or ensure "

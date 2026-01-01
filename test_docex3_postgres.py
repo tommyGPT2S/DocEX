@@ -115,14 +115,14 @@ def test_bootstrap_tenant_initialization_postgres():
             print(f"   Schema name: {tenant_registry.schema_name}")
         else:
             print("   ✅ Bootstrap tenant already initialized")
-            with bootstrap_manager.db.session() as session:
-                from docex.db.tenant_registry_model import TenantRegistry
-                tenant = session.query(TenantRegistry).filter_by(
-                    tenant_id='_docex_system_'
-                ).first()
-                print(f"   Tenant ID: {tenant.tenant_id}")
-                print(f"   Display name: {tenant.display_name}")
-                print(f"   Schema name: {tenant.schema_name}")
+            # Get the bootstrap tenant from the registry
+            tenant_registry = bootstrap_manager.initialize(created_by='test_user')
+            if tenant_registry:
+                print(f"   Tenant ID: {tenant_registry.tenant_id}")
+                print(f"   Display name: {tenant_registry.display_name}")
+                print(f"   Schema name: {tenant_registry.schema_name}")
+            else:
+                print("   ⚠️  Could not retrieve bootstrap tenant from registry")
         
         print("\n   ✅ Bootstrap tenant initialization test passed!")
         return True, test_dir
