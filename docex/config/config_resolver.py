@@ -33,15 +33,24 @@ class ConfigResolver:
         Resolve S3 prefix for a tenant.
         
         Constructs S3 prefix from configuration templates:
-        - {app_name}/{prefix}/{tenant_id}/
+        - {app_name}/{prefix}/tenant_{tenant_id}/  (if prefix provided)
+        - {app_name}/tenant_{tenant_id}/            (if prefix not provided)
         
         All parts come from config.yaml except tenant_id.
+        
+        Rationale:
+        - app_name: Application-level namespace (required for multi-application deployments)
+        - prefix: Environment-level namespace (optional, e.g., "production", "staging", "dev")
+        
+        Examples:
+        - With prefix: "docex/production/tenant_acme/"
+        - Without prefix: "docex/tenant_acme/"
         
         Args:
             tenant_id: Tenant identifier (only runtime parameter)
             
         Returns:
-            S3 prefix string (e.g., "docex/production/tenant_acme/")
+            S3 prefix string (e.g., "docex/production/tenant_acme/" or "docex/tenant_acme/")
         """
         storage_config = self.config.get('storage', {})
         s3_config = storage_config.get('s3', {})
@@ -50,11 +59,15 @@ class ConfigResolver:
         app_name = s3_config.get('app_name', '').strip('/')
         prefix = s3_config.get('prefix', '').strip('/')
         
+        # Validate app_name is provided (required for S3)
+        if not app_name:
+            logger.warning("app_name not provided in S3 config. Using empty app_name prefix.")
+        
         # Build prefix parts
         prefix_parts = []
         if app_name:
             prefix_parts.append(app_name)
-        if prefix:
+        if prefix:  # prefix is optional
             prefix_parts.append(prefix)
         
         # Add tenant_id (only runtime parameter)

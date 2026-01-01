@@ -76,6 +76,25 @@ def test_s3_prefix_resolution():
         assert prefix_bootstrap == 'docex/production/tenant__docex_system_/', f"Expected 'docex/production/tenant__docex_system_/', got '{prefix_bootstrap}'"
         print("   ✅ Correct prefix for bootstrap tenant")
         
+        print("\n1.4 Testing prefix resolution without prefix (optional)...")
+        # Test without prefix
+        DocEXConfig.setup(
+            storage={
+                'type': 's3',
+                's3': {
+                    'bucket': 'test-bucket',
+                    'app_name': 'docex',
+                    'region': 'us-east-1'
+                    # prefix omitted
+                }
+            }
+        )
+        resolver_no_prefix = ConfigResolver(DocEXConfig())
+        prefix_no_prefix = resolver_no_prefix.resolve_s3_prefix('acme')
+        print(f"   Prefix (no prefix config): {prefix_no_prefix}")
+        assert prefix_no_prefix == 'docex/tenant_acme/', f"Expected 'docex/tenant_acme/', got '{prefix_no_prefix}'"
+        print("   ✅ Correct prefix without prefix config")
+        
         print("\n   ✅ S3 prefix resolution test passed!")
         return True
         
