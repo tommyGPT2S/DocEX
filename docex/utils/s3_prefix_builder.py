@@ -135,31 +135,31 @@ def build_s3_prefix(
     tenant_id: str,
     document_type: str,
     stage: str,
-    application_name: Optional[str] = None
+    path_namespace: Optional[str] = None
 ) -> str:
     """
-    Build S3 prefix with optional application name.
+    Build S3 prefix with optional path namespace.
     
     Args:
         tenant_id: Tenant identifier
         document_type: Document type (e.g., "invoice", "purchase_order")
         stage: Processing stage (e.g., "raw", "ready_to_pay")
-        application_name: Optional application name (e.g., "llamasee-dp-dev")
+        path_namespace: Optional path namespace (e.g., "acme-corp") for S3 path organization
         
     Returns:
         S3 prefix string with trailing slash
         
     Examples:
         >>> build_s3_prefix("test-tenant-001", "invoice", "raw")
-        'tenant_test-tenant-001/invoice_raw/'
+        'test-tenant-001/invoice_raw/'
         
-        >>> build_s3_prefix("test-tenant-001", "invoice", "raw", "llamasee-dp-dev")
-        'llamasee-dp-dev/tenant_test-tenant-001/invoice_raw/'
+        >>> build_s3_prefix("test-tenant-001", "invoice", "raw", "acme-corp")
+        'acme-corp/test-tenant-001/invoice_raw/'
     """
-    if application_name:
-        prefix = f"{application_name}/tenant_{tenant_id}/{document_type}_{stage}/"
+    if path_namespace:
+        prefix = f"{path_namespace}/{tenant_id}/{document_type}_{stage}/"
     else:
-        prefix = f"tenant_{tenant_id}/{document_type}_{stage}/"
+        prefix = f"{tenant_id}/{document_type}_{stage}/"
     
     return prefix
 
@@ -209,27 +209,27 @@ def parse_basket_name(basket_name: str) -> tuple[str, str, str]:
 
 def build_s3_prefix_from_basket_name(
     basket_name: str,
-    application_name: Optional[str] = None
+    path_namespace: Optional[str] = None
 ) -> str:
     """
-    Build S3 prefix from basket name with optional application name.
+    Build S3 prefix from basket name with optional path namespace.
     
     Args:
         basket_name: Basket name in format {tenant_id}_{document_type}_{stage}
-        application_name: Optional application name
+        path_namespace: Optional path namespace for S3 path organization
         
     Returns:
         S3 prefix string with trailing slash
         
     Examples:
         >>> build_s3_prefix_from_basket_name("test-tenant-001_invoice_raw")
-        'tenant_test-tenant-001/invoice_raw/'
+        'test-tenant-001/invoice_raw/'
         
         >>> build_s3_prefix_from_basket_name(
         ...     "test-tenant-001_invoice_raw",
-        ...     "llamasee-dp-dev"
+        ...     "acme-corp"
         ... )
-        'llamasee-dp-dev/tenant_test-tenant-001/invoice_raw/'
+        'acme-corp/test-tenant-001/invoice_raw/'
     """
     tenant_id, document_type, stage = parse_basket_name(basket_name)
-    return build_s3_prefix(tenant_id, document_type, stage, application_name)
+    return build_s3_prefix(tenant_id, document_type, stage, path_namespace)

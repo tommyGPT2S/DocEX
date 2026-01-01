@@ -602,9 +602,17 @@ class TenantDatabaseManager:
             
             # Use default database to query tenant registry (stored in bootstrap tenant)
             default_db = self._get_default_database()
+            
+            # Ensure we have a fresh session to see committed changes
             with default_db.session() as session:
+                # Use explicit commit to ensure we see latest data
+                session.commit()  # Ensure any pending transactions are committed
+                
                 tenant = session.query(TenantRegistry).filter_by(tenant_id=tenant_id).first()
                 if not tenant:
+                    # Log debug info to help diagnose
+                    all_tenants = session.query(TenantRegistry).all()
+                    logger.debug(f"Tenant '{tenant_id}' not found. Available tenants: {[t.tenant_id for t in all_tenants]}")
                     raise ValueError(
                         f"Tenant '{tenant_id}' is not provisioned. "
                         f"Please provision the tenant first using 'docex tenant create'."
@@ -612,8 +620,11 @@ class TenantDatabaseManager:
         except ImportError:
             # Tenant registry not available - skip validation (v2.x mode)
             logger.debug("Tenant registry not available - skipping validation")
+        except ValueError:
+            # Re-raise ValueError (tenant not found)
+            raise
         except Exception as e:
-            # If validation fails, log warning but don't fail (for backward compatibility)
+            # If validation fails for other reasons, log warning but don't fail (for backward compatibility)
             logger.warning(f"Failed to validate tenant provisioning: {e}")
     
     def _get_default_database(self) -> 'Database':
