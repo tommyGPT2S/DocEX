@@ -248,17 +248,46 @@ class DocEX:
             if user_context is not None:
                 # Check if we need to switch tenant database
                 config = DocEXConfig()
+                
+                # Check for v3.0 multi-tenancy
+                multi_tenancy_config = config.get('multi_tenancy', {})
+                v3_multi_tenancy_enabled = multi_tenancy_config.get('enabled', False)
+                
+                # Check for v2.x database-level multi-tenancy
                 security_config = config.get('security', {})
                 multi_tenancy_model = security_config.get('multi_tenancy_model', 'row_level')
+                v2_database_level = multi_tenancy_model == 'database_level'
                 
-                if multi_tenancy_model == 'database_level' and user_context.tenant_id:
-                    new_tenant_id = user_context.tenant_id
-                    current_tenant_id = getattr(self.user_context, 'tenant_id', None) if self.user_context else None
-                    
-                    # If tenant changed, update database connection
-                    if new_tenant_id != current_tenant_id:
-                        logger.info(f"Switching tenant database from {current_tenant_id} to {new_tenant_id}")
-                        self.db = Database(tenant_id=new_tenant_id)
+                # Determine if we need to switch tenant database
+                new_tenant_id = None
+                if v3_multi_tenancy_enabled:
+                    # v3.0: tenant_id is required
+                    if user_context.tenant_id:
+                        new_tenant_id = user_context.tenant_id
+                elif v2_database_level:
+                    # v2.x: tenant_id is optional
+                    if user_context.tenant_id:
+                        new_tenant_id = user_context.tenant_id
+                
+                # Get current tenant_id from existing database
+                current_tenant_id = getattr(self.db, 'tenant_id', None) if self.db else None
+                
+                # ENFORCEMENT: If tenant changed, require explicit reset
+                if new_tenant_id and new_tenant_id != current_tenant_id and current_tenant_id is not None:
+                    raise ValueError(
+                        f"Cannot switch tenant from '{current_tenant_id}' to '{new_tenant_id}' without resetting. "
+                        f"All database connections must be closed before switching tenants. "
+                        f"Call DocEX.reset() or DocEX.close() first, then create a new DocEX instance with the new tenant_id."
+                    )
+                
+                # If tenant changed (and current_tenant_id is None, meaning first initialization)
+                if new_tenant_id and new_tenant_id != current_tenant_id:
+                    logger.info(f"Switching tenant database from {current_tenant_id} to {new_tenant_id}")
+                    # Close existing database connection before creating new one
+                    if self.db:
+                        self.db.close()
+                    self.db = Database(tenant_id=new_tenant_id)
+                    logger.debug(f"Updated DocEX.db.tenant_id to: {getattr(self.db, 'tenant_id', None)}")
                 
                 self.user_context = user_context
                 logger.info(f"UserContext updated for user {user_context.user_id}")
@@ -534,6 +563,48 @@ class DocEX:
             logger.info(f"Basket {basket_id} accessed by user {self.user_context.user_id}")
                 
         return basket
+    
+    def close(self) -> None:
+        """
+        Close all database connections and reset DocEX instance.
+        
+        This method should be called before switching to a different tenant
+        to ensure all database connections are properly closed and re-initialized.
+        
+        After calling close(), you must create a new DocEX instance with the new tenant_id.
+        
+        Example:
+            # Close current tenant connection
+            docex.close()
+            
+            # Create new instance with different tenant
+            new_docex = DocEX(user_context=UserContext(user_id='u1', tenant_id='contoso'))
+        """
+        if hasattr(self, 'db') and self.db:
+            self.db.close()
+            # Also close tenant manager connections if applicable
+            if hasattr(self.db, 'tenant_manager'):
+                from docex.db.tenant_database_manager import TenantDatabaseManager
+                tenant_manager = TenantDatabaseManager()
+                current_tenant_id = getattr(self.db, 'tenant_id', None)
+                if current_tenant_id:
+                    tenant_manager.close_tenant_connection(current_tenant_id)
+            self.db = None
+        
+        # Reset user context
+        self.user_context = None
+        logger.info("DocEX connections closed. Create a new DocEX instance to continue.")
+    
+    def reset(self) -> None:
+        """
+        Reset DocEX instance (alias for close()).
+        
+        This method closes all database connections and resets the instance,
+        allowing you to switch to a different tenant.
+        
+        See close() for details.
+        """
+        self.close()
     
     def list_baskets(self) -> List[DocBasket]:
         """
