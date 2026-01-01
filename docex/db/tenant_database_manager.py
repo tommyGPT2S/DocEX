@@ -89,10 +89,11 @@ class TenantDatabaseManager:
             return self._tenant_engines[tenant_id]
         
         # For v3.0 multi-tenancy, validate tenant exists in registry
+        # Skip validation for v2.x default tenant 'docex_first_tenant' to avoid recursion
         multi_tenancy_config = self.config.get('multi_tenancy', {})
         multi_tenancy_enabled = multi_tenancy_config.get('enabled', False)
         
-        if multi_tenancy_enabled:
+        if multi_tenancy_enabled and tenant_id != 'docex_first_tenant':
             self._validate_tenant_provisioned(tenant_id)
         
         # Create engine for tenant (thread-safe)
@@ -597,7 +598,45 @@ class TenantDatabaseManager:
     def _get_default_database(self) -> 'Database':
         """Get default database instance for querying tenant registry."""
         from docex.db.connection import Database
-        return Database()
+        
+        # Check if v3.0 multi-tenancy is enabled
+        multi_tenancy_config = self.config.get('multi_tenancy', {})
+        multi_tenancy_enabled = multi_tenancy_config.get('enabled', False)
+        
+        # Check if v2.x database-level multi-tenancy is enabled
+        if self.multi_tenancy_model == 'database_level':
+            # For v2.x, we need to access tenant registry but can't use docex_first_tenant
+            # because that would cause recursion. Instead, use the default database path directly.
+            # In v2.x mode, tenant registry is stored in the default database location.
+            db_type = self.config.get('database', {}).get('type', 'sqlite')
+            if db_type == 'sqlite':
+                # For SQLite, use default path directly
+                sqlite_config = self.config.get('database', {}).get('sqlite', {})
+                default_path = sqlite_config.get('path', 'docex.db')
+                from pathlib import Path
+                from sqlalchemy import create_engine
+                from sqlalchemy.orm import sessionmaker
+                
+                db_path = Path(default_path)
+                db_path.parent.mkdir(parents=True, exist_ok=True)
+                engine = create_engine(f'sqlite:///{db_path}')
+                
+                db = Database.__new__(Database)
+                db.config = self.config
+                db.tenant_id = None
+                db.engine = engine
+                db.Session = sessionmaker(bind=engine)
+                return db
+            else:
+                # For PostgreSQL, use get_default_connection
+                return Database.get_default_connection(config=self.config)
+        elif multi_tenancy_enabled:
+            # For v3.0, use bootstrap tenant for tenant registry
+            bootstrap_tenant_id = multi_tenancy_config.get('bootstrap_tenant', {}).get('id', '_docex_system_')
+            return Database(config=self.config, tenant_id=bootstrap_tenant_id)
+        else:
+            # Single-tenant mode: use default database
+            return Database(config=self.config)
     
     def list_tenant_databases(self) -> list[str]:
         """

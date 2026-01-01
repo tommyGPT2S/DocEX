@@ -275,8 +275,30 @@ class DocEX:
         """
         try:
             from docex.db.tenant_registry_model import TenantRegistry
+            from docex.db.connection import Database
+            from docex.config.docex_config import DocEXConfig
             
-            with self.db.session() as session:
+            # Get database connection for tenant registry query
+            # Use bootstrap tenant's database for v3.0, or default for v2.x
+            config = DocEXConfig()
+            multi_tenancy_config = config.get('multi_tenancy', {})
+            multi_tenancy_enabled = multi_tenancy_config.get('enabled', False)
+            
+            if multi_tenancy_enabled:
+                # v3.0: Use bootstrap tenant for tenant registry
+                bootstrap_tenant_id = multi_tenancy_config.get('bootstrap_tenant', {}).get('id', '_docex_system_')
+                registry_db = Database(config=config, tenant_id=bootstrap_tenant_id)
+            else:
+                # v2.x or single-tenant: Use default database
+                # Check if v2.x database-level multi-tenancy is enabled
+                security_config = config.get('security', {})
+                v2_multi_tenancy = security_config.get('multi_tenancy_model', 'row_level') == 'database_level'
+                if v2_multi_tenancy:
+                    registry_db = Database(config=config, tenant_id='docex_first_tenant')
+                else:
+                    registry_db = Database(config=config)
+            
+            with registry_db.session() as session:
                 tenant = session.query(TenantRegistry).filter_by(tenant_id=tenant_id).first()
                 if not tenant:
                     raise ValueError(
