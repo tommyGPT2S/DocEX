@@ -148,9 +148,12 @@ class ConfigResolver:
             # Resolve tenant-aware prefix
             tenant_prefix = self.resolve_s3_prefix(tenant_id)
             
-            # Update prefix in config (preserve app_name and base prefix from config)
-            # The resolved prefix already includes tenant_id
+            # Update prefix in config
+            # The resolved prefix already includes app_name, base prefix, and tenant_id
+            # So we set prefix to the full resolved prefix and clear app_name to avoid duplication
             s3_config['prefix'] = tenant_prefix.rstrip('/')
+            # Clear app_name since it's already in the prefix
+            s3_config.pop('app_name', None)
             
             storage_config['s3'] = s3_config
         elif storage_type == 'filesystem':
