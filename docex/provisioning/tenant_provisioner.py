@@ -63,16 +63,16 @@ class TenantProvisioner:
         # Get bootstrap tenant database connection
         # Check if v3.0 multi-tenancy is enabled
         multi_tenancy_config = self.config.get('multi_tenancy', {})
-        multi_tenancy_enabled = multi_tenancy_config.get('enabled', False)
-        
+        self.multi_tenancy_enabled = multi_tenancy_config.get('enabled', False)
+
         # Check if v2.x database-level multi-tenancy is enabled
         security_config = self.config.get('security', {})
         v2_multi_tenancy = security_config.get('multi_tenancy_model', 'row_level') == 'database_level'
         
-        if multi_tenancy_enabled:
-            # v3.0: Use bootstrap tenant for tenant registry
-            bootstrap_tenant_id = multi_tenancy_config.get('bootstrap_tenant', {}).get('id', '_docex_system_')
-            self.bootstrap_db = Database(config=self.config, tenant_id=bootstrap_tenant_id)
+        if self.multi_tenancy_enabled:
+            # v3.0: Use bootstrap connection for tenant registry operations
+            # This bypasses tenant validation and ensures we use the bootstrap schema
+            self.bootstrap_db = Database.get_default_connection(config=self.config)
         elif v2_multi_tenancy:
             # v2.x: Use default tenant "docex_first_tenant" for provisioning operations
             # This tenant is automatically created/used in v2.x mode
@@ -98,11 +98,18 @@ class TenantProvisioner:
     @staticmethod
     def validate_tenant_id(tenant_id: str) -> None:
         """
-        Validate tenant ID format and check for reserved patterns.
-        
+        Validate tenant ID format for PostgreSQL compatibility.
+
+        Tenant IDs must:
+        - Be 1-30 characters long
+        - Contain only letters, numbers, and underscores
+        - Start with a letter or underscore
+        - Not match system tenant patterns
+        - Have no leading/trailing whitespace
+
         Args:
             tenant_id: Tenant identifier to validate
-            
+
         Raises:
             InvalidTenantIdError: If tenant ID is invalid or reserved
         """
@@ -119,12 +126,26 @@ class TenantProvisioner:
                 f"System tenant IDs (matching '{SYSTEM_TENANT_PATTERN}') are reserved."
             )
         
-        # Basic validation: no whitespace, reasonable length
+        # PostgreSQL identifier validation (tenant IDs are used in schema names)
+        import re
+
+        # Length check: PostgreSQL identifiers max 63 chars, but we limit to 30 for safety
+        if len(tenant_id) > 30:
+            raise InvalidTenantIdError("Tenant ID cannot exceed 30 characters (PostgreSQL identifier limit)")
+
+        if len(tenant_id) < 1:
+            raise InvalidTenantIdError("Tenant ID cannot be empty")
+
+        # Character validation: only letters, numbers, and underscores
+        if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', tenant_id):
+            raise InvalidTenantIdError(
+                "Tenant ID must contain only letters, numbers, and underscores, "
+                "and must start with a letter or underscore (PostgreSQL identifier rules)"
+            )
+
+        # Basic validation: no whitespace
         if tenant_id.strip() != tenant_id:
             raise InvalidTenantIdError("Tenant ID cannot have leading or trailing whitespace")
-        
-        if len(tenant_id) > 255:
-            raise InvalidTenantIdError("Tenant ID cannot exceed 255 characters")
         
         # Check for invalid characters (database identifiers)
         if re.search(r'[^\w\-]', tenant_id):
@@ -159,16 +180,17 @@ class TenantProvisioner:
     ) -> TenantRegistry:
         """
         Provision a new tenant.
-        
+
         This method:
         1. Validates tenant ID
         2. Checks for existing tenant
         3. Creates isolation boundary (schema or database)
         4. Initializes schema (creates all tables)
         5. Registers tenant in tenant registry
-        
+        6. Validates complete tenant setup
+
         Args:
-            tenant_id: Unique identifier for the tenant
+            tenant_id: Unique identifier for the tenant (1-30 chars, letters/numbers/underscores only)
             display_name: Human-readable name for the tenant
             created_by: User ID who is creating the tenant
             isolation_strategy: Isolation strategy ('schema' for PostgreSQL, 'database' for SQLite).
@@ -242,7 +264,20 @@ class TenantProvisioner:
                 created_by=created_by
             )
             logger.info(f"✅ Step 5 complete: Tenant registered in registry")
-            
+
+            # Step 6: Validate complete tenant setup
+            logger.info(f"Step 6/6: Validating complete tenant setup for '{tenant_id}'...")
+            tenant_manager = TenantDatabaseManager()
+            validation_result = tenant_manager.validate_tenant_setup(tenant_id)
+            if not validation_result['valid']:
+                issues_str = ', '.join(validation_result['issues'])
+                raise TenantProvisioningError(
+                    f"Tenant '{tenant_id}' validation failed: {issues_str}. "
+                    f"Registry exists: {validation_result['registry_exists']}, "
+                    f"Schema exists: {validation_result['schema_exists']}"
+                )
+            logger.info(f"✅ Step 6 complete: Tenant validation passed")
+
             logger.info(f"✅ Successfully provisioned tenant: {tenant_id}")
             return tenant_registry
             
@@ -317,8 +352,22 @@ class TenantProvisioner:
             database_path: SQLite database path (if using database-per-tenant)
         """
         # Get tenant-specific database connection
+        # IMPORTANT: During provisioning, we bypass validation because the tenant
+        # hasn't been registered yet. We use _create_tenant_engine directly.
         tenant_db_manager = TenantDatabaseManager()
-        engine = tenant_db_manager.get_tenant_engine(tenant_id)
+        # Use internal method to bypass validation during provisioning
+        engine = tenant_db_manager._create_tenant_engine(tenant_id)
+        
+        # Cache the engine and create session factory for this tenant
+        if tenant_id not in tenant_db_manager._tenant_engines:
+            tenant_db_manager._tenant_engines[tenant_id] = engine
+            from sqlalchemy.orm import sessionmaker
+            tenant_db_manager._tenant_sessions[tenant_id] = sessionmaker(
+                bind=engine,
+                expire_on_commit=False,
+                autocommit=False,
+                autoflush=False
+            )
         
         # Set schema on tables if using PostgreSQL
         # Exclude tenant_registry - it should only exist in bootstrap schema
@@ -373,7 +422,13 @@ class TenantProvisioner:
             from docex.db.tenant_database_manager import TenantDatabaseManager
             
             tenant_db_manager = TenantDatabaseManager()
-            engine = tenant_db_manager.get_tenant_engine(tenant_id)
+            # During provisioning, use cached engine or create directly (bypasses validation)
+            if tenant_id in tenant_db_manager._tenant_engines:
+                engine = tenant_db_manager._tenant_engines[tenant_id]
+            else:
+                # Create engine directly during provisioning (bypasses validation)
+                engine = tenant_db_manager._create_tenant_engine(tenant_id)
+                tenant_db_manager._tenant_engines[tenant_id] = engine
             
             # Use the same index creation logic from TenantDatabaseManager
             # For SQLite, schema_name will be None, which is handled by the method
@@ -399,7 +454,13 @@ class TenantProvisioner:
             from sqlalchemy import inspect
             
             tenant_db_manager = TenantDatabaseManager()
-            engine = tenant_db_manager.get_tenant_engine(tenant_id)
+            # During provisioning, use cached engine or create directly (bypasses validation)
+            if tenant_id in tenant_db_manager._tenant_engines:
+                engine = tenant_db_manager._tenant_engines[tenant_id]
+            else:
+                # Create engine directly during provisioning (bypasses validation)
+                engine = tenant_db_manager._create_tenant_engine(tenant_id)
+                tenant_db_manager._tenant_engines[tenant_id] = engine
             
             inspector = inspect(engine)
             tables = inspector.get_table_names()
@@ -452,26 +513,84 @@ class TenantProvisioner:
         from docex.db.tenant_registry_model import TenantRegistry
         if TenantRegistry.__table__.schema is not None:
             TenantRegistry.__table__.schema = None
-        
-        with self.bootstrap_db.session() as session:
-            tenant = TenantRegistry(
-                tenant_id=tenant_id,
-                display_name=display_name,
-                is_system=False,
-                isolation_strategy=isolation_strategy,
-                schema_name=schema_name,
-                database_path=database_path,
-                created_at=datetime.now(timezone.utc),
-                created_by=created_by,
-                last_updated_at=datetime.now(timezone.utc),
-                last_updated_by=None
-            )
-            
-            session.add(tenant)
-            session.commit()
-            session.refresh(tenant)
-            
-            return tenant
+
+        # For multi-tenancy enabled, ensure we use bootstrap connection with correct search_path
+        if hasattr(self, 'multi_tenancy_enabled') and self.multi_tenancy_enabled:
+            with self.bootstrap_db.get_bootstrap_connection() as conn:
+                # Use raw SQL to ensure tenant registry insertion uses correct schema
+                insert_sql = """
+                INSERT INTO tenant_registry (
+                    tenant_id, display_name, is_system, isolation_strategy,
+                    schema_name, database_path, created_at, created_by,
+                    last_updated_at, last_updated_by
+                ) VALUES (
+                    :tenant_id, :display_name, :is_system, :isolation_strategy,
+                    :schema_name, :database_path, :created_at, :created_by,
+                    :last_updated_at, :last_updated_by
+                )
+                ON CONFLICT (tenant_id) DO UPDATE SET
+                    display_name = EXCLUDED.display_name,
+                    isolation_strategy = EXCLUDED.isolation_strategy,
+                    schema_name = EXCLUDED.schema_name,
+                    database_path = EXCLUDED.database_path,
+                    last_updated_at = EXCLUDED.last_updated_at,
+                    last_updated_by = EXCLUDED.last_updated_by
+                RETURNING tenant_id, display_name, is_system, isolation_strategy,
+                         schema_name, database_path, created_at, created_by,
+                         last_updated_at, last_updated_by
+                """
+
+                result = conn.execute(text(insert_sql), {
+                    'tenant_id': tenant_id,
+                    'display_name': display_name,
+                    'is_system': False,
+                    'isolation_strategy': isolation_strategy,
+                    'schema_name': schema_name,
+                    'database_path': database_path,
+                    'created_at': datetime.now(timezone.utc),
+                    'created_by': created_by,
+                    'last_updated_at': datetime.now(timezone.utc),
+                    'last_updated_by': None
+                }).fetchone()
+
+                # Commit the transaction to ensure registry entry is persisted
+                conn.commit()
+
+                # Create TenantRegistry instance from result
+                tenant = TenantRegistry(
+                    tenant_id=result[0],
+                    display_name=result[1],
+                    is_system=result[2],
+                    isolation_strategy=result[3],
+                    schema_name=result[4],
+                    database_path=result[5],
+                    created_at=result[6],
+                    created_by=result[7],
+                    last_updated_at=result[8],
+                    last_updated_by=result[9]
+                )
+
+                return tenant
+        else:
+            with self.bootstrap_db.session() as session:
+                tenant = TenantRegistry(
+                    tenant_id=tenant_id,
+                    display_name=display_name,
+                    is_system=False,
+                    isolation_strategy=isolation_strategy,
+                    schema_name=schema_name,
+                    database_path=database_path,
+                    created_at=datetime.now(timezone.utc),
+                    created_by=created_by,
+                    last_updated_at=datetime.now(timezone.utc),
+                    last_updated_by=None
+                )
+
+                session.add(tenant)
+                session.commit()
+                session.refresh(tenant)
+
+                return tenant
     
     def _cleanup_partial_provisioning(
         self,

@@ -211,11 +211,14 @@ class BootstrapTenantManager:
             raise RuntimeError(f"Bootstrap tenant initialization failed: {str(e)}") from e
     
     def _ensure_tenant_registry_table(self) -> None:
-        """Ensure tenant_registry table exists in default database."""
+        """Ensure tenant_registry table exists in bootstrap schema."""
         try:
-            # Create tenant_registry table if it doesn't exist
-            Base.metadata.create_all(self.db.get_engine(), tables=[TenantRegistry.__table__])
-            logger.debug("Tenant registry table ensured")
+            # Use the database's bootstrap connection method to ensure correct schema
+            # This method sets the search_path to the bootstrap schema automatically
+            with self.db.get_bootstrap_connection() as conn:
+                # Create tenant_registry table in bootstrap schema
+                TenantRegistry.__table__.create(conn, checkfirst=True)
+                logger.debug("Tenant registry table ensured in bootstrap schema")
         except Exception as e:
             logger.error(f"Failed to create tenant registry table: {e}")
             raise

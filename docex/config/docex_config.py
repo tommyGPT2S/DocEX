@@ -69,12 +69,12 @@ class DocEXConfig:
         instance = cls()
         
         # Deep update all provided configuration sections
+        # Use loop approach for cleaner code, but ensure all sections are handled
         for section in ['database', 'logging', 'storage', 'multi_tenancy', 'security', 'app']:
             if section in kwargs:
                 if section not in instance.config:
                     instance.config[section] = {}
                 instance._update_config_recursive(instance.config[section], kwargs[section])
-        
         # Ensure configuration directory exists
         config_dir = instance.config_file.parent
         config_dir.mkdir(parents=True, exist_ok=True)
@@ -128,7 +128,9 @@ class DocEXConfig:
             
             if db_config['type'] in ['postgres', 'postgresql']:
                 # PostgreSQL config is nested under 'postgres' key
-                postgres_config = db_config.get('postgres', {})
+                if 'postgres' not in db_config:
+                    raise RuntimeError("PostgreSQL configuration section missing")
+                postgres_config = db_config['postgres']
                 required_fields = ['user', 'password', 'host', 'port', 'database']
                 missing_fields = [field for field in required_fields if field not in postgres_config]
                 if missing_fields:

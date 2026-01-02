@@ -3,9 +3,20 @@ import re
 from typing import Dict, Any
 from docex.processors.base import BaseProcessor, ProcessingResult
 from docex.document import Document
-from pdfminer.high_level import extract_text
 from docex.services.metadata_service import MetadataService
 from docex.db.connection import Database
+
+# Optional PDF processing - only available if pdfminer is installed
+try:
+    from pdfminer.high_level import extract_text
+    HAS_PDFMINER = True
+except ImportError:
+    HAS_PDFMINER = False
+    def extract_text(*args, **kwargs):
+        raise ImportError(
+            "PDF processing requires 'pdfminer.six' package. "
+            "Install it with: pip install docex[pdf]"
+        )
 
 class MatchingInvoiceToPOProcessor(BaseProcessor):
     """Processor that extracts PO number from invoice PDF and updates document metadata"""

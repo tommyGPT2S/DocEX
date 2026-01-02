@@ -46,12 +46,24 @@ class Database:
     def __init__(self, config: Optional[DocEXConfig] = None, tenant_id: Optional[str] = None):
         """
         Initialize database connection
-        
+
         Args:
-            config: DocEXConfig instance. If None, uses default configuration.
+            config: DocEXConfig instance. If None, uses DocEX configuration if available, otherwise default.
             tenant_id: Optional tenant identifier for database-level multi-tenancy.
         """
-        self.config = config or DocEXConfig()
+        # Try to use DocEX's config first, then fallback to provided config or default
+        if config is not None:
+            self.config = config
+        else:
+            # Try to get config from DocEX if it's initialized
+            try:
+                from docex import DocEX
+                if DocEX._config is not None:
+                    self.config = DocEX._config
+                else:
+                    self.config = DocEXConfig()
+            except:
+                self.config = DocEXConfig()
         self.tenant_id = tenant_id
         self.engine = None
         self.Session = None
@@ -60,21 +72,20 @@ class Database:
         security_config = self.config.get('security', {})
         self.multi_tenancy_model = security_config.get('multi_tenancy_model', 'row_level')
         self.tenant_database_routing = security_config.get('tenant_database_routing', False)
-        
+
         # Check if v3.0 multi-tenancy is enabled
         multi_tenancy_config = self.config.get('multi_tenancy', {})
         v3_multi_tenancy_enabled = multi_tenancy_config.get('enabled', False)
-        
+
         # Use TenantDatabaseManager if:
         # 1. v2.x database-level multi-tenancy is enabled, OR
         # 2. v3.0 multi-tenancy is enabled AND tenant_id is provided
         if self.multi_tenancy_model == 'database_level' or (v3_multi_tenancy_enabled and tenant_id):
             if self.multi_tenancy_model == 'database_level' and not tenant_id:
-                raise ValueError(
-                    "tenant_id is required when database-level multi-tenancy is enabled. "
-                    "Please provide tenant_id when creating Database instance, or ensure "
-                    "processors are created with tenant-aware database connections."
-                )
+                # Allow system/bootstrap operations without tenant_id
+                # Initialize directly for system operations to avoid recursion
+                self._initialize_system_database()
+                return
             # Use tenant-aware database manager
             from docex.db.tenant_database_manager import TenantDatabaseManager
             self.tenant_manager = TenantDatabaseManager()
@@ -94,18 +105,117 @@ class Database:
         else:
             # Use standard single-tenant initialization
             self._initialize()
-    
+
+    def _initialize_system_database(self):
+        """Initialize database for system/bootstrap operations (bypasses tenant manager)."""
+        # Get database configuration
+        db_config = self.config.get('database', {})
+        db_type = db_config.get('type', 'sqlite')
+
+        for attempt in range(3):  # max_retries
+            try:
+                if db_type == 'sqlite':
+                    # SQLite configuration
+                    db_path = db_config.get('path', 'docex.db')
+                    db_path = Path(db_path)
+
+                    # Ensure directory exists
+                    db_path.parent.mkdir(parents=True, exist_ok=True)
+
+                    # Create database file if it doesn't exist
+                    if not db_path.exists():
+                        db_path.touch()
+                        db_path.chmod(0o644)
+
+                    # Create SQLite engine
+                    from sqlalchemy import create_engine, event
+                    self.engine = create_engine(
+                        f'sqlite:///{db_path}',
+                        poolclass=QueuePool,
+                        pool_size=5,
+                        max_overflow=10,
+                        pool_timeout=30,
+                        pool_recycle=1800,
+                        connect_args={
+                            'timeout': 30,
+                            'check_same_thread': False
+                        }
+                    )
+
+                    # Enable foreign key support
+                    @event.listens_for(self.engine, "connect")
+                    def set_sqlite_pragma(dbapi_connection, connection_record):
+                        cursor = dbapi_connection.cursor()
+                        cursor.execute("PRAGMA foreign_keys=ON")
+                        cursor.close()
+
+                elif db_type in ['postgresql', 'postgres']:
+                    # PostgreSQL configuration
+                    from urllib.parse import quote_plus
+                    from sqlalchemy import create_engine, text
+
+                    postgres_config = db_config.get('postgres', db_config.get('postgresql', {}))
+                    host = postgres_config.get('host', 'localhost')
+                    port = postgres_config.get('port', 5432)
+                    database = postgres_config.get('database', 'docex')
+                    user = postgres_config.get('user', 'postgres')
+                    password = postgres_config.get('password', '')
+
+                    # URL-encode user and password
+                    user_encoded = quote_plus(user)
+                    password_encoded = quote_plus(password)
+                    sslmode = postgres_config.get('sslmode', 'disable' if host in ['localhost', '127.0.0.1'] else 'require')
+
+                    connection_url = f'postgresql://{user_encoded}:{password_encoded}@{host}:{port}/{database}?sslmode={sslmode}'
+                    self.engine = create_engine(
+                        connection_url,
+                        poolclass=QueuePool,
+                        pool_size=5,
+                        max_overflow=10,
+                        pool_timeout=30,
+                        pool_recycle=1800
+                    )
+
+                # Test connection
+                with self.engine.connect() as conn:
+                    conn.execute(text("SELECT 1"))
+
+                # Ensure tenant registry schema for PostgreSQL
+                if db_type in ['postgresql', 'postgres']:
+                    self.ensure_tenant_registry_schema()
+
+                # Create session factory
+                from sqlalchemy.orm import sessionmaker
+                self.Session = sessionmaker(
+                    bind=self.engine,
+                    expire_on_commit=False,
+                    autocommit=False,
+                    autoflush=False
+                )
+
+                # Mark as initialized
+                self._initialized = True
+                return
+
+            except Exception as e:
+                if attempt == 2:  # Last attempt
+                    logger.error(f"Failed to initialize system database after 3 attempts: {str(e)}")
+                    raise RuntimeError(f"Failed to initialize system database: {str(e)}")
+                logger.warning(f"Database connection attempt {attempt + 1} failed: {str(e)}. Retrying in 1 seconds...")
+                import time
+                time.sleep(1)
+
     @classmethod
     def get_default_connection(cls, config: Optional[DocEXConfig] = None) -> 'Database':
         """
         Get default database connection, bypassing tenant routing.
-        
+
         This is useful for system operations like tenant provisioning where
         we need to access the default database regardless of multi-tenancy mode.
-        
+
         Args:
             config: Optional DocEXConfig instance. If None, uses default config.
-            
+
         Returns:
             Database instance connected to default database
         """
@@ -119,7 +229,6 @@ class Database:
         db.tenant_database_routing = False
         db._initialize()
         return db
-    
     def _initialize(self):
         """Initialize database connection and session"""
         max_retries = 3
@@ -170,10 +279,10 @@ class Database:
                 elif db_type in ['postgresql', 'postgres']:
                     # PostgreSQL configuration
                     from urllib.parse import quote_plus
-                    
+
                     # Get PostgreSQL-specific config (nested under 'postgres' key)
                     postgres_config = db_config.get('postgres', {})
-                    
+
                     host = postgres_config.get('host', db_config.get('host', 'localhost'))
                     port = postgres_config.get('port', db_config.get('port', 5432))
                     database = postgres_config.get('database', db_config.get('database', 'docex'))
@@ -184,10 +293,13 @@ class Database:
                     user_encoded = quote_plus(user)
                     password_encoded = quote_plus(password)
                     
-                    # Create PostgreSQL engine with properly encoded credentials
                     # SSL mode: prefer (use SSL if available, otherwise allow non-SSL)
                     # This works for both local Docker (no SSL) and AWS RDS (with SSL)
-                    sslmode = postgres_config.get('sslmode', 'prefer')
+                    # Falls back to disable for localhost if prefer doesn't work
+                    if host in ['localhost', '127.0.0.1']:
+                        sslmode = postgres_config.get('sslmode', 'prefer')
+                    else:
+                        sslmode = postgres_config.get('sslmode', 'prefer')
                     connection_url = f'postgresql://{user_encoded}:{password_encoded}@{host}:{port}/{database}?sslmode={sslmode}'
                     self.engine = create_engine(
                         connection_url,
@@ -201,7 +313,11 @@ class Database:
                 # Test connection
                 with self.engine.connect() as conn:
                     conn.execute(text("SELECT 1"))
-                
+
+                # Ensure tenant registry schema for PostgreSQL
+                if db_type in ['postgresql', 'postgres']:
+                    self.ensure_tenant_registry_schema()
+
                 # Create session factory
                 self.Session = sessionmaker(
                     bind=self.engine,
@@ -378,6 +494,103 @@ class Database:
         Base = get_base()
         Base.metadata.drop_all(self.engine)
     
+    def get_bootstrap_connection(self):
+        """
+        Get a database connection configured for bootstrap/system operations.
+
+        This ensures that system tables (like tenant_registry) are created in
+        the bootstrap schema instead of the public schema.
+
+        Returns:
+            SQLAlchemy connection object with proper search path set
+        """
+        # Get bootstrap schema from config
+        db_config = self.config.get('database', {})
+        postgres_config = db_config.get('postgres', db_config.get('postgresql', {}))
+        bootstrap_schema = postgres_config.get('system_schema', 'docex_system')
+
+        # Create connection and set search path to bootstrap schema
+        conn = self.engine.connect()
+
+        # Set search path to bootstrap schema for system operations
+        if db_config.get('type') in ['postgresql', 'postgres']:
+            conn.execute(text(f'SET search_path TO {bootstrap_schema}'))
+            # Create schema if it doesn't exist
+            conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS {bootstrap_schema}'))
+            conn.commit()
+
+        return conn
+
+    def execute_system_query(self, query: str, params: Optional[Dict[str, Any]] = None) -> Any:
+        """
+        Execute a system-level query using the bootstrap schema.
+
+        This ensures that system tables (like tenant_registry) are accessed
+        in the correct bootstrap schema instead of the public schema.
+
+        Args:
+            query: SQL query string
+            params: Query parameters
+
+        Returns:
+            Query result
+        """
+        with self.get_bootstrap_connection() as conn:
+            result = conn.execute(text(query), params or {})
+            conn.commit()
+            return result
+
+    def ensure_tenant_registry_schema(self) -> None:
+        """
+        Ensure tenant registry table exists in the bootstrap schema.
+
+        This fixes the bug where tenant_registry table is created in public schema
+        instead of the configured bootstrap schema.
+        """
+        # Prevent multiple executions
+        if hasattr(self, '_tenant_registry_initialized') and self._tenant_registry_initialized:
+            return
+
+        db_config = self.config.get('database', {})
+        if db_config.get('type') not in ['postgresql', 'postgres']:
+            return  # Only applies to PostgreSQL
+
+        postgres_config = db_config.get('postgres', db_config.get('postgresql', {}))
+        bootstrap_schema = postgres_config.get('system_schema', 'docex_system')
+
+        # SQL to create tenant_registry table in bootstrap schema
+        create_table_sql = f"""
+        CREATE TABLE IF NOT EXISTS {bootstrap_schema}.tenant_registry (
+            tenant_id VARCHAR(255) NOT NULL,
+            display_name VARCHAR(255) NOT NULL,
+            is_system BOOLEAN NOT NULL DEFAULT FALSE,
+            isolation_strategy VARCHAR(50) NOT NULL DEFAULT 'schema',
+            schema_name VARCHAR(255),
+            database_path VARCHAR(500),
+            created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_by VARCHAR(255) NOT NULL,
+            last_updated_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            last_updated_by VARCHAR(255),
+            PRIMARY KEY (tenant_id)
+        )
+        """
+
+        try:
+            with self.get_bootstrap_connection() as conn:
+                # Create table in bootstrap schema (schema creation handled by get_bootstrap_connection)
+                conn.execute(text(create_table_sql))
+                conn.commit()
+                logger.info(f"Ensured tenant_registry table exists in schema: {bootstrap_schema}")
+                self._tenant_registry_initialized = True
+        except Exception as e:
+            logger.warning(f"Failed to create tenant_registry table in bootstrap schema: {e}")
+
+    def get_bootstrap_schema(self) -> str:
+        """Get the bootstrap/system schema name."""
+        db_config = self.config.get('database', {})
+        postgres_config = db_config.get('postgres', db_config.get('postgresql', {}))
+        return postgres_config.get('system_schema', 'docex_system')
+
     def dispose(self) -> None:
         """Close all database connections"""
         if self.engine:

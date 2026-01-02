@@ -29,23 +29,49 @@ class S3Storage(AbstractStorage):
         Args:
             config: Configuration dictionary with:
                 - bucket: S3 bucket name (required)
-                - app_name: Business identifier (organization, business unit, or deployment name) for namespace organization (required)
+                - bucket_application: Optional - used to build bucket name if bucket not provided
                 - access_key: AWS access key (optional if using IAM/env vars)
                 - secret_key: AWS secret key (optional if using IAM/env vars)
                 - session_token: AWS session token (optional, for temporary credentials)
                 - region: AWS region (default: us-east-1)
-                - prefix: Optional S3 key prefix for organizing files (environment, etc.)
                 - max_retries: Maximum retry attempts (default: 3)
                 - retry_delay: Delay between retries in seconds (default: 1.0)
                 - connect_timeout: Connection timeout in seconds (default: 60)
                 - read_timeout: Read timeout in seconds (default: 60)
+                
+        Note:
+            S3Storage is a low-level storage abstraction that accepts FULL paths.
+            All path building and interpretation should happen at higher levels
+            (DocEXPathBuilder, DocBasket) before calling S3Storage methods.
+            
+            S3Storage does NOT interpret or build paths - it uses paths as provided.
+            This ensures clear separation: path building is centralized, storage is simple.
         """
         self.config = config
         
-        # Validate required parameters
+        # Resolve bucket name (from explicit bucket or bucket_application)
+        # Priority: 1) explicit 'bucket', 2) build from 'bucket_application'
         self.bucket = config.get('bucket')
         if not self.bucket:
-            raise ValueError("S3 bucket name is required in configuration")
+            # If not provided, try to resolve from bucket_application
+            # This allows bucket name to be built from bucket_application
+            bucket_application = config.get('bucket_application')
+            if bucket_application:
+                # Build bucket name: {bucket_application}-documents-bucket
+                self.bucket = f"{bucket_application}-documents-bucket"
+                logger.debug(f"S3 bucket name built from bucket_application '{bucket_application}': {self.bucket}")
+            else:
+                # Neither bucket nor bucket_application provided
+                raise ValueError(
+                    "S3 bucket name is required. Either provide 'bucket' directly in config, "
+                    "or provide 'bucket_application' to build bucket name as '{bucket_application}-documents-bucket'"
+                )
+
+        # Sanitize bucket name to meet S3 requirements
+        original_bucket = self.bucket
+        self.bucket = self._sanitize_bucket_name(self.bucket)
+        if original_bucket != self.bucket:
+            logger.info(f"S3 bucket name sanitized: '{original_bucket}' -> '{self.bucket}'")
         
         # Get credentials with fallback to environment variables and IAM
         credentials = self._get_credentials(config)
@@ -53,22 +79,8 @@ class S3Storage(AbstractStorage):
         # Extract configuration
         self.region = credentials['region']
         
-        # Build prefix structure: {app_name}/{prefix}/
-        # app_name provides application-level namespace
-        # prefix provides environment/instance-level namespace
-        app_name = config.get('app_name', '').strip('/')
-        prefix = config.get('prefix', '').strip('/')
-        
-        # Construct full prefix
-        prefix_parts = []
-        if app_name:
-            prefix_parts.append(app_name)
-        if prefix:
-            prefix_parts.append(prefix)
-        
-        self.prefix = '/'.join(prefix_parts)
-        if self.prefix and not self.prefix.endswith('/'):
-            self.prefix += '/'
+        # NOTE: No prefix storage - S3Storage accepts full paths only
+        # All path building happens in DocEXPathBuilder before calling S3Storage
         
         # Retry configuration
         self.max_retries = config.get('max_retries', 3)
@@ -84,25 +96,95 @@ class S3Storage(AbstractStorage):
             read_timeout=config.get('read_timeout', 60)
         )
         
-        # Initialize S3 client
-        client_kwargs = {
-            'service_name': 's3',
-            'region_name': self.region,
-            'config': boto_config
-        }
-        
-        # Add credentials if provided (otherwise boto3 uses IAM role or default profile)
+        # Initialize S3 client with proper credential handling
         if credentials['access_key'] and credentials['secret_key']:
-            client_kwargs['aws_access_key_id'] = credentials['access_key']
-            client_kwargs['aws_secret_access_key'] = credentials['secret_key']
+            # Use explicit credentials from config
+            client_kwargs = {
+                'service_name': 's3',
+                'region_name': self.region,
+                'config': boto_config,
+                'aws_access_key_id': credentials['access_key'],
+                'aws_secret_access_key': credentials['secret_key']
+            }
             if credentials['session_token']:
                 client_kwargs['aws_session_token'] = credentials['session_token']
-        
-        self.s3 = boto3.client(**client_kwargs)
+
+            self.s3 = boto3.client(**client_kwargs)
+        else:
+            # Use boto3's default credential chain (includes profiles, IAM roles, etc.)
+            try:
+                # Try to get profile from environment
+                profile_name = os.getenv('AWS_PROFILE')
+                if profile_name:
+                    session = boto3.Session(profile_name=profile_name)
+                else:
+                    session = boto3.Session()
+
+                self.s3 = session.client('s3', region_name=self.region, config=boto_config)
+                logger.info(f"S3 client initialized using boto3 session (profile: {profile_name or 'default'})")
+            except Exception as e:
+                # Fall back to basic client (should still use default credential chain)
+                logger.warning(f"Could not create boto3 session: {e}, falling back to basic client")
+                self.s3 = boto3.client('s3', region_name=self.region, config=boto_config)
         
         # Ensure bucket exists
         self.ensure_storage_exists()
-    
+
+    def _sanitize_bucket_name(self, bucket_name: str) -> str:
+        """
+        Sanitize bucket name to meet AWS S3 requirements.
+
+        S3 bucket names must:
+        - Be 3-63 characters long
+        - Contain only lowercase letters, numbers, hyphens, and periods
+        - Start and end with a letter or number
+        - Not be formatted as an IP address
+
+        Args:
+            bucket_name: Original bucket name
+
+        Returns:
+            Sanitized bucket name that meets S3 requirements
+        """
+        import re
+
+        if not bucket_name:
+            raise ValueError("Bucket name cannot be empty")
+
+        # Convert to lowercase (S3 requirement)
+        sanitized = bucket_name.lower()
+
+        # Replace invalid characters with hyphens
+        # Keep only lowercase letters, numbers, hyphens, and periods
+        sanitized = re.sub(r'[^a-z0-9.-]', '-', sanitized)
+
+        # Remove multiple consecutive hyphens/periods
+        sanitized = re.sub(r'[-.]{2,}', '-', sanitized)
+
+        # Ensure it starts with letter or number
+        sanitized = re.sub(r'^[^a-z0-9]+', '', sanitized)
+
+        # Ensure it ends with letter or number
+        sanitized = re.sub(r'[^a-z0-9]+$', '', sanitized)
+
+        # Ensure minimum length
+        if len(sanitized) < 3:
+            sanitized = f"{sanitized}bucket".ljust(3, '0')[:10]  # Pad to at least 3 chars
+
+        # Ensure maximum length (63 chars)
+        if len(sanitized) > 63:
+            sanitized = sanitized[:63]
+
+        # Final validation
+        if not re.match(r'^[a-z0-9][a-z0-9.-]*[a-z0-9]$', sanitized):
+            # If still invalid, generate a safe name
+            import hashlib
+            hash_suffix = hashlib.md5(bucket_name.encode()).hexdigest()[:8]
+            sanitized = f"docex-bucket-{hash_suffix}"
+
+        logger.debug(f"Sanitized S3 bucket name from '{bucket_name}' to '{sanitized}'")
+        return sanitized
+
     def _get_credentials(self, config: Dict[str, Any]) -> Dict[str, Optional[str]]:
         """
         Get AWS credentials from config, environment variables, or IAM role.
@@ -144,32 +226,25 @@ class S3Storage(AbstractStorage):
         
         return credentials
     
-    def _get_full_key(self, path: str, tenant_id: Optional[str] = None) -> str:
+    def _normalize_key(self, path: str) -> str:
         """
-        Get full S3 key with prefix.
+        Normalize S3 key path (remove leading slashes, ensure proper format).
         
-        If tenant_id is provided, it will be included in the prefix.
-        Otherwise, uses the prefix set during initialization.
+        S3Storage accepts FULL paths - no prefix interpretation.
+        This method only normalizes the path format (removes leading slashes).
         
         Args:
-            path: Relative path/key
-            tenant_id: Optional tenant identifier for tenant-aware prefix resolution
+            path: Full S3 key path (already includes all prefixes)
             
         Returns:
-            Full S3 key with prefix
+            Normalized S3 key (leading slash removed)
+            
+        Note:
+            Path building should happen in DocEXPathBuilder before calling S3Storage.
+            S3Storage does NOT interpret or build paths - it uses paths as provided.
         """
-        # Remove leading slash if present
-        path = path.lstrip('/')
-        
-        # If tenant_id provided, resolve tenant-aware prefix
-        if tenant_id:
-            from docex.config.config_resolver import ConfigResolver
-            resolver = ConfigResolver()
-            tenant_prefix = resolver.resolve_s3_prefix(tenant_id)
-            return f"{tenant_prefix}{path}" if tenant_prefix else path
-        
-        # Use prefix set during initialization
-        return f"{self.prefix}{path}" if self.prefix else path
+        # Remove leading slash if present (S3 keys should not start with /)
+        return path.lstrip('/')
     
     def _retry_on_error(self, func, *args, **kwargs):
         """
@@ -229,7 +304,8 @@ class S3Storage(AbstractStorage):
                     self._retry_on_error(self.s3.create_bucket, **create_params)
                     logger.info(f"Created S3 bucket: {self.bucket}")
                 except ClientError as create_error:
-                    logger.error(f"Failed to create S3 bucket {self.bucket}: {create_error}")
+                    logger.error(f"Failed to create S3 bucket '{self.bucket}' (sanitized from original): {create_error}")
+                    logger.error(f"S3 bucket creation parameters: {create_params}")
                     raise
             else:
                 logger.error(f"Failed to access S3 bucket {self.bucket}: {e}")
@@ -240,10 +316,11 @@ class S3Storage(AbstractStorage):
         Save content to S3
         
         Args:
-            path: S3 key (relative path, prefix will be added automatically)
+            path: Full S3 key path (must include all prefixes - tenant, namespace, basket, document)
+                  Path should be built by DocEXPathBuilder before calling this method.
             content: Content to save
         """
-        key = self._get_full_key(path)
+        key = self._normalize_key(path)
         
         if isinstance(content, dict):
             data = json.dumps(content).encode('utf-8')
@@ -274,12 +351,13 @@ class S3Storage(AbstractStorage):
         Load content from S3
         
         Args:
-            path: S3 key (relative path, prefix will be added automatically)
+            path: Full S3 key path (must include all prefixes - tenant, namespace, basket, document)
+                  Path should be built by DocEXPathBuilder before calling this method.
             
         Returns:
             Content as dictionary or bytes
         """
-        key = self._get_full_key(path)
+        key = self._normalize_key(path)
         
         try:
             response = self._retry_on_error(
@@ -313,7 +391,7 @@ class S3Storage(AbstractStorage):
         Returns:
             True if successful, False otherwise
         """
-        key = self._get_full_key(path)
+        key = self._normalize_key(path)
         
         try:
             self._retry_on_error(
@@ -333,12 +411,13 @@ class S3Storage(AbstractStorage):
         Check if content exists in S3
         
         Args:
-            path: S3 key (relative path, prefix will be added automatically)
+            path: Full S3 key path (must include all prefixes)
+                  Path should be built by DocEXPathBuilder before calling this method.
             
         Returns:
             True if content exists, False otherwise
         """
-        key = self._get_full_key(path)
+        key = self._normalize_key(path)
         
         try:
             self._retry_on_error(
@@ -365,7 +444,7 @@ class S3Storage(AbstractStorage):
         Returns:
             True if successful, False otherwise
         """
-        key = self._get_full_key(path)
+        key = self._normalize_key(path)
         
         # Ensure path ends with /
         if not key.endswith('/'):
@@ -395,7 +474,7 @@ class S3Storage(AbstractStorage):
         Returns:
             List of keys in the directory (without prefix)
         """
-        key = self._get_full_key(path)
+        key = self._normalize_key(path)
         
         # Ensure path ends with /
         if not key.endswith('/'):
@@ -410,12 +489,7 @@ class S3Storage(AbstractStorage):
                     for obj in page['Contents']:
                         full_key = obj['Key']
                         if full_key != key:  # Skip the directory marker itself
-                            # Remove prefix from returned keys
-                            if self.prefix and full_key.startswith(self.prefix):
-                                relative_key = full_key[len(self.prefix):]
-                            else:
-                                relative_key = full_key
-                            keys.append(relative_key)
+                            keys.append(full_key)  # Return full keys (no prefix removal)
             
             return keys
         except ClientError as e:
@@ -428,12 +502,13 @@ class S3Storage(AbstractStorage):
         Get metadata for an object in S3
         
         Args:
-            path: S3 key (relative path, prefix will be added automatically)
+            path: Full S3 key path (must include all prefixes)
+                  Path should be built by DocEXPathBuilder before calling this method.
             
         Returns:
             Dictionary of metadata
         """
-        key = self._get_full_key(path)
+        key = self._normalize_key(path)
         
         try:
             response = self._retry_on_error(
@@ -467,7 +542,7 @@ class S3Storage(AbstractStorage):
         Returns:
             Presigned URL
         """
-        key = self._get_full_key(path)
+        key = self._normalize_key(path)
         
         try:
             url = self.s3.generate_presigned_url(
@@ -495,8 +570,8 @@ class S3Storage(AbstractStorage):
         Returns:
             True if successful, False otherwise
         """
-        source_key = self._get_full_key(source_path)
-        dest_key = self._get_full_key(dest_path)
+        source_key = self._normalize_key(source_path)
+        dest_key = self._normalize_key(dest_path)
         
         try:
             self._retry_on_error(
@@ -585,7 +660,7 @@ class S3Storage(AbstractStorage):
         Returns:
             True if successful, False otherwise
         """
-        key = self._get_full_key(path)
+        key = self._normalize_key(path)
         
         try:
             # Copy object to itself with new metadata
@@ -604,18 +679,29 @@ class S3Storage(AbstractStorage):
             logger.warning(error_msg)
             return False
     
-    def cleanup(self) -> None:
+    def cleanup(self, prefix: str) -> None:
         """
         Clean up storage (delete all objects in bucket with prefix)
         
-        WARNING: This will delete all objects with the configured prefix!
+        WARNING: This will delete all objects with the specified prefix!
+        
+        Args:
+            prefix: Full S3 key prefix path (must include all prefixes)
+                   Path should be built by DocEXPathBuilder before calling this method.
         """
+        if not prefix:
+            raise ValueError("prefix is required for cleanup operation")
+        
         try:
-            # Only delete objects with the configured prefix
-            prefix = self.prefix if self.prefix else ''
+            # Normalize prefix
+            normalized_prefix = self._normalize_key(prefix)
+            # Ensure prefix ends with /
+            if not normalized_prefix.endswith('/'):
+                normalized_prefix += '/'
+            
             paginator = self.s3.get_paginator('list_objects_v2')
             
-            for page in paginator.paginate(Bucket=self.bucket, Prefix=prefix):
+            for page in paginator.paginate(Bucket=self.bucket, Prefix=normalized_prefix):
                 if 'Contents' in page:
                     objects = [{'Key': obj['Key']} for obj in page['Contents']]
                     if objects:
@@ -623,7 +709,7 @@ class S3Storage(AbstractStorage):
                             Bucket=self.bucket,
                             Delete={'Objects': objects}
                         )
-                        logger.info(f"Deleted {len(objects)} objects from S3 bucket {self.bucket} with prefix {prefix}")
+                        logger.info(f"Deleted {len(objects)} objects from S3 bucket {self.bucket} with prefix {normalized_prefix}")
         except ClientError as e:
             error_msg = f"Failed to cleanup S3 bucket {self.bucket}: {e}"
             logger.error(error_msg)

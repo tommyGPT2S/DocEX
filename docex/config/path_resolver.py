@@ -86,16 +86,19 @@ class DocEXPathResolver:
         Resolve S3 prefix for a tenant.
         
         Structure: {tenant_id}/{path_namespace}/{prefix}/
-        - tenant_id: Tenant identifier (runtime parameter) - comes FIRST for tenant isolation
-        - path_namespace: Business identifier (organization, business unit, or deployment name) - required
-        - prefix: Environment prefix (optional, e.g., "production", "staging")
+        - tenant_id: Tenant identifier (runtime parameter, required) - FIRST for tenant isolation
+        - path_namespace: Business identifier (optional, from config)
+        - prefix: Environment prefix (optional, from config)
+        
+        Tenant ID is FIRST in the path for better tenant isolation, IAM policies, and cost tracking.
         
         Examples:
-        - With prefix: "tenant_acme_corp/my-organization/production/"
-        - Without prefix: "tenant_acme_corp/my-organization/"
+        - With all: "acme_corp/acme-corp/production/"
+        - Without prefix: "acme_corp/acme-corp/"
+        - Minimal: "acme_corp/"
         
         Args:
-            tenant_id: Tenant identifier (only runtime parameter)
+            tenant_id: Tenant identifier (only runtime parameter, required)
             
         Returns:
             S3 prefix string
@@ -129,11 +132,12 @@ class DocEXPathResolver:
         # Build path parts
         path_parts = [base_path]
         
-        # Add tenant path if tenant_id provided (simplified format: just tenant_id)
+        # Add tenant path if tenant_id provided - simplified: just tenant_id, no "tenant_" prefix
         if tenant_id:
             path_parts.append(tenant_id)
         
-        # Add basket path if provided
+        # Add basket path if provided - will be set by DocBasket.create() with friendly name
+        # This method is used for base path resolution; basket-specific paths are handled in DocBasket
         if basket_id:
             if basket_name:
                 # Use friendly name format: {sanitized_name}_{last_4_of_id}
@@ -150,35 +154,31 @@ class DocEXPathResolver:
         logger.debug(f"Resolved filesystem path for tenant '{tenant_id}', basket '{basket_id}' (name: '{basket_name}'): {full_path}")
         return str(full_path)
     
-    def resolve_s3_basket_prefix(self, tenant_id: str, basket_id: str, basket_name: Optional[str] = None) -> str:
+    def resolve_s3_basket_prefix(self, tenant_id: str, basket_id: str, basket_name: str) -> str:
         """
         Resolve S3 prefix for a basket within a tenant.
         
         Structure: {tenant_id}/{path_namespace}/{prefix}/{basket_friendly_name}_{last_4_of_basket_id}/
-        - tenant_id: Tenant identifier (runtime parameter) - comes FIRST
-        - path_namespace: Business identifier from config
-        - prefix: Environment prefix from config (optional)
-        - basket_friendly_name: Sanitized basket name + last 4 chars of basket_id
+        - Tenant ID is FIRST for tenant isolation
+        - Uses basket's friendly name (sanitized) + last 4 characters of basket_id for uniqueness
         
         Args:
-            tenant_id: Tenant identifier (only runtime parameter)
-            basket_id: Basket identifier (only runtime parameter)
-            basket_name: Optional basket name for friendly path generation
+            tenant_id: Tenant identifier (only runtime parameter, required)
+            basket_id: Basket identifier (full ID)
+            basket_name: Basket friendly name (will be sanitized)
             
         Returns:
             S3 prefix string for the basket
         """
+        from docex.utils.s3_prefix_builder import sanitize_basket_name
+        
         tenant_prefix = self.resolve_s3_prefix(tenant_id)
-        
-        # Build basket path using friendly name format
-        if basket_name:
-            # Use friendly name format: {sanitized_name}_{last_4_of_id}
-            sanitized_name = sanitize_basket_name(basket_name)
-            basket_path = f"{sanitized_name}_{basket_id[-4:]}"
-        else:
-            # Fallback to baskets/{id} if no name provided
-            basket_path = f"baskets/{basket_id}"
-        
+        # Get last 4 characters of basket_id (remove 'bas_' prefix if present)
+        basket_id_suffix = basket_id.replace('bas_', '')[-4:] if basket_id.startswith('bas_') else basket_id[-4:]
+        # Sanitize basket name for filesystem safety
+        sanitized_name = sanitize_basket_name(basket_name)
+        # Build basket path: {friendly_name}_{last_4_of_id}
+        basket_path = f"{sanitized_name}_{basket_id_suffix}"
         basket_prefix = f"{tenant_prefix}{basket_path}/"
         logger.debug(f"Resolved S3 basket prefix for tenant '{tenant_id}', basket '{basket_id}' (name: '{basket_name}'): {basket_prefix}")
         return basket_prefix

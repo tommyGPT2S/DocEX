@@ -23,7 +23,18 @@ class StorageService:
         """
         # Extract storage type and settings
         storage_type = storage_config.get('type', 'filesystem')
-        storage_settings = storage_config.get(storage_type, {})
+
+        # Check if config has flattened params (preferred) or nested format
+        flattened_params = {k: v for k, v in storage_config.items()
+                          if k not in ['type', storage_type] and v is not None}
+
+        if storage_type in storage_config and isinstance(storage_config[storage_type], dict):
+            # Nested format exists, merge with flattened params (flattened takes precedence)
+            nested_params = storage_config[storage_type]
+            storage_settings = {**nested_params, **flattened_params}
+        else:
+            # Only flattened format available
+            storage_settings = flattened_params
         
         # Create storage config with type and settings
         config = {
@@ -50,43 +61,52 @@ class StorageService:
         logger.info(f"Initialized storage service with type: {storage_type}")
         self.storage = StorageFactory.create_storage(config)
     
-    def store_document(self, source_path: str, document_id: str) -> str:
+    def store_document(self, source_path: str, full_document_path: str) -> str:
         """
-        Store a document
+        Store a document using full path.
+        
+        All operations center around document_id and basket_id - full paths
+        should be built by DocEXPathBuilder before calling this method.
         
         Args:
-            source_path: Path to source document
-            document_id: Document ID
+            source_path: Path to source document file
+            full_document_path: Full storage path (built from basket_id and document_id)
             
         Returns:
-            Path where document was stored
+            Full path where document was stored (same as full_document_path)
         """
-        # Store the document in the basket's storage
-        stored_path = self.storage.store(source_path, document_id)
+        # Store the document in the basket's storage using full path
+        stored_path = self.storage.store(source_path, full_document_path)
         
-        # Return the relative path from the basket's storage root
+        # Return the full path (storage backends now receive full paths)
         return stored_path
     
-    def retrieve_document(self, document_id: str) -> str:
+    def retrieve_document(self, full_document_path: str) -> str:
         """
-        Retrieve a document
+        Retrieve a document using full path.
+        
+        All operations center around document_id and basket_id - full paths
+        should be built by DocEXPathBuilder before calling this method.
         
         Args:
-            document_id: Document ID
+            full_document_path: Full storage path (built from basket_id and document_id)
             
         Returns:
-            Path to retrieved document
+            Retrieved document content
         """
-        return self.storage.retrieve(document_id)
+        return self.storage.retrieve(full_document_path)
     
-    def delete_document(self, document_id: str) -> None:
+    def delete_document(self, full_document_path: str) -> None:
         """
-        Delete a document
+        Delete a document using full path.
+        
+        All operations center around document_id and basket_id - full paths
+        should be built by DocEXPathBuilder before calling this method.
         
         Args:
-            document_id: Document ID
+            full_document_path: Full storage path (built from basket_id and document_id)
         """
-        self.storage.delete(document_id)
+        self.storage.delete(full_document_path)
     
     def get_storage_path(self) -> str:
         """
@@ -109,10 +129,14 @@ class StorageService:
         """
         self.storage.ensure_storage_exists()
     
-    def cleanup(self) -> None:
+    def cleanup(self, prefix: str) -> None:
         """
-        Clean up storage resources
+        Clean up storage resources using prefix built from IDs.
         
-        This method should be called when a basket is deleted to clean up any associated storage resources.
+        All operations center around basket_id and document_id - prefix should be
+        built by DocEXPathBuilder before calling this method.
+        
+        Args:
+            prefix: Full storage prefix path (built from basket_id using DocEXPathBuilder)
         """
-        self.storage.cleanup() 
+        self.storage.cleanup(prefix) 

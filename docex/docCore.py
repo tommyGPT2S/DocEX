@@ -267,17 +267,46 @@ class DocEX:
             if user_context is not None:
                 # Check if we need to switch tenant database
                 config = DocEXConfig()
+                
+                # Check for v3.0 multi-tenancy
+                multi_tenancy_config = config.get('multi_tenancy', {})
+                v3_multi_tenancy_enabled = multi_tenancy_config.get('enabled', False)
+                
+                # Check for v2.x database-level multi-tenancy
                 security_config = config.get('security', {})
                 multi_tenancy_model = security_config.get('multi_tenancy_model', 'row_level')
+                v2_database_level = multi_tenancy_model == 'database_level'
                 
-                if multi_tenancy_model == 'database_level' and user_context.tenant_id:
-                    new_tenant_id = user_context.tenant_id
-                    current_tenant_id = getattr(self.user_context, 'tenant_id', None) if self.user_context else None
-                    
-                    # If tenant changed, update database connection
-                    if new_tenant_id != current_tenant_id:
-                        logger.info(f"Switching tenant database from {current_tenant_id} to {new_tenant_id}")
-                        self.db = Database(tenant_id=new_tenant_id)
+                # Determine if we need to switch tenant database
+                new_tenant_id = None
+                if v3_multi_tenancy_enabled:
+                    # v3.0: tenant_id is required
+                    if user_context.tenant_id:
+                        new_tenant_id = user_context.tenant_id
+                elif v2_database_level:
+                    # v2.x: tenant_id is optional
+                    if user_context.tenant_id:
+                        new_tenant_id = user_context.tenant_id
+                
+                # Get current tenant_id from existing database
+                current_tenant_id = getattr(self.db, 'tenant_id', None) if self.db else None
+                
+                # ENFORCEMENT: If tenant changed, require explicit reset
+                if new_tenant_id and new_tenant_id != current_tenant_id and current_tenant_id is not None:
+                    raise ValueError(
+                        f"Cannot switch tenant from '{current_tenant_id}' to '{new_tenant_id}' without resetting. "
+                        f"All database connections must be closed before switching tenants. "
+                        f"Call DocEX.reset() or DocEX.close() first, then create a new DocEX instance with the new tenant_id."
+                    )
+                
+                # If tenant changed (and current_tenant_id is None, meaning first initialization)
+                if new_tenant_id and new_tenant_id != current_tenant_id:
+                    logger.info(f"Switching tenant database from {current_tenant_id} to {new_tenant_id}")
+                    # Close existing database connection before creating new one
+                    if self.db:
+                        self.db.close()
+                    self.db = Database(tenant_id=new_tenant_id)
+                    logger.debug(f"Updated DocEX.db.tenant_id to: {getattr(self.db, 'tenant_id', None)}")
                 
                 self.user_context = user_context
                 logger.info(f"UserContext updated for user {user_context.user_id}")
@@ -317,13 +346,27 @@ class DocEX:
                 else:
                     registry_db = Database(config=config)
             
-            with registry_db.session() as session:
-                tenant = session.query(TenantRegistry).filter_by(tenant_id=tenant_id).first()
-                if not tenant:
-                    raise ValueError(
-                        f"Tenant '{tenant_id}' not found in tenant registry. "
-                        f"Please provision the tenant first using 'docex tenant create'."
-                    )
+            # For multi-tenancy enabled, ensure we use bootstrap connection with correct search_path
+            if multi_tenancy_enabled:
+                with registry_db.get_bootstrap_connection() as conn:
+                    # Query tenant registry using raw SQL to ensure correct schema
+                    result = conn.execute(
+                        text("SELECT tenant_id FROM tenant_registry WHERE tenant_id = :tenant_id"),
+                        {"tenant_id": tenant_id}
+                    ).fetchone()
+                    if not result:
+                        raise ValueError(
+                            f"Tenant '{tenant_id}' not found in tenant registry. "
+                            f"Please provision the tenant first using 'docex tenant create'."
+                        )
+            else:
+                with registry_db.session() as session:
+                    tenant = session.query(TenantRegistry).filter_by(tenant_id=tenant_id).first()
+                    if not tenant:
+                        raise ValueError(
+                            f"Tenant '{tenant_id}' not found in tenant registry. "
+                            f"Please provision the tenant first using 'docex tenant create'."
+                        )
         except ImportError:
             # Tenant registry not available (v2.x or not initialized)
             logger.warning("Tenant registry not available - skipping tenant validation")
@@ -374,6 +417,22 @@ class DocEX:
                 if key not in defaults:
                     logger.warning(f"Unexpected configuration key: {key}")
                 elif isinstance(value, dict) and key in defaults:
+                    # Special handling for storage - allow S3 parameters in both nested and flattened format
+                    if key == 'storage':
+                        # Check if this is S3 storage configuration
+                        if value.get('type') == 's3':
+                            # For S3, allow common parameters whether nested or flattened
+                            allowed_s3_keys = {'type', 'bucket', 'region', 'prefix', 'access_key', 'secret_key',
+                                             'session_token', 'max_retries', 'retry_delay', 'connect_timeout',
+                                             'read_timeout', 'application_name', 's3'}
+                            for subkey in value:
+                                if subkey not in allowed_s3_keys:
+                                    logger.warning(f"Unexpected subkey in {key}: {subkey}")
+                            continue
+                        elif 's3' in value:
+                            # Nested S3 config - allow any S3 parameters
+                            continue
+                    # For other nested configs, check subkeys
                     for subkey in value:
                         if subkey not in defaults[key]:
                             logger.warning(f"Unexpected subkey in {key}: {subkey}")
@@ -418,15 +477,21 @@ class DocEX:
                 if multi_tenancy_model == 'database_level':
                     logger.info("Database-level multi-tenancy enabled - tables will be created per tenant schema")
                     # Don't create tables here - they'll be created in tenant schemas on first access
+                    return True
                 else:
                     # Ensure all models are imported
                     import docex.db.models
                     import docex.transport.models
                     db = Database()
                     
-                    # Drop all tables first
-                    Base.metadata.drop_all(db.get_engine())
-                    TransportBase.metadata.drop_all(db.get_engine())
+                    # Drop all tables first (only if we have permission)
+                    try:
+                        Base.metadata.drop_all(db.get_engine())
+                        TransportBase.metadata.drop_all(db.get_engine())
+                        logger.info("Dropped existing database tables")
+                    except Exception as drop_error:
+                        logger.warning(f"Could not drop existing tables (this is OK if tables don't exist or insufficient permissions): {drop_error}")
+                        # Continue with table creation - create_tables will handle "IF NOT EXISTS" logic
                     
                     # Create tables in order
                     logger.info("Creating database tables...")
@@ -537,6 +602,48 @@ class DocEX:
             logger.info(f"Basket {basket_id} accessed by user {self.user_context.user_id}")
                 
         return basket
+    
+    def close(self) -> None:
+        """
+        Close all database connections and reset DocEX instance.
+        
+        This method should be called before switching to a different tenant
+        to ensure all database connections are properly closed and re-initialized.
+        
+        After calling close(), you must create a new DocEX instance with the new tenant_id.
+        
+        Example:
+            # Close current tenant connection
+            docex.close()
+            
+            # Create new instance with different tenant
+            new_docex = DocEX(user_context=UserContext(user_id='u1', tenant_id='contoso'))
+        """
+        if hasattr(self, 'db') and self.db:
+            self.db.close()
+            # Also close tenant manager connections if applicable
+            if hasattr(self.db, 'tenant_manager'):
+                from docex.db.tenant_database_manager import TenantDatabaseManager
+                tenant_manager = TenantDatabaseManager()
+                current_tenant_id = getattr(self.db, 'tenant_id', None)
+                if current_tenant_id:
+                    tenant_manager.close_tenant_connection(current_tenant_id)
+            self.db = None
+        
+        # Reset user context
+        self.user_context = None
+        logger.info("DocEX connections closed. Create a new DocEX instance to continue.")
+    
+    def reset(self) -> None:
+        """
+        Reset DocEX instance (alias for close()).
+        
+        This method closes all database connections and resets the instance,
+        allowing you to switch to a different tenant.
+        
+        See close() for details.
+        """
+        self.close()
     
     def list_baskets(self) -> List[DocBasket]:
         """
