@@ -76,6 +76,7 @@ class TenantDatabaseManager:
         Raises:
             ValueError: If tenant_id is not provided and multi-tenancy is enabled
             RuntimeError: If database connection fails
+            ValueError: If tenant is not provisioned (v3.0 multi-tenancy)
         """
         if not tenant_id:
             if self.multi_tenancy_model == 'database_level':
@@ -86,6 +87,16 @@ class TenantDatabaseManager:
         # Check if engine already exists
         if tenant_id in self._tenant_engines:
             return self._tenant_engines[tenant_id]
+        
+        # For v3.0 multi-tenancy, validate tenant exists in registry
+        # Skip validation for:
+        # - v2.x default tenant 'docex_first_tenant' (to avoid recursion)
+        # - bootstrap tenant '_docex_system_' (during initialization, it doesn't exist yet)
+        multi_tenancy_config = self.config.get('multi_tenancy', {})
+        multi_tenancy_enabled = multi_tenancy_config.get('enabled', False)
+        
+        if multi_tenancy_enabled and tenant_id not in ['docex_first_tenant', '_docex_system_']:
+            self._validate_tenant_provisioned(tenant_id)
         
         # Create engine for tenant (thread-safe)
         if tenant_id not in self._tenant_locks:
@@ -144,9 +155,11 @@ class TenantDatabaseManager:
         """
         sqlite_config = db_config.get('sqlite', {})
         
-        # Get path template (e.g., "storage/tenant_{tenant_id}/docex.db")
-        path_template = sqlite_config.get('path_template', 'storage/tenant_{tenant_id}/docex.db')
-        db_path = Path(path_template.format(tenant_id=tenant_id))
+        # Resolve database path using explicit resolver (all config from config.yaml)
+        from docex.db.schema_resolver import SchemaResolver
+        schema_resolver = SchemaResolver(self.config)
+        db_path_str = schema_resolver.resolve_database_path(tenant_id)
+        db_path = Path(db_path_str)
         
         # Ensure directory exists
         db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -179,7 +192,8 @@ class TenantDatabaseManager:
             cursor.close()
         
         # Initialize schema for tenant
-        self._initialize_tenant_schema(engine, tenant_id)
+        # Exclude tenant_registry table from tenant databases (it only exists in bootstrap database)
+        self._initialize_tenant_schema(engine, tenant_id, exclude_tables=['tenant_registry'])
         
         return engine
     
@@ -203,16 +217,27 @@ class TenantDatabaseManager:
         user = postgres_config.get('user', 'postgres')
         password = postgres_config.get('password', '')
         
-        # Get schema template (e.g., "tenant_{tenant_id}")
-        schema_template = postgres_config.get('schema_template', 'tenant_{tenant_id}')
-        schema_name = schema_template.format(tenant_id=tenant_id)
+        # Resolve schema name using explicit resolver (all config from config.yaml)
+        # Special handling for bootstrap tenant - use configured schema name, not template
+        multi_tenancy_config = self.config.get('multi_tenancy', {})
+        multi_tenancy_enabled = multi_tenancy_config.get('enabled', False)
+        
+        if multi_tenancy_enabled and tenant_id == '_docex_system_':
+            # Bootstrap tenant uses configured schema name, not template
+            bootstrap_config = multi_tenancy_config.get('bootstrap_tenant', {})
+            schema_name = bootstrap_config.get('schema', 'docex_system')
+        else:
+            from docex.db.schema_resolver import SchemaResolver
+            schema_resolver = SchemaResolver(self.config)
+            schema_name = schema_resolver.resolve_schema_name(tenant_id)
         
         # Create connection URL with URL-encoded credentials
         from urllib.parse import quote_plus
         user_encoded = quote_plus(user)
         password_encoded = quote_plus(password)
-        # Use sslmode=disable for local connections, require for remote
-        sslmode = postgres_config.get('sslmode', 'disable' if host in ['localhost', '127.0.0.1'] else 'require')
+        # SSL mode: prefer (use SSL if available, otherwise allow non-SSL)
+        # This works for both local Docker (no SSL) and AWS RDS (with SSL)
+        sslmode = postgres_config.get('sslmode', 'prefer')
         connection_url = f'postgresql://{user_encoded}:{password_encoded}@{host}:{port}/{database}?sslmode={sslmode}'
         
         # Create engine with schema in search_path
@@ -238,7 +263,8 @@ class TenantDatabaseManager:
         
         # Create schema and initialize for tenant
         self._create_postgres_schema(engine, schema_name, tenant_id)
-        self._initialize_tenant_schema(engine, tenant_id, schema_name)
+        # Exclude tenant_registry table from tenant schemas (it only exists in bootstrap schema)
+        self._initialize_tenant_schema(engine, tenant_id, schema_name, exclude_tables=['tenant_registry'])
         
         return engine
     
@@ -262,7 +288,7 @@ class TenantDatabaseManager:
             logger.error(f"Failed to create schema {schema_name} for tenant {tenant_id}: {e}")
             raise
     
-    def _initialize_tenant_schema(self, engine: Any, tenant_id: str, schema_name: Optional[str] = None) -> None:
+    def _initialize_tenant_schema(self, engine: Any, tenant_id: str, schema_name: Optional[str] = None, exclude_tables: Optional[list] = None) -> None:
         """
         Initialize database schema for tenant (create tables).
         
@@ -270,20 +296,25 @@ class TenantDatabaseManager:
             engine: SQLAlchemy engine
             tenant_id: Tenant identifier
             schema_name: Schema name for tenant (e.g., "tenant_tenant1")
+            exclude_tables: Optional list of table names to exclude from creation
         """
+        exclude_tables = exclude_tables or []
         try:
             # For PostgreSQL, set schema on all tables and ENUM types before creating
             # This ensures ENUM types and tables are created in the tenant schema, not public
             if schema_name:
-                # Set schema on all Base tables
-                for table in Base.metadata.tables.values():
-                    table.schema = schema_name
+                # Set schema on all Base tables (except excluded ones)
+                # Also exclude tenant_registry from schema assignment - it should always use search_path
+                for table_name, table in Base.metadata.tables.items():
+                    if table_name not in exclude_tables and table_name != 'tenant_registry':
+                        table.schema = schema_name
                 
                 # Set schema on all TransportBase tables if available
                 try:
                     from docex.transport.models import TransportBase
-                    for table in TransportBase.metadata.tables.values():
-                        table.schema = schema_name
+                    for table_name, table in TransportBase.metadata.tables.items():
+                        if table_name not in exclude_tables and table_name != 'tenant_registry':
+                            table.schema = schema_name
                 except ImportError:
                     pass
                 
@@ -291,11 +322,11 @@ class TenantDatabaseManager:
                 # PostgreSQL ENUM types must have schema set explicitly
                 from sqlalchemy.dialects.postgresql import ENUM
                 
-                # Collect all tables (Base + TransportBase)
-                all_tables = list(Base.metadata.tables.values())
+                # Collect all tables (Base + TransportBase), excluding specified tables
+                all_tables = [t for name, t in Base.metadata.tables.items() if name not in exclude_tables]
                 try:
                     from docex.transport.models import TransportBase
-                    all_tables.extend(list(TransportBase.metadata.tables.values()))
+                    all_tables.extend([t for name, t in TransportBase.metadata.tables.items() if name not in exclude_tables])
                 except ImportError:
                     pass
                 
@@ -418,14 +449,18 @@ class TenantDatabaseManager:
                 logger.warning(f"No index statements found in schema.sql")
                 return
                 
-            logger.info(f"Creating {len(index_statements)} performance indexes in schema '{schema_name}'")
+            if schema_name:
+                logger.info(f"Creating {len(index_statements)} performance indexes in schema '{schema_name}'")
+            else:
+                logger.info(f"Creating {len(index_statements)} performance indexes in database")
             
             # Set search_path to tenant schema so we can use unqualified table names
             # Use individual transactions (savepoints) so one failure doesn't abort all
             with engine.connect() as conn:
-                # Set search path to tenant schema
-                conn.execute(text(f'SET search_path TO "{schema_name}"'))
-                conn.commit()
+                # Set search path to tenant schema (PostgreSQL only)
+                if schema_name:
+                    conn.execute(text(f'SET search_path TO "{schema_name}"'))
+                    conn.commit()
                 
                 indexes_created = 0
                 indexes_skipped = 0
@@ -455,14 +490,18 @@ class TenantDatabaseManager:
                 conn.commit()
                 
                 if indexes_created > 0:
-                    logger.info(f"✅ Created {indexes_created} performance indexes in schema '{schema_name}'")
+                    if schema_name:
+                        logger.info(f"✅ Created {indexes_created} performance indexes in schema '{schema_name}'")
+                    else:
+                        logger.info(f"✅ Created {indexes_created} performance indexes in database")
                 if indexes_skipped > 0:
                     logger.info(f"⏭️  Skipped {indexes_skipped} indexes (columns/tables don't exist)")
                 if indexes_failed > 0:
                     logger.warning(f"⚠️  Failed to create {indexes_failed} indexes (out of {len(index_statements)} total)")
                     
         except Exception as e:
-            logger.warning(f"Failed to create performance indexes for schema {schema_name}: {e}")
+            location = f"schema '{schema_name}'" if schema_name else "database"
+            logger.warning(f"Failed to create performance indexes for {location}: {e}")
             # Don't raise - indexes are optional, tables are required
     
     def get_tenant_session(self, tenant_id: Optional[str] = None) -> Session:
@@ -547,6 +586,89 @@ class TenantDatabaseManager:
         """Close all tenant database connections"""
         for tenant_id in list(self._tenant_engines.keys()):
             self.close_tenant_connection(tenant_id)
+    
+    def _validate_tenant_provisioned(self, tenant_id: str) -> None:
+        """
+        Validate that tenant is provisioned in tenant registry (v3.0 multi-tenancy).
+        
+        Args:
+            tenant_id: Tenant identifier to validate
+            
+        Raises:
+            ValueError: If tenant is not provisioned
+        """
+        try:
+            from docex.db.tenant_registry_model import TenantRegistry
+            
+            # Use default database to query tenant registry (stored in bootstrap tenant)
+            default_db = self._get_default_database()
+            
+            # Ensure we have a fresh session to see committed changes
+            with default_db.session() as session:
+                # Use explicit commit to ensure we see latest data
+                session.commit()  # Ensure any pending transactions are committed
+                
+                tenant = session.query(TenantRegistry).filter_by(tenant_id=tenant_id).first()
+                if not tenant:
+                    # Log debug info to help diagnose
+                    all_tenants = session.query(TenantRegistry).all()
+                    logger.debug(f"Tenant '{tenant_id}' not found. Available tenants: {[t.tenant_id for t in all_tenants]}")
+                    raise ValueError(
+                        f"Tenant '{tenant_id}' is not provisioned. "
+                        f"Please provision the tenant first using 'docex tenant create'."
+                    )
+        except ImportError:
+            # Tenant registry not available - skip validation (v2.x mode)
+            logger.debug("Tenant registry not available - skipping validation")
+        except ValueError:
+            # Re-raise ValueError (tenant not found)
+            raise
+        except Exception as e:
+            # If validation fails for other reasons, log warning but don't fail (for backward compatibility)
+            logger.warning(f"Failed to validate tenant provisioning: {e}")
+    
+    def _get_default_database(self) -> 'Database':
+        """Get default database instance for querying tenant registry."""
+        from docex.db.connection import Database
+        
+        # Check if v3.0 multi-tenancy is enabled
+        multi_tenancy_config = self.config.get('multi_tenancy', {})
+        multi_tenancy_enabled = multi_tenancy_config.get('enabled', False)
+        
+        # Check if v2.x database-level multi-tenancy is enabled
+        if self.multi_tenancy_model == 'database_level':
+            # For v2.x, we need to access tenant registry but can't use docex_first_tenant
+            # because that would cause recursion. Instead, use the default database path directly.
+            # In v2.x mode, tenant registry is stored in the default database location.
+            db_type = self.config.get('database', {}).get('type', 'sqlite')
+            if db_type == 'sqlite':
+                # For SQLite, use default path directly
+                sqlite_config = self.config.get('database', {}).get('sqlite', {})
+                default_path = sqlite_config.get('path', 'docex.db')
+                from pathlib import Path
+                from sqlalchemy import create_engine
+                from sqlalchemy.orm import sessionmaker
+                
+                db_path = Path(default_path)
+                db_path.parent.mkdir(parents=True, exist_ok=True)
+                engine = create_engine(f'sqlite:///{db_path}')
+                
+                db = Database.__new__(Database)
+                db.config = self.config
+                db.tenant_id = None
+                db.engine = engine
+                db.Session = sessionmaker(bind=engine)
+                return db
+            else:
+                # For PostgreSQL, use get_default_connection
+                return Database.get_default_connection(config=self.config)
+        elif multi_tenancy_enabled:
+            # For v3.0, use bootstrap tenant for tenant registry
+            bootstrap_tenant_id = multi_tenancy_config.get('bootstrap_tenant', {}).get('id', '_docex_system_')
+            return Database(config=self.config, tenant_id=bootstrap_tenant_id)
+        else:
+            # Single-tenant mode: use default database
+            return Database(config=self.config)
     
     def list_tenant_databases(self) -> list[str]:
         """

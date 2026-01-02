@@ -5,8 +5,8 @@ database:
   # SQLite configuration
   sqlite:
     path: docex.db
-    # For database-level multi-tenancy (Model B):
-    # path_template: "storage/tenant_{tenant_id}/docex.db"
+    # Path template for multi-tenancy (tenant_id is resolved at runtime)
+    path_template: "storage/tenant_{tenant_id}/docex.db"
     
   # PostgreSQL configuration
   postgres:
@@ -15,8 +15,8 @@ database:
     database: docex
     user: postgres
     password: postgres
-    # For database-level multi-tenancy (Model B):
-    # schema_template: "tenant_{tenant_id}"  # Schema name pattern per tenant
+    # Schema template for multi-tenancy (tenant_id is resolved at runtime)
+    schema_template: "tenant_{tenant_id}"  # Schema name pattern per tenant
     
   # Common settings
   echo: true  # Enable SQL query logging
@@ -28,6 +28,7 @@ database:
 # Security and multi-tenancy configuration
 security:
   # Multi-tenancy model: "row_level" (Model A) or "database_level" (Model B)
+  # Note: v3.0 uses 'multi_tenancy' section below instead
   multi_tenancy_model: row_level
   
   # Enable automatic database routing based on tenant_id (for database_level model)
@@ -37,6 +38,21 @@ security:
   enforce_user_context: false
   context_match_fields:
     - tenant_id
+
+# DocEX 3.0 Multi-tenancy Configuration
+multi_tenancy:
+  # Enable v3.0 explicit multi-tenancy (requires explicit tenant provisioning)
+  enabled: false
+  
+  # Isolation strategy: 'schema' (PostgreSQL) or 'database' (SQLite)
+  isolation_strategy: schema
+  
+  # Bootstrap tenant configuration
+  bootstrap_tenant:
+    id: _docex_system_
+    display_name: DocEX System
+    schema: docex_system  # PostgreSQL schema name
+    database_path: storage/_docex_system_/docex.db  # SQLite database path
 
 # Application settings
 app:
@@ -49,18 +65,43 @@ storage:
   type: filesystem
   filesystem:
     path: storage/docex
+  
+  # S3 storage configuration (when type: s3)
   s3:
-    # Required: S3 bucket name
-    bucket: null
+    # ==================== S3 Bucket Configuration ====================
+    # Option 1: Direct bucket name (if bucket already exists)
+    # Use this if you have an existing S3 bucket
+    bucket: my-documents-bucket
+    
+    # Option 2: Build bucket name from bucket_application (if bucket is not specified)
+    # Bucket name will be automatically built as: {bucket_application}-documents-bucket
+    # Example: If bucket_application is "acme-corp", bucket becomes "acme-corp-documents-bucket"
+    # Note: If both 'bucket' and 'bucket_application' are provided, 'bucket' takes precedence
+    bucket_application: null  # Used to BUILD bucket name: {bucket_application}-documents-bucket
+    
     # Required: AWS region for S3 bucket
     region: us-east-1
-    # Optional: Application name prefix for S3 paths
-    # If set, S3 paths will be: {application_name}/{tenant_id}/{document_type}_{stage}/
-    # If not set, S3 paths will be: {tenant_id}/{document_type}_{stage}/
-    # Examples: "llamasee-dp-dev", "llamasee-dp-prod", "my-app-staging"
-    application_name: null
-    # Optional: S3 key prefix for all objects (alternative to application_name)
-    prefix: null
+    
+    # ==================== S3 Path Prefix Configuration ====================
+    # S3 path structure: {tenant_id}/{path_namespace}/{prefix}/{basket}/{document}
+    # 
+    # Tenant ID is FIRST in the path for better tenant isolation, IAM policies, and cost tracking.
+    # 
+    # DISTINCTION:
+    #   - bucket_application: Used to BUILD bucket name (e.g., "acme-corp" -> "acme-corp-documents-bucket")
+    #   - path_namespace: Used for S3 path prefix (optional, for multi-application deployments)
+    #   - prefix: Environment prefix (optional, e.g., "production", "staging")
+    #
+    # Examples for path_namespace:
+    #   - Organization: "acme-corp"
+    #   - Business Unit: "finance-department"
+    #   - Deployment: "production-instance"
+    path_namespace: finance_dept  # Optional: Business identifier for S3 path prefix
+    
+    # Optional: Environment prefix for S3 path (e.g., dev, staging, production)
+    # Final S3 key structure: {tenant_id}/{path_namespace}/{prefix}/{basket_friendly_name}_{last_4}/{friendly_name}_{last_6}.{ext}
+    # Example: "acme_corp/acme-corp/production/invoices_a1b2/invoice_c3d4e5.pdf"
+    prefix: production
     # Optional: AWS credentials (if not using IAM roles or default profile)
     access_key: null
     secret_key: null

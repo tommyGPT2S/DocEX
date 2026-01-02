@@ -1,0 +1,3 @@
+Test document 9 content
+Category: report
+Author: Bob

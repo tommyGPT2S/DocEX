@@ -34,4 +34,4 @@ from docex.config.docex_config import DocEXConfig  # Updated import
 
 __all__ = ['DocEX', 'DocEXConfig']
 
-__version__ = '2.6.2'
+__version__ = '2.8.1'

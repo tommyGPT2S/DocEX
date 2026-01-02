@@ -29,31 +29,52 @@ class S3Storage(AbstractStorage):
         Args:
             config: Configuration dictionary with:
                 - bucket: S3 bucket name (required)
+                - bucket_application: Optional - used to build bucket name if bucket not provided
                 - access_key: AWS access key (optional if using IAM/env vars)
                 - secret_key: AWS secret key (optional if using IAM/env vars)
                 - session_token: AWS session token (optional, for temporary credentials)
                 - region: AWS region (default: us-east-1)
-                - prefix: Optional S3 key prefix for organizing files
                 - max_retries: Maximum retry attempts (default: 3)
                 - retry_delay: Delay between retries in seconds (default: 1.0)
                 - connect_timeout: Connection timeout in seconds (default: 60)
                 - read_timeout: Read timeout in seconds (default: 60)
+                
+        Note:
+            S3Storage is a low-level storage abstraction that accepts FULL paths.
+            All path building and interpretation should happen at higher levels
+            (DocEXPathBuilder, DocBasket) before calling S3Storage methods.
+            
+            S3Storage does NOT interpret or build paths - it uses paths as provided.
+            This ensures clear separation: path building is centralized, storage is simple.
         """
         self.config = config
         
-        # Validate required parameters
+        # Resolve bucket name (from explicit bucket or bucket_application)
+        # Priority: 1) explicit 'bucket', 2) build from 'bucket_application'
         self.bucket = config.get('bucket')
         if not self.bucket:
-            raise ValueError("S3 bucket name is required in configuration")
+            # If not provided, try to resolve from bucket_application
+            # This allows bucket name to be built from bucket_application
+            bucket_application = config.get('bucket_application')
+            if bucket_application:
+                # Build bucket name: {bucket_application}-documents-bucket
+                self.bucket = f"{bucket_application}-documents-bucket"
+                logger.debug(f"S3 bucket name built from bucket_application '{bucket_application}': {self.bucket}")
+            else:
+                # Neither bucket nor bucket_application provided
+                raise ValueError(
+                    "S3 bucket name is required. Either provide 'bucket' directly in config, "
+                    "or provide 'bucket_application' to build bucket name as '{bucket_application}-documents-bucket'"
+                )
         
         # Get credentials with fallback to environment variables and IAM
         credentials = self._get_credentials(config)
         
         # Extract configuration
         self.region = credentials['region']
-        self.prefix = config.get('prefix', '').strip('/')
-        if self.prefix and not self.prefix.endswith('/'):
-            self.prefix += '/'
+        
+        # NOTE: No prefix storage - S3Storage accepts full paths only
+        # All path building happens in DocEXPathBuilder before calling S3Storage
         
         # Retry configuration
         self.max_retries = config.get('max_retries', 3)
@@ -144,19 +165,25 @@ class S3Storage(AbstractStorage):
         
         return credentials
     
-    def _get_full_key(self, path: str) -> str:
+    def _normalize_key(self, path: str) -> str:
         """
-        Get full S3 key with prefix
+        Normalize S3 key path (remove leading slashes, ensure proper format).
+        
+        S3Storage accepts FULL paths - no prefix interpretation.
+        This method only normalizes the path format (removes leading slashes).
         
         Args:
-            path: Relative path/key
+            path: Full S3 key path (already includes all prefixes)
             
         Returns:
-            Full S3 key with prefix
+            Normalized S3 key (leading slash removed)
+            
+        Note:
+            Path building should happen in DocEXPathBuilder before calling S3Storage.
+            S3Storage does NOT interpret or build paths - it uses paths as provided.
         """
-        # Remove leading slash if present
-        path = path.lstrip('/')
-        return f"{self.prefix}{path}" if self.prefix else path
+        # Remove leading slash if present (S3 keys should not start with /)
+        return path.lstrip('/')
     
     def _retry_on_error(self, func, *args, **kwargs):
         """
@@ -227,10 +254,11 @@ class S3Storage(AbstractStorage):
         Save content to S3
         
         Args:
-            path: S3 key (relative path, prefix will be added automatically)
+            path: Full S3 key path (must include all prefixes - tenant, namespace, basket, document)
+                  Path should be built by DocEXPathBuilder before calling this method.
             content: Content to save
         """
-        key = self._get_full_key(path)
+        key = self._normalize_key(path)
         
         if isinstance(content, dict):
             data = json.dumps(content).encode('utf-8')
@@ -261,12 +289,13 @@ class S3Storage(AbstractStorage):
         Load content from S3
         
         Args:
-            path: S3 key (relative path, prefix will be added automatically)
+            path: Full S3 key path (must include all prefixes - tenant, namespace, basket, document)
+                  Path should be built by DocEXPathBuilder before calling this method.
             
         Returns:
             Content as dictionary or bytes
         """
-        key = self._get_full_key(path)
+        key = self._normalize_key(path)
         
         try:
             response = self._retry_on_error(
@@ -300,7 +329,7 @@ class S3Storage(AbstractStorage):
         Returns:
             True if successful, False otherwise
         """
-        key = self._get_full_key(path)
+        key = self._normalize_key(path)
         
         try:
             self._retry_on_error(
@@ -320,12 +349,13 @@ class S3Storage(AbstractStorage):
         Check if content exists in S3
         
         Args:
-            path: S3 key (relative path, prefix will be added automatically)
+            path: Full S3 key path (must include all prefixes)
+                  Path should be built by DocEXPathBuilder before calling this method.
             
         Returns:
             True if content exists, False otherwise
         """
-        key = self._get_full_key(path)
+        key = self._normalize_key(path)
         
         try:
             self._retry_on_error(
@@ -352,7 +382,7 @@ class S3Storage(AbstractStorage):
         Returns:
             True if successful, False otherwise
         """
-        key = self._get_full_key(path)
+        key = self._normalize_key(path)
         
         # Ensure path ends with /
         if not key.endswith('/'):
@@ -382,7 +412,7 @@ class S3Storage(AbstractStorage):
         Returns:
             List of keys in the directory (without prefix)
         """
-        key = self._get_full_key(path)
+        key = self._normalize_key(path)
         
         # Ensure path ends with /
         if not key.endswith('/'):
@@ -397,12 +427,7 @@ class S3Storage(AbstractStorage):
                     for obj in page['Contents']:
                         full_key = obj['Key']
                         if full_key != key:  # Skip the directory marker itself
-                            # Remove prefix from returned keys
-                            if self.prefix and full_key.startswith(self.prefix):
-                                relative_key = full_key[len(self.prefix):]
-                            else:
-                                relative_key = full_key
-                            keys.append(relative_key)
+                            keys.append(full_key)  # Return full keys (no prefix removal)
             
             return keys
         except ClientError as e:
@@ -415,12 +440,13 @@ class S3Storage(AbstractStorage):
         Get metadata for an object in S3
         
         Args:
-            path: S3 key (relative path, prefix will be added automatically)
+            path: Full S3 key path (must include all prefixes)
+                  Path should be built by DocEXPathBuilder before calling this method.
             
         Returns:
             Dictionary of metadata
         """
-        key = self._get_full_key(path)
+        key = self._normalize_key(path)
         
         try:
             response = self._retry_on_error(
@@ -454,7 +480,7 @@ class S3Storage(AbstractStorage):
         Returns:
             Presigned URL
         """
-        key = self._get_full_key(path)
+        key = self._normalize_key(path)
         
         try:
             url = self.s3.generate_presigned_url(
@@ -482,8 +508,8 @@ class S3Storage(AbstractStorage):
         Returns:
             True if successful, False otherwise
         """
-        source_key = self._get_full_key(source_path)
-        dest_key = self._get_full_key(dest_path)
+        source_key = self._normalize_key(source_path)
+        dest_key = self._normalize_key(dest_path)
         
         try:
             self._retry_on_error(
@@ -572,7 +598,7 @@ class S3Storage(AbstractStorage):
         Returns:
             True if successful, False otherwise
         """
-        key = self._get_full_key(path)
+        key = self._normalize_key(path)
         
         try:
             # Copy object to itself with new metadata
@@ -591,18 +617,29 @@ class S3Storage(AbstractStorage):
             logger.warning(error_msg)
             return False
     
-    def cleanup(self) -> None:
+    def cleanup(self, prefix: str) -> None:
         """
         Clean up storage (delete all objects in bucket with prefix)
         
-        WARNING: This will delete all objects with the configured prefix!
+        WARNING: This will delete all objects with the specified prefix!
+        
+        Args:
+            prefix: Full S3 key prefix path (must include all prefixes)
+                   Path should be built by DocEXPathBuilder before calling this method.
         """
+        if not prefix:
+            raise ValueError("prefix is required for cleanup operation")
+        
         try:
-            # Only delete objects with the configured prefix
-            prefix = self.prefix if self.prefix else ''
+            # Normalize prefix
+            normalized_prefix = self._normalize_key(prefix)
+            # Ensure prefix ends with /
+            if not normalized_prefix.endswith('/'):
+                normalized_prefix += '/'
+            
             paginator = self.s3.get_paginator('list_objects_v2')
             
-            for page in paginator.paginate(Bucket=self.bucket, Prefix=prefix):
+            for page in paginator.paginate(Bucket=self.bucket, Prefix=normalized_prefix):
                 if 'Contents' in page:
                     objects = [{'Key': obj['Key']} for obj in page['Contents']]
                     if objects:
@@ -610,7 +647,7 @@ class S3Storage(AbstractStorage):
                             Bucket=self.bucket,
                             Delete={'Objects': objects}
                         )
-                        logger.info(f"Deleted {len(objects)} objects from S3 bucket {self.bucket} with prefix {prefix}")
+                        logger.info(f"Deleted {len(objects)} objects from S3 bucket {self.bucket} with prefix {normalized_prefix}")
         except ClientError as e:
             error_msg = f"Failed to cleanup S3 bucket {self.bucket}: {e}"
             logger.error(error_msg)

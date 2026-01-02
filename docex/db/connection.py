@@ -68,23 +68,28 @@ class Database:
         self.engine = None
         self.Session = None
         
-        # Check if database-level multi-tenancy is enabled
+        # Check if database-level multi-tenancy is enabled (v2.x)
         security_config = self.config.get('security', {})
         self.multi_tenancy_model = security_config.get('multi_tenancy_model', 'row_level')
         self.tenant_database_routing = security_config.get('tenant_database_routing', False)
-        
-        # Handle database-level multi-tenancy
-        if self.multi_tenancy_model == 'database_level':
-            if tenant_id:
-                # Use tenant-aware database manager for tenant-specific operations
-                from docex.db.tenant_database_manager import TenantDatabaseManager
-                self.tenant_manager = TenantDatabaseManager()
-                self.engine = self.tenant_manager.get_tenant_engine(tenant_id)
-            else:
-                # System/bootstrap operations - bypass tenant manager to avoid recursion
-                # Initialize directly for system operations
+
+        # Check if v3.0 multi-tenancy is enabled
+        multi_tenancy_config = self.config.get('multi_tenancy', {})
+        v3_multi_tenancy_enabled = multi_tenancy_config.get('enabled', False)
+
+        # Use TenantDatabaseManager if:
+        # 1. v2.x database-level multi-tenancy is enabled, OR
+        # 2. v3.0 multi-tenancy is enabled AND tenant_id is provided
+        if self.multi_tenancy_model == 'database_level' or (v3_multi_tenancy_enabled and tenant_id):
+            if self.multi_tenancy_model == 'database_level' and not tenant_id:
+                # Allow system/bootstrap operations without tenant_id
+                # Initialize directly for system operations to avoid recursion
                 self._initialize_system_database()
                 return
+            # Use tenant-aware database manager
+            from docex.db.tenant_database_manager import TenantDatabaseManager
+            self.tenant_manager = TenantDatabaseManager()
+            self.engine = self.tenant_manager.get_tenant_engine(tenant_id)
             # Get session factory from tenant manager
             session_factory = self.tenant_manager._tenant_sessions.get(tenant_id)
             if session_factory:
@@ -100,6 +105,7 @@ class Database:
         else:
             # Use standard single-tenant initialization
             self._initialize()
+<<<<<<< HEAD
 
     def _initialize_system_database(self):
         """Initialize database for system/bootstrap operations (bypasses tenant manager)."""
@@ -200,6 +206,34 @@ class Database:
                 import time
                 time.sleep(1)
 
+=======
+    
+    @classmethod
+    def get_default_connection(cls, config: Optional[DocEXConfig] = None) -> 'Database':
+        """
+        Get default database connection, bypassing tenant routing.
+        
+        This is useful for system operations like tenant provisioning where
+        we need to access the default database regardless of multi-tenancy mode.
+        
+        Args:
+            config: Optional DocEXConfig instance. If None, uses default config.
+            
+        Returns:
+            Database instance connected to default database
+        """
+        config = config or DocEXConfig()
+        db = cls.__new__(cls)
+        db.config = config
+        db.tenant_id = None
+        db.engine = None
+        db.Session = None
+        db.multi_tenancy_model = 'row_level'  # Force single-tenant mode
+        db.tenant_database_routing = False
+        db._initialize()
+        return db
+    
+>>>>>>> origin/release/2.7.0
     def _initialize(self):
         """Initialize database connection and session"""
         max_retries = 3
@@ -250,6 +284,7 @@ class Database:
                 elif db_type in ['postgresql', 'postgres']:
                     # PostgreSQL configuration
                     from urllib.parse import quote_plus
+<<<<<<< HEAD
 
                     postgres_config = db_config.get('postgres', db_config.get('postgresql', {}))
                     host = postgres_config.get('host', 'localhost')
@@ -257,14 +292,35 @@ class Database:
                     database = postgres_config.get('database', 'docex')
                     user = postgres_config.get('user', 'postgres')
                     password = postgres_config.get('password', '')
+=======
+                    
+                    # Get PostgreSQL-specific config (nested under 'postgres' key)
+                    postgres_config = db_config.get('postgres', {})
+                    
+                    host = postgres_config.get('host', db_config.get('host', 'localhost'))
+                    port = postgres_config.get('port', db_config.get('port', 5432))
+                    database = postgres_config.get('database', db_config.get('database', 'docex'))
+                    user = postgres_config.get('user', db_config.get('user', 'postgres'))
+                    password = postgres_config.get('password', db_config.get('password', ''))
+>>>>>>> origin/release/2.7.0
                     
                     # URL-encode user and password to handle special characters
                     user_encoded = quote_plus(user)
                     password_encoded = quote_plus(password)
                     
                     # Create PostgreSQL engine with properly encoded credentials
+<<<<<<< HEAD
                     # Add SSL mode - disable for local, require for remote/RDS
                     sslmode = db_config.get('sslmode', 'disable' if host in ['localhost', '127.0.0.1'] else 'require')
+=======
+                    # SSL mode: prefer (use SSL if available, otherwise allow non-SSL)
+                    # This works for both local Docker (no SSL) and AWS RDS (with SSL)
+                    # Falls back to disable for localhost if prefer doesn't work
+                    if host in ['localhost', '127.0.0.1']:
+                        sslmode = postgres_config.get('sslmode', 'prefer')
+                    else:
+                        sslmode = postgres_config.get('sslmode', 'prefer')
+>>>>>>> origin/release/2.7.0
                     connection_url = f'postgresql://{user_encoded}:{password_encoded}@{host}:{port}/{database}?sslmode={sslmode}'
                     self.engine = create_engine(
                         connection_url,

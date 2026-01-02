@@ -10,7 +10,7 @@ from .s3_prefix_builder import (
 )
 from .tenant_basket_helper import (
     create_tenant_basket,
-    get_application_name_from_config
+    get_path_namespace_from_config
 )
 
 __all__ = [
@@ -23,5 +23,5 @@ __all__ = [
     'validate_basket_name',
     'validate_filename',
     'create_tenant_basket',
-    'get_application_name_from_config',
+    'get_path_namespace_from_config',
 ]
