@@ -679,3 +679,171 @@ class TenantDatabaseManager:
         """
         return list(self._tenant_engines.keys())
 
+
+    def validate_tenant_setup(self, tenant_id: str) -> dict:
+        """
+        Validate if tenant is properly set up (has both registry entry and schema/database).
+
+        Args:
+            tenant_id: Tenant identifier to validate
+
+        Returns:
+            dict: Validation results with keys:
+                - 'valid': bool - True if properly set up
+                - 'registry_exists': bool - True if registry entry exists
+                - 'schema_exists': bool - True if schema/database exists
+                - 'issues': list - List of issues found
+        """
+        result = {
+            'valid': False,
+            'registry_exists': False,
+            'schema_exists': False,
+            'issues': []
+        }
+
+        try:
+            # Check registry entry
+            default_db = self._get_default_database()
+            with default_db.session() as session:
+                from docex.db.tenant_registry_model import TenantRegistry
+                tenant = session.query(TenantRegistry).filter_by(tenant_id=tenant_id).first()
+                result['registry_exists'] = tenant is not None
+
+            # Check schema/database exists
+            result['schema_exists'] = self._check_tenant_schema_exists(tenant_id)
+
+            # Determine validity and issues
+            if result['registry_exists'] and result['schema_exists']:
+                result['valid'] = True
+            else:
+                result['valid'] = False
+                if not result['registry_exists']:
+                    result['issues'].append('Missing tenant registry entry')
+                if not result['schema_exists']:
+                    result['issues'].append('Missing tenant schema/database')
+
+        except Exception as e:
+            result['issues'].append(f'Validation error: {e}')
+            logger.error(f"Error validating tenant setup for '{tenant_id}': {e}")
+
+        return result
+
+    def cleanup_incomplete_tenant(self, tenant_id: str) -> bool:
+        """
+        Clean up tenant that is not properly set up (missing registry or schema).
+
+        Args:
+            tenant_id: Tenant identifier to clean up
+
+        Returns:
+            bool: True if cleanup successful, False otherwise
+        """
+        try:
+            validation = self.validate_tenant_setup(tenant_id)
+
+            if validation['valid']:
+                logger.info(f"Tenant '{tenant_id}' is properly set up, no cleanup needed")
+                return True
+
+            logger.info(f"Cleaning up incomplete tenant '{tenant_id}': {validation['issues']}")
+
+            # Clean up schema/database if it exists
+            if validation['schema_exists']:
+                self._cleanup_orphaned_tenant(tenant_id)
+
+            # Clean up registry entry if it exists (shouldn't happen in normal cases)
+            if validation['registry_exists']:
+                default_db = self._get_default_database()
+                with default_db.session() as session:
+                    from docex.db.tenant_registry_model import TenantRegistry
+                    tenant = session.query(TenantRegistry).filter_by(tenant_id=tenant_id).first()
+                    if tenant:
+                        session.delete(tenant)
+                        session.commit()
+                        logger.info(f"Removed orphaned registry entry for tenant '{tenant_id}'")
+
+            logger.info(f"✅ Successfully cleaned up incomplete tenant '{tenant_id}'")
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to cleanup incomplete tenant '{tenant_id}': {e}")
+            return False
+
+    def _cleanup_orphaned_tenant(self, tenant_id: str) -> None:
+        """
+        Clean up orphaned tenant schema/database that exists without proper setup.
+
+        Args:
+            tenant_id: Tenant identifier to clean up
+        """
+        try:
+            db_config = self.config.get('database', {})
+            db_type = db_config.get('type', 'sqlite')
+
+            if db_type in ['postgresql', 'postgres']:
+                # Drop PostgreSQL schema
+                postgres_config = db_config.get('postgres', {})
+                schema_template = postgres_config.get('schema_template', 'tenant_{tenant_id}')
+                schema_name = schema_template.format(tenant_id=tenant_id)
+
+                # Use default database to drop the schema
+                default_db = self._get_default_database()
+                with default_db.engine.connect() as conn:
+                    # Drop schema and all its contents
+                    conn.execute(text(f'DROP SCHEMA IF EXISTS {schema_name} CASCADE'))
+                    conn.commit()
+                    logger.info(f"Dropped orphaned PostgreSQL schema: {schema_name}")
+
+            elif db_type == 'sqlite':
+                # Remove SQLite database file
+                db_path = self._get_tenant_database_path(tenant_id)
+                from pathlib import Path
+                db_file = Path(db_path)
+                if db_file.exists():
+                    db_file.unlink()
+                    logger.info(f"Removed orphaned SQLite database: {db_path}")
+
+        except Exception as e:
+            logger.error(f"Error cleaning up orphaned tenant '{tenant_id}': {e}")
+            raise
+
+    def _check_tenant_schema_exists(self, tenant_id: str) -> bool:
+        """
+        Check if tenant schema/database exists but registry entry is missing.
+
+        Args:
+            tenant_id: Tenant identifier to check
+
+        Returns:
+            True if tenant schema/database exists
+        """
+        try:
+            db_config = self.config.get('database', {})
+            db_type = db_config.get('type', 'sqlite')
+
+            if db_type in ['postgresql', 'postgres']:
+                # Check if PostgreSQL schema exists
+                postgres_config = db_config.get('postgres', {})
+                schema_template = postgres_config.get('schema_template', 'tenant_{tenant_id}')
+                expected_schema = schema_template.format(tenant_id=tenant_id)
+
+                # Use default database to check schema existence
+                default_db = self._get_default_database()
+                with default_db.engine.connect() as conn:
+                    result = conn.execute(text("""
+                        SELECT schema_name FROM information_schema.schemata
+                        WHERE schema_name = :schema_name
+                    """), {'schema_name': expected_schema})
+                    return result.fetchone() is not None
+
+            elif db_type == 'sqlite':
+                # Check if SQLite database file exists
+                db_path = self._get_tenant_database_path(tenant_id)
+                from pathlib import Path
+                return Path(db_path).exists()
+
+        except Exception as e:
+            logger.debug(f"Error checking tenant schema existence for '{tenant_id}': {e}")
+            return False
+
+        return False
