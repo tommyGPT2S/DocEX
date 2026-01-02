@@ -63,12 +63,13 @@ class TenantDatabaseManager:
         if self.multi_tenancy_model == 'database_level':
             logger.info("Database-level multi-tenancy enabled")
     
-    def get_tenant_engine(self, tenant_id: str) -> Any:
+    def get_tenant_engine(self, tenant_id: str, read_only: bool = False) -> Any:
         """
         Get or create database engine for a specific tenant.
         
         Args:
             tenant_id: Tenant identifier
+            read_only: If True, only check connectivity without creating schemas/tables
             
         Returns:
             SQLAlchemy engine for the tenant
@@ -108,7 +109,7 @@ class TenantDatabaseManager:
                 return self._tenant_engines[tenant_id]
             
             # Create new engine for tenant
-            engine = self._create_tenant_engine(tenant_id)
+            engine = self._create_tenant_engine(tenant_id, read_only=read_only)
             self._tenant_engines[tenant_id] = engine
             
             # Create session factory
@@ -122,12 +123,13 @@ class TenantDatabaseManager:
             logger.info(f"Created database connection for tenant: {tenant_id}")
             return engine
     
-    def _create_tenant_engine(self, tenant_id: str) -> Any:
+    def _create_tenant_engine(self, tenant_id: str, read_only: bool = False) -> Any:
         """
         Create database engine for a specific tenant.
         
         Args:
             tenant_id: Tenant identifier
+            read_only: If True, only check connectivity without creating schemas/tables
             
         Returns:
             SQLAlchemy engine
@@ -136,13 +138,13 @@ class TenantDatabaseManager:
         db_type = db_config.get('type', 'sqlite')
         
         if db_type == 'sqlite':
-            return self._create_sqlite_engine(tenant_id, db_config)
+            return self._create_sqlite_engine(tenant_id, db_config, read_only=read_only)
         elif db_type in ['postgresql', 'postgres']:
-            return self._create_postgres_engine(tenant_id, db_config)
+            return self._create_postgres_engine(tenant_id, db_config, read_only=read_only)
         else:
             raise ValueError(f"Unsupported database type: {db_type}")
     
-    def _create_sqlite_engine(self, tenant_id: str, db_config: Dict[str, Any]) -> Any:
+    def _create_sqlite_engine(self, tenant_id: str, db_config: Dict[str, Any], read_only: bool = False) -> Any:
         """
         Create SQLite engine for tenant (separate database file per tenant).
         
@@ -191,13 +193,15 @@ class TenantDatabaseManager:
             cursor.execute("PRAGMA foreign_keys=ON")
             cursor.close()
         
-        # Initialize schema for tenant
-        # Exclude tenant_registry table from tenant databases (it only exists in bootstrap database)
-        self._initialize_tenant_schema(engine, tenant_id, exclude_tables=['tenant_registry'])
+        # Only initialize schema if not in read-only mode
+        if not read_only:
+            # Initialize schema for tenant
+            # Exclude tenant_registry table from tenant databases (it only exists in bootstrap database)
+            self._initialize_tenant_schema(engine, tenant_id, exclude_tables=['tenant_registry'])
         
         return engine
     
-    def _create_postgres_engine(self, tenant_id: str, db_config: Dict[str, Any]) -> Any:
+    def _create_postgres_engine(self, tenant_id: str, db_config: Dict[str, Any], read_only: bool = False) -> Any:
         """
         Create PostgreSQL engine for tenant (separate schema per tenant).
         
@@ -261,10 +265,23 @@ class TenantDatabaseManager:
                 # Use parameterized query to safely handle schema name with special characters
                 cursor.execute('SET search_path TO %s', (schema_name,))
         
-        # Create schema and initialize for tenant
-        self._create_postgres_schema(engine, schema_name, tenant_id)
-        # Exclude tenant_registry table from tenant schemas (it only exists in bootstrap schema)
-        self._initialize_tenant_schema(engine, tenant_id, schema_name, exclude_tables=['tenant_registry'])
+        # Only create schema and initialize if not in read-only mode
+        if not read_only:
+            # Create schema and initialize for tenant
+            self._create_postgres_schema(engine, schema_name, tenant_id)
+            # Exclude tenant_registry table from tenant schemas (it only exists in bootstrap schema)
+            self._initialize_tenant_schema(engine, tenant_id, schema_name, exclude_tables=['tenant_registry'])
+        else:
+            # In read-only mode, just verify schema exists (don't create)
+            try:
+                with engine.connect() as conn:
+                    result = conn.execute(text(
+                        "SELECT schema_name FROM information_schema.schemata WHERE schema_name = :schema_name"
+                    ), {"schema_name": schema_name})
+                    if result.first() is None:
+                        logger.debug(f"Schema {schema_name} does not exist (read-only check)")
+            except Exception as e:
+                logger.debug(f"Could not verify schema existence (read-only check): {e}")
         
         return engine
     

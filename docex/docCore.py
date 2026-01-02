@@ -139,11 +139,13 @@ class DocEX:
                 
                 if multi_tenancy_enabled:
                     # Use bootstrap tenant's database for multi-tenancy
+                    # Use read_only=True to avoid side effects (schema/table creation)
                     bootstrap_tenant_id = multi_tenancy_config.get('bootstrap_tenant', {}).get('id', '_docex_system_')
-                    db = Database(config=config, tenant_id=bootstrap_tenant_id)
+                    db = Database(config=config, tenant_id=bootstrap_tenant_id, read_only=True)
                 else:
                     # Use default database for single-tenant
-                    db = Database(config=config)
+                    # Use read_only=True to avoid side effects (table creation)
+                    db = Database(config=config, read_only=True)
                 
                 engine = db.get_engine()
                 # Test connection

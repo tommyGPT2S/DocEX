@@ -550,6 +550,47 @@ class DocBasket:
         """
         return self.document_manager.list_documents(limit, offset, order_by, order_desc, status, document_type)
     
+    def list_documents_with_metadata(
+        self,
+        columns: Optional[List[str]] = None,
+        filters: Optional[Dict[str, Any]] = None,
+        limit: Optional[int] = None,
+        offset: Optional[int] = None,
+        order_by: Optional[str] = None,
+        order_desc: bool = False
+    ) -> List[Dict[str, Any]]:
+        """
+        Efficiently list documents with selected metadata columns.
+        
+        This method returns lightweight dictionaries instead of full Document instances,
+        avoiding N+1 queries and object instantiation overhead.
+        
+        Args:
+            columns: List of column names to include in results. 
+                    Default: ['id', 'name', 'document_type', 'status', 'size', 'created_at']
+                    Available: 'id', 'name', 'path', 'document_type', 'content_type', 
+                              'size', 'checksum', 'status', 'created_at', 'updated_at'
+            filters: Optional dictionary of filters (e.g., {'document_type': 'invoice', 'status': 'RECEIVED'})
+            limit: Maximum number of results to return (for pagination)
+            offset: Number of results to skip (for pagination)
+            order_by: Field to sort by ('created_at', 'updated_at', 'name', 'size', 'status')
+            order_desc: If True, sort in descending order
+            
+        Returns:
+            List of dictionaries containing selected document fields
+            
+        Example:
+            >>> documents = basket.list_documents_with_metadata(
+            ...     columns=['id', 'name', 'document_type', 'created_at'],
+            ...     filters={'document_type': 'invoice'},
+            ...     limit=100
+            ... )
+            >>> # Returns lightweight dicts instead of full Document objects
+        """
+        return self.document_manager.list_documents_with_metadata(
+            columns, filters, limit, offset, order_by, order_desc
+        )
+    
     def count_documents(
         self,
         status: Optional[str] = None,
