@@ -327,13 +327,27 @@ class DocEX:
                 else:
                     registry_db = Database(config=config)
             
-            with registry_db.session() as session:
-                tenant = session.query(TenantRegistry).filter_by(tenant_id=tenant_id).first()
-                if not tenant:
-                    raise ValueError(
-                        f"Tenant '{tenant_id}' not found in tenant registry. "
-                        f"Please provision the tenant first using 'docex tenant create'."
-                    )
+            # For multi-tenancy enabled, ensure we use bootstrap connection with correct search_path
+            if multi_tenancy_enabled:
+                with registry_db.get_bootstrap_connection() as conn:
+                    # Query tenant registry using raw SQL to ensure correct schema
+                    result = conn.execute(
+                        text("SELECT tenant_id FROM tenant_registry WHERE tenant_id = :tenant_id"),
+                        {"tenant_id": tenant_id}
+                    ).fetchone()
+                    if not result:
+                        raise ValueError(
+                            f"Tenant '{tenant_id}' not found in tenant registry. "
+                            f"Please provision the tenant first using 'docex tenant create'."
+                        )
+            else:
+                with registry_db.session() as session:
+                    tenant = session.query(TenantRegistry).filter_by(tenant_id=tenant_id).first()
+                    if not tenant:
+                        raise ValueError(
+                            f"Tenant '{tenant_id}' not found in tenant registry. "
+                            f"Please provision the tenant first using 'docex tenant create'."
+                        )
         except ImportError:
             # Tenant registry not available (v2.x or not initialized)
             logger.warning("Tenant registry not available - skipping tenant validation")
