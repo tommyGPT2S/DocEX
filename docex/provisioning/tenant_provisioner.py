@@ -98,11 +98,18 @@ class TenantProvisioner:
     @staticmethod
     def validate_tenant_id(tenant_id: str) -> None:
         """
-        Validate tenant ID format and check for reserved patterns.
-        
+        Validate tenant ID format for PostgreSQL compatibility.
+
+        Tenant IDs must:
+        - Be 1-30 characters long
+        - Contain only letters, numbers, and underscores
+        - Start with a letter or underscore
+        - Not match system tenant patterns
+        - Have no leading/trailing whitespace
+
         Args:
             tenant_id: Tenant identifier to validate
-            
+
         Raises:
             InvalidTenantIdError: If tenant ID is invalid or reserved
         """
@@ -119,12 +126,26 @@ class TenantProvisioner:
                 f"System tenant IDs (matching '{SYSTEM_TENANT_PATTERN}') are reserved."
             )
         
-        # Basic validation: no whitespace, reasonable length
+        # PostgreSQL identifier validation (tenant IDs are used in schema names)
+        import re
+
+        # Length check: PostgreSQL identifiers max 63 chars, but we limit to 30 for safety
+        if len(tenant_id) > 30:
+            raise InvalidTenantIdError("Tenant ID cannot exceed 30 characters (PostgreSQL identifier limit)")
+
+        if len(tenant_id) < 1:
+            raise InvalidTenantIdError("Tenant ID cannot be empty")
+
+        # Character validation: only letters, numbers, and underscores
+        if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', tenant_id):
+            raise InvalidTenantIdError(
+                "Tenant ID must contain only letters, numbers, and underscores, "
+                "and must start with a letter or underscore (PostgreSQL identifier rules)"
+            )
+
+        # Basic validation: no whitespace
         if tenant_id.strip() != tenant_id:
             raise InvalidTenantIdError("Tenant ID cannot have leading or trailing whitespace")
-        
-        if len(tenant_id) > 255:
-            raise InvalidTenantIdError("Tenant ID cannot exceed 255 characters")
         
         # Check for invalid characters (database identifiers)
         if re.search(r'[^\w\-]', tenant_id):
@@ -159,16 +180,17 @@ class TenantProvisioner:
     ) -> TenantRegistry:
         """
         Provision a new tenant.
-        
+
         This method:
         1. Validates tenant ID
         2. Checks for existing tenant
         3. Creates isolation boundary (schema or database)
         4. Initializes schema (creates all tables)
         5. Registers tenant in tenant registry
-        
+        6. Validates complete tenant setup
+
         Args:
-            tenant_id: Unique identifier for the tenant
+            tenant_id: Unique identifier for the tenant (1-30 chars, letters/numbers/underscores only)
             display_name: Human-readable name for the tenant
             created_by: User ID who is creating the tenant
             isolation_strategy: Isolation strategy ('schema' for PostgreSQL, 'database' for SQLite).
@@ -242,7 +264,20 @@ class TenantProvisioner:
                 created_by=created_by
             )
             logger.info(f"✅ Step 5 complete: Tenant registered in registry")
-            
+
+            # Step 6: Validate complete tenant setup
+            logger.info(f"Step 6/6: Validating complete tenant setup for '{tenant_id}'...")
+            tenant_manager = TenantDatabaseManager()
+            validation_result = tenant_manager.validate_tenant_setup(tenant_id)
+            if not validation_result['valid']:
+                issues_str = ', '.join(validation_result['issues'])
+                raise TenantProvisioningError(
+                    f"Tenant '{tenant_id}' validation failed: {issues_str}. "
+                    f"Registry exists: {validation_result['registry_exists']}, "
+                    f"Schema exists: {validation_result['schema_exists']}"
+                )
+            logger.info(f"✅ Step 6 complete: Tenant validation passed")
+
             logger.info(f"✅ Successfully provisioned tenant: {tenant_id}")
             return tenant_registry
             
@@ -501,6 +536,9 @@ class TenantProvisioner:
                     'last_updated_at': datetime.now(timezone.utc),
                     'last_updated_by': None
                 }).fetchone()
+
+                # Commit the transaction to ensure registry entry is persisted
+                conn.commit()
 
                 # Create TenantRegistry instance from result
                 tenant = TenantRegistry(

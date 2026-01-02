@@ -66,6 +66,12 @@ class S3Storage(AbstractStorage):
                     "S3 bucket name is required. Either provide 'bucket' directly in config, "
                     "or provide 'bucket_application' to build bucket name as '{bucket_application}-documents-bucket'"
                 )
+
+        # Sanitize bucket name to meet S3 requirements
+        original_bucket = self.bucket
+        self.bucket = self._sanitize_bucket_name(self.bucket)
+        if original_bucket != self.bucket:
+            logger.info(f"S3 bucket name sanitized: '{original_bucket}' -> '{self.bucket}'")
         
         # Get credentials with fallback to environment variables and IAM
         credentials = self._get_credentials(config)
@@ -123,7 +129,62 @@ class S3Storage(AbstractStorage):
         
         # Ensure bucket exists
         self.ensure_storage_exists()
-    
+
+    def _sanitize_bucket_name(self, bucket_name: str) -> str:
+        """
+        Sanitize bucket name to meet AWS S3 requirements.
+
+        S3 bucket names must:
+        - Be 3-63 characters long
+        - Contain only lowercase letters, numbers, hyphens, and periods
+        - Start and end with a letter or number
+        - Not be formatted as an IP address
+
+        Args:
+            bucket_name: Original bucket name
+
+        Returns:
+            Sanitized bucket name that meets S3 requirements
+        """
+        import re
+
+        if not bucket_name:
+            raise ValueError("Bucket name cannot be empty")
+
+        # Convert to lowercase (S3 requirement)
+        sanitized = bucket_name.lower()
+
+        # Replace invalid characters with hyphens
+        # Keep only lowercase letters, numbers, hyphens, and periods
+        sanitized = re.sub(r'[^a-z0-9.-]', '-', sanitized)
+
+        # Remove multiple consecutive hyphens/periods
+        sanitized = re.sub(r'[-.]{2,}', '-', sanitized)
+
+        # Ensure it starts with letter or number
+        sanitized = re.sub(r'^[^a-z0-9]+', '', sanitized)
+
+        # Ensure it ends with letter or number
+        sanitized = re.sub(r'[^a-z0-9]+$', '', sanitized)
+
+        # Ensure minimum length
+        if len(sanitized) < 3:
+            sanitized = f"{sanitized}bucket".ljust(3, '0')[:10]  # Pad to at least 3 chars
+
+        # Ensure maximum length (63 chars)
+        if len(sanitized) > 63:
+            sanitized = sanitized[:63]
+
+        # Final validation
+        if not re.match(r'^[a-z0-9][a-z0-9.-]*[a-z0-9]$', sanitized):
+            # If still invalid, generate a safe name
+            import hashlib
+            hash_suffix = hashlib.md5(bucket_name.encode()).hexdigest()[:8]
+            sanitized = f"docex-bucket-{hash_suffix}"
+
+        logger.debug(f"Sanitized S3 bucket name from '{bucket_name}' to '{sanitized}'")
+        return sanitized
+
     def _get_credentials(self, config: Dict[str, Any]) -> Dict[str, Optional[str]]:
         """
         Get AWS credentials from config, environment variables, or IAM role.
@@ -243,7 +304,8 @@ class S3Storage(AbstractStorage):
                     self._retry_on_error(self.s3.create_bucket, **create_params)
                     logger.info(f"Created S3 bucket: {self.bucket}")
                 except ClientError as create_error:
-                    logger.error(f"Failed to create S3 bucket {self.bucket}: {create_error}")
+                    logger.error(f"Failed to create S3 bucket '{self.bucket}' (sanitized from original): {create_error}")
+                    logger.error(f"S3 bucket creation parameters: {create_params}")
                     raise
             else:
                 logger.error(f"Failed to access S3 bucket {self.bucket}: {e}")

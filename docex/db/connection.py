@@ -547,6 +547,10 @@ class Database:
         This fixes the bug where tenant_registry table is created in public schema
         instead of the configured bootstrap schema.
         """
+        # Prevent multiple executions
+        if hasattr(self, '_tenant_registry_initialized') and self._tenant_registry_initialized:
+            return
+
         db_config = self.config.get('database', {})
         if db_config.get('type') not in ['postgresql', 'postgres']:
             return  # Only applies to PostgreSQL
@@ -577,6 +581,7 @@ class Database:
                 conn.execute(text(create_table_sql))
                 conn.commit()
                 logger.info(f"Ensured tenant_registry table exists in schema: {bootstrap_schema}")
+                self._tenant_registry_initialized = True
         except Exception as e:
             logger.warning(f"Failed to create tenant_registry table in bootstrap schema: {e}")
 
