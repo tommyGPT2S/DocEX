@@ -113,24 +113,23 @@ def test_tenant_provisioning():
             print("ℹ️  Test skipped - database-level multi-tenancy not enabled")
             return True
 
-        # Provision a test tenant
+        # Provision a test tenant using the tenant provisioner
         tenant_id = "test_registry_tenant"
-        tenant_manager = TenantDatabaseManager()
 
         print(f"📦 Provisioning tenant: {tenant_id}")
 
-        # Get tenant engine (this creates the schema/database)
-        engine = tenant_manager.get_tenant_engine(tenant_id)
+        # Use the tenant provisioner to properly register and provision the tenant
+        from docex.provisioning.tenant_provisioner import TenantProvisioner
+        provisioner = TenantProvisioner()
 
-        # Initialize tenant schema (creates tables and indexes)
-        db_config = config.get('database', {})
-        if db_config.get('type') in ['postgresql', 'postgres']:
-            postgres_config = db_config.get('postgres', {})
-            schema_template = postgres_config.get('schema_template', 'tenant_{tenant_id}')
-            schema_name = schema_template.format(tenant_id=tenant_id)
-            tenant_manager._initialize_tenant_schema(engine, tenant_id, schema_name)
-        else:
-            tenant_manager._initialize_tenant_schema(engine, tenant_id)
+        # Provision the tenant (this registers it in the tenant registry and creates the database/schema)
+        tenant_registry = provisioner.create(
+            tenant_id=tenant_id,
+            display_name=f"Test Tenant {tenant_id}",
+            created_by="test_script"
+        )
+
+        print(f"✅ Tenant registered in registry: {tenant_registry.tenant_id}")
 
         print(f"✅ Tenant {tenant_id} provisioned successfully")
 
