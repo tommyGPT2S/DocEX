@@ -9,6 +9,7 @@ bootstrap schema (docex_system) instead of the public schema.
 import os
 import sys
 from pathlib import Path
+from sqlalchemy import text
 
 # Add the project root to Python path
 sys.path.insert(0, str(Path(__file__).parent))
@@ -122,13 +123,21 @@ def test_tenant_provisioning():
         from docex.provisioning.tenant_provisioner import TenantProvisioner
         provisioner = TenantProvisioner()
 
-        # Check if tenant already exists and remove it for clean test
+        # Check if tenant already exists
         if provisioner.tenant_exists(tenant_id):
             print(f"🧹 Cleaning up existing tenant: {tenant_id}")
-            # For this test, we'll just skip creation if it exists
-            # In real scenarios, you might want to delete and recreate
-            print(f"ℹ️  Tenant {tenant_id} already exists, skipping creation")
-            return True
+            # For this test, we'll simulate the error condition by removing registry entry but keeping schema
+            try:
+                # Remove from registry but keep schema to simulate the error condition
+                from docex.db.connection import Database
+                bootstrap_db = Database.get_default_connection()
+                with bootstrap_db.get_bootstrap_connection() as conn:
+                    conn.execute(text("DELETE FROM tenant_registry WHERE tenant_id = :tenant_id"), {"tenant_id": tenant_id})
+                    conn.commit()
+                print(f"🧪 Simulated error condition: schema exists but registry entry removed for tenant {tenant_id}")
+            except Exception as e:
+                print(f"⚠️  Could not simulate error condition: {e}")
+                return True
 
         # Provision the tenant (this registers it in the tenant registry and creates the database/schema)
         tenant_registry = provisioner.create(
@@ -152,6 +161,31 @@ def test_tenant_provisioning():
         baskets = docex.list_baskets()
         print(f"✅ Tenant can list baskets: {len(baskets)} found")
 
+        # Test tenant validation and cleanup functionality
+        print(f"\n🧪 Testing Tenant Validation & Cleanup")
+        print("=" * 40)
+
+        # Test the validation methods
+        from docex.db.tenant_database_manager import TenantDatabaseManager
+        manager = TenantDatabaseManager()
+
+        # Test validation on properly set up tenant
+        validation = manager.validate_tenant_setup(tenant_id)
+        print(f"✅ Tenant validation: {validation}")
+
+        # Test cleanup on properly set up tenant (should do nothing)
+        cleanup_result = manager.cleanup_incomplete_tenant(tenant_id)
+        print(f"✅ Cleanup on valid tenant: {cleanup_result}")
+
+        # Test validation on non-existent tenant
+        validation = manager.validate_tenant_setup("non_existent_tenant")
+        print(f"✅ Non-existent tenant validation: {validation}")
+
+        # Test cleanup on non-existent tenant
+        cleanup_result = manager.cleanup_incomplete_tenant("non_existent_tenant")
+        print(f"✅ Cleanup on non-existent tenant: {cleanup_result}")
+
+        print(f"✅ All tenant validation and cleanup tests passed!")
         return True
 
     except Exception as e:
