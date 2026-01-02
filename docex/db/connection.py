@@ -572,10 +572,8 @@ class Database:
         """
 
         try:
-            with self.engine.connect() as conn:
-                # Create schema if it doesn't exist
-                conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS {bootstrap_schema}'))
-                # Create table in bootstrap schema
+            with self.get_bootstrap_connection() as conn:
+                # Create table in bootstrap schema (schema creation handled by get_bootstrap_connection)
                 conn.execute(text(create_table_sql))
                 conn.commit()
                 logger.info(f"Ensured tenant_registry table exists in schema: {bootstrap_schema}")
