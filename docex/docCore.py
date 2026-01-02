@@ -252,15 +252,21 @@ class DocEX:
                 if multi_tenancy_model == 'database_level':
                     logger.info("Database-level multi-tenancy enabled - tables will be created per tenant schema")
                     # Don't create tables here - they'll be created in tenant schemas on first access
+                    return True
                 else:
                     # Ensure all models are imported
                     import docex.db.models
                     import docex.transport.models
                     db = Database()
                     
-                    # Drop all tables first
-                    Base.metadata.drop_all(db.get_engine())
-                    TransportBase.metadata.drop_all(db.get_engine())
+                    # Drop all tables first (only if we have permission)
+                    try:
+                        Base.metadata.drop_all(db.get_engine())
+                        TransportBase.metadata.drop_all(db.get_engine())
+                        logger.info("Dropped existing database tables")
+                    except Exception as drop_error:
+                        logger.warning(f"Could not drop existing tables (this is OK if tables don't exist or insufficient permissions): {drop_error}")
+                        # Continue with table creation - create_tables will handle "IF NOT EXISTS" logic
                     
                     # Create tables in order
                     logger.info("Creating database tables...")

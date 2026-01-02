@@ -134,7 +134,7 @@ class DocEXConfig:
             if 'type' not in db_config:
                 raise RuntimeError("Database type not specified")
             
-            if db_config['type'] in ['postgres']:
+            if db_config['type'] in ['postgres', 'postgresql']:
                 if 'postgres' not in db_config:
                     raise RuntimeError("PostgreSQL configuration section missing")
                 postgres_config = db_config['postgres']
