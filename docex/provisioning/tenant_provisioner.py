@@ -321,25 +321,41 @@ class TenantProvisioner:
         engine = tenant_db_manager.get_tenant_engine(tenant_id)
         
         # Set schema on tables if using PostgreSQL
+        # Exclude tenant_registry - it should only exist in bootstrap schema
         if schema_name:
-            for table in Base.metadata.tables.values():
-                table.schema = schema_name
+            # First, explicitly clear schema on tenant_registry to ensure it's not included
+            if 'tenant_registry' in Base.metadata.tables:
+                Base.metadata.tables['tenant_registry'].schema = None
+            
+            for table_name, table in Base.metadata.tables.items():
+                if table_name != 'tenant_registry':
+                    table.schema = schema_name
             
             # Also set schema on TransportBase tables if available
             try:
                 from docex.transport.models import TransportBase
-                for table in TransportBase.metadata.tables.values():
-                    table.schema = schema_name
+                if 'tenant_registry' in TransportBase.metadata.tables:
+                    TransportBase.metadata.tables['tenant_registry'].schema = None
+                for table_name, table in TransportBase.metadata.tables.items():
+                    if table_name != 'tenant_registry':
+                        table.schema = schema_name
             except ImportError:
                 pass
         
-        # Create all tables
-        Base.metadata.create_all(engine)
+        # Create all tables, excluding tenant_registry
+        # Get list of tables to create, explicitly excluding tenant_registry
+        tables_to_create = [t for name, t in Base.metadata.tables.items() if name != 'tenant_registry']
+        if tables_to_create:
+            # Create tables individually to ensure tenant_registry is excluded
+            for table in tables_to_create:
+                table.create(engine, checkfirst=True)
         
-        # Also create TransportBase tables if available
+        # Also create TransportBase tables if available (excluding tenant_registry)
         try:
             from docex.transport.models import TransportBase
-            TransportBase.metadata.create_all(engine)
+            transport_tables = [t for name, t in TransportBase.metadata.tables.items() if name != 'tenant_registry']
+            for table in transport_tables:
+                table.create(engine, checkfirst=True)
         except ImportError:
             pass
         

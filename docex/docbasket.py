@@ -131,18 +131,29 @@ class DocBasket:
         if 'type' not in storage_config:
             storage_config['type'] = 'filesystem'
         
-        # Create basket in database first to get the ID
         # Use provided db (tenant-aware) or create new one
         basket_db = db or Database()
+        
+        # Check if basket with same name exists BEFORE starting transaction
+        # This provides early feedback and avoids unnecessary transaction overhead
+        with basket_db.session() as check_session:
+            existing = check_session.execute(
+                select(DocBasketModel).where(DocBasketModel.name == name)
+            ).scalars().first()
+            
+            if existing:
+                # Provide helpful error message with existing basket details
+                error_msg = (
+                    f"A basket with name '{name}' already exists. "
+                    f"Existing basket ID: {existing.id}, "
+                    f"Created: {existing.created_at.strftime('%Y-%m-%d %H:%M:%S') if existing.created_at else 'unknown'}"
+                )
+                logger.warning(error_msg)
+                raise ValueError(error_msg)
+        
+        # Create basket in database first to get the ID
         try:
             with basket_db.transaction() as session:
-                # Check if basket with same name exists
-                existing = session.execute(
-                    select(DocBasketModel).where(DocBasketModel.name == name)
-                ).scalars().first()
-                
-                if existing:
-                    raise ValueError(f"A basket with name '{name}' already exists")
                 
                 # Create basket model with initial storage config
                 basket_model = DocBasketModel(
@@ -167,15 +178,19 @@ class DocBasket:
                     if 'path' not in storage_config:
                         # Use path resolver for consistent filesystem path construction
                         if tenant_id:
-                            # Use tenant-aware path resolver
+                            # Use tenant-aware path resolver with basket name for friendly paths
                             storage_config['path'] = path_resolver.resolve_filesystem_path(
                                 tenant_id=tenant_id,
-                                basket_id=basket_model.id
+                                basket_id=basket_model.id,
+                                basket_name=basket_model.name
                             )
                         else:
-                            # Fallback for non-multi-tenant: use base path + basket_id
+                            # Fallback for non-multi-tenant: use base path + friendly basket name
                             base_path = config.get('storage', {}).get('filesystem', {}).get('path', 'storage/docex')
-                            storage_config['path'] = str(Path(base_path) / f"basket_{basket_model.id}")
+                            from docex.config.path_resolver import sanitize_basket_name
+                            sanitized_name = sanitize_basket_name(basket_model.name)
+                            basket_path = f"{sanitized_name}_{basket_model.id[-4:]}"
+                            storage_config['path'] = str(Path(base_path) / basket_path)
                 elif storage_config['type'] == 's3':
                     # For S3, ensure s3 config is properly nested
                     if 's3' not in storage_config:
@@ -187,13 +202,20 @@ class DocBasket:
                         }
                     # Use path resolver for consistent S3 prefix construction
                     if tenant_id:
-                        # Get tenant-aware basket prefix from resolver
-                        basket_prefix = path_resolver.resolve_s3_basket_prefix(tenant_id, basket_model.id)
+                        # Get tenant-aware basket prefix from resolver with basket name for friendly paths
+                        basket_prefix = path_resolver.resolve_s3_basket_prefix(
+                            tenant_id, 
+                            basket_model.id,
+                            basket_name=basket_model.name
+                        )
                         storage_config['s3']['prefix'] = basket_prefix.rstrip('/')
                     else:
-                        # Fallback for non-multi-tenant: use baskets/ prefix
+                        # Fallback for non-multi-tenant: use friendly basket name format
+                        from docex.config.path_resolver import sanitize_basket_name
+                        sanitized_name = sanitize_basket_name(basket_model.name)
+                        basket_path = f"{sanitized_name}_{basket_model.id[-4:]}"
                         if 'prefix' not in storage_config.get('s3', {}):
-                            storage_config['s3']['prefix'] = f"baskets/{basket_model.id}/"
+                            storage_config['s3']['prefix'] = f"{basket_path}/"
                 
                 # Update the storage config
                 basket_model.storage_config = json.dumps(storage_config)
@@ -218,10 +240,32 @@ class DocBasket:
                     model=basket_model,
                     db=basket_db  # Pass tenant-aware database to basket instance
                 )
+        except ValueError as e:
+            # Re-raise ValueError as-is (e.g., "basket name already exists")
+            # Don't wrap it in another ValueError to preserve the original error message
+            raise
         except Exception as e:
-            # If any error occurs, rollback the transaction
-            session.rollback()
-            raise ValueError(f"Failed to create basket: {str(e)}")
+            # Check if it's a database constraint violation (unique constraint on name)
+            from sqlalchemy.exc import IntegrityError
+            if isinstance(e, IntegrityError) and 'uq_docbasket_name' in str(e).lower():
+                # This means a basket with this name was created between our check and the transaction
+                # Re-check to get the existing basket details
+                with basket_db.session() as recheck_session:
+                    existing = recheck_session.execute(
+                        select(DocBasketModel).where(DocBasketModel.name == name)
+                    ).scalars().first()
+                    if existing:
+                        error_msg = (
+                            f"A basket with name '{name}' already exists. "
+                            f"Existing basket ID: {existing.id}, "
+                            f"Created: {existing.created_at.strftime('%Y-%m-%d %H:%M:%S') if existing.created_at else 'unknown'}"
+                        )
+                        logger.warning(error_msg)
+                        raise ValueError(error_msg)
+            
+            # For other errors, wrap with context
+            logger.error(f"Failed to create basket '{name}': {e}")
+            raise ValueError(f"Failed to create basket '{name}': {str(e)}")
     
     @classmethod
     def get(cls, basket_id: int, db: Optional[Database] = None) -> Optional['DocBasket']:

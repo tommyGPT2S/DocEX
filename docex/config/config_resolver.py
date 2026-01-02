@@ -32,48 +32,48 @@ class ConfigResolver:
         """
         Resolve S3 prefix for a tenant.
         
-        Constructs S3 prefix from configuration templates:
-        - {app_name}/{prefix}/tenant_{tenant_id}/  (if prefix provided)
-        - {app_name}/tenant_{tenant_id}/            (if prefix not provided)
+        Constructs S3 prefix with tenant_id first:
+        - {tenant_id}/{path_namespace}/{prefix}/  (if prefix provided)
+        - {tenant_id}/{path_namespace}/            (if prefix not provided)
         
         All parts come from config.yaml except tenant_id.
         
         Rationale:
-        - app_name: Business identifier (organization, business unit, or deployment name)
-                    Required for multi-application deployments and S3 bucket organization
+        - tenant_id: Tenant identifier (runtime parameter) - comes FIRST for tenant isolation
+        - path_namespace: Business identifier (organization, business unit, or deployment name)
+                         Previously called 'app_name', now used as path_namespace
+                         Required for multi-application deployments and S3 bucket organization
         - prefix: Environment-level namespace (optional, e.g., "production", "staging", "dev")
         
         Examples:
-        - With prefix: "acme-corp/production/tenant_acme/"
-        - Without prefix: "acme-corp/tenant_acme/"
+        - With prefix: "tenant_acme_corp/my-organization/production/"
+        - Without prefix: "tenant_acme_corp/my-organization/"
         
         Args:
             tenant_id: Tenant identifier (only runtime parameter)
             
         Returns:
-            S3 prefix string (e.g., "acme-corp/production/tenant_acme/" or "acme-corp/tenant_acme/")
+            S3 prefix string (e.g., "tenant_acme_corp/my-organization/production/" or "tenant_acme_corp/my-organization/")
         """
         storage_config = self.config.get('storage', {})
         s3_config = storage_config.get('s3', {})
         
-        # Get app_name and prefix from config
-        app_name = s3_config.get('app_name', '').strip('/')
+        # Get path_namespace (previously app_name) and prefix from config
+        path_namespace = s3_config.get('path_namespace', s3_config.get('app_name', '')).strip('/')
         prefix = s3_config.get('prefix', '').strip('/')
         
-        # Validate app_name is provided (required for S3)
-        if not app_name:
-            logger.warning("app_name not provided in S3 config. Using empty app_name prefix.")
+        # Validate path_namespace is provided (required for S3)
+        if not path_namespace:
+            logger.warning("path_namespace (or app_name) not provided in S3 config. Using empty path_namespace.")
         
-        # Build prefix parts
+        # Build prefix parts with tenant_id FIRST
         prefix_parts = []
-        if app_name:
-            prefix_parts.append(app_name)
-        if prefix:  # prefix is optional
-            prefix_parts.append(prefix)
-        
-        # Add tenant_id (only runtime parameter)
         if tenant_id:
             prefix_parts.append(f"tenant_{tenant_id}")
+        if path_namespace:
+            prefix_parts.append(path_namespace)
+        if prefix:  # prefix is optional
+            prefix_parts.append(prefix)
         
         # Join and ensure trailing slash
         full_prefix = '/'.join(prefix_parts)

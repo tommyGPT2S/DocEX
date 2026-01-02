@@ -70,10 +70,12 @@ storage:
   s3:
     bucket: my-documents-bucket  # Required: S3 bucket name
     app_name: my-organization   # Business identifier (organization, business unit, or deployment name)
+                                 # Also supports 'path_namespace' key (app_name is backward compatible)
     prefix: production            # Optional: Environment prefix (e.g., dev, staging, production)
     region: us-east-1
     # Note: tenant_id is automatically added to prefix at runtime
-    # Final prefix structure: {app_name}/{prefix}/tenant_{tenant_id}/
+    # Final prefix structure: {tenant_id}/{path_namespace}/{prefix}/
+    # Example: "tenant_acme_corp/my-organization/production/"
     # Examples:
     #   - Organization: "acme-corp"
     #   - Business Unit: "finance-department"

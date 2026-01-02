@@ -1,5 +1,0 @@
-Database management systems store, organize, and retrieve data efficiently. Relational databases like 
-                PostgreSQL, MySQL, and SQLite use structured query language (SQL) and follow ACID principles. NoSQL databases 
-                include document stores (MongoDB), key-value stores (Redis), column-family (Cassandra), and graph databases (Neo4j). 
-                Vector databases like Pinecone, Weaviate, and FAISS specialize in storing and searching high-dimensional vectors 
-                for machine learning applications. Database design involves normalization, indexing, and query optimization.

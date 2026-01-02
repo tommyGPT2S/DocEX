@@ -108,24 +108,50 @@ class DocEX:
         Returns:
             True if DocEX is properly set up, False otherwise
         """
+        errors = cls.get_setup_errors()
+        return len(errors) == 0
+    
+    @classmethod
+    def get_setup_errors(cls) -> List[str]:
+        """
+        Get detailed list of setup errors.
+        
+        Returns:
+            List of error messages describing what is not properly set up.
+            Empty list if everything is properly set up.
+        """
+        errors = []
+        
         try:
             # Check 1: Configuration exists and is valid
             if not cls.is_initialized():
-                logger.debug("DocEX not initialized: configuration check failed")
-                return False
+                config_path = Path.home() / '.docex' / 'config.yaml'
+                errors.append(f"Configuration not initialized: config file not found at {config_path}")
+                return errors  # Can't continue without config
             
             config = DocEXConfig()
             
             # Check 2: Database connectivity
             try:
-                db = Database()
+                # For multi-tenancy, check bootstrap tenant's database
+                multi_tenancy_config = config.get('multi_tenancy', {})
+                multi_tenancy_enabled = multi_tenancy_config.get('enabled', False)
+                
+                if multi_tenancy_enabled:
+                    # Use bootstrap tenant's database for multi-tenancy
+                    bootstrap_tenant_id = multi_tenancy_config.get('bootstrap_tenant', {}).get('id', '_docex_system_')
+                    db = Database(config=config, tenant_id=bootstrap_tenant_id)
+                else:
+                    # Use default database for single-tenant
+                    db = Database(config=config)
+                
                 engine = db.get_engine()
                 # Test connection
                 with engine.connect() as conn:
                     conn.execute(text("SELECT 1"))
             except Exception as e:
-                logger.debug(f"Database connectivity check failed: {e}")
-                return False
+                errors.append(f"Database connectivity failed: {str(e)}")
+                return errors  # Can't continue without database
             
             # Check 3: Required tables exist
             try:
@@ -141,33 +167,26 @@ class DocEX:
                 
                 missing_tables = [t for t in required_tables if t not in tables]
                 if missing_tables:
-                    logger.debug(f"Missing required tables: {missing_tables}")
-                    return False
+                    errors.append(f"Missing required tables: {', '.join(missing_tables)}")
             except Exception as e:
-                logger.debug(f"Table existence check failed: {e}")
-                return False
+                errors.append(f"Failed to check table existence: {str(e)}")
             
             # Check 4: Bootstrap tenant exists (if multi-tenancy enabled)
-            multi_tenancy_config = config.get('multi_tenancy', {})
-            multi_tenancy_enabled = multi_tenancy_config.get('enabled', False)
-            
             if multi_tenancy_enabled:
                 try:
                     from docex.provisioning.bootstrap import BootstrapTenantManager
-                    bootstrap_manager = BootstrapTenantManager()
+                    bootstrap_manager = BootstrapTenantManager(config=config)
                     if not bootstrap_manager.is_initialized():
-                        logger.debug("Multi-tenancy enabled but bootstrap tenant not initialized")
-                        return False
+                        errors.append("Multi-tenancy enabled but bootstrap tenant not initialized. Run BootstrapTenantManager().initialize() to set up the system tenant.")
                 except Exception as e:
-                    logger.debug(f"Bootstrap tenant check failed: {e}")
-                    return False
+                    errors.append(f"Bootstrap tenant check failed: {str(e)}")
             
-            # All checks passed
-            return True
+            # All checks passed (no errors)
+            return errors
             
         except Exception as e:
-            logger.debug(f"Setup check failed: {e}")
-            return False
+            errors.append(f"Setup validation failed with unexpected error: {str(e)}")
+            return errors
     
     def __new__(cls, *args, **kwargs):
         if cls._instance is None:
@@ -686,6 +705,8 @@ class DocEX:
         
         # Create and return route instance
         route = TransporterFactory.create_route(route_config)
+        # Set route_id to match the database model ID (critical for foreign key relationships)
+        route.route_id = route_model.id
         # Pass tenant-aware database to route for multi-tenancy support
         route.db = self.db
         return route
