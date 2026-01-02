@@ -362,14 +362,19 @@ class TenantDatabaseManager:
                                 if enum_name and not enum_name.startswith(f'"{schema_name}".'):
                                     column.type.name = f'"{schema_name}".{enum_name}'
             
-            # Create all tables in tenant's database/schema
-            # With schema set on tables and ENUM types, SQLAlchemy will create them in the correct schema
-            Base.metadata.create_all(engine)
+            # Create all tables in tenant's database/schema, EXCLUDING tenant_registry
+            # tenant_registry should only exist in bootstrap schema, not in tenant schemas
+            # Create tables individually to ensure tenant_registry is excluded
+            tables_to_create = [t for name, t in Base.metadata.tables.items() if name not in exclude_tables and name != 'tenant_registry']
+            for table in tables_to_create:
+                table.create(engine, checkfirst=True)
             
-            # Also create TransportBase tables if available
+            # Also create TransportBase tables if available (excluding tenant_registry)
             try:
                 from docex.transport.models import TransportBase
-                TransportBase.metadata.create_all(engine)
+                transport_tables = [t for name, t in TransportBase.metadata.tables.items() if name not in exclude_tables and name != 'tenant_registry']
+                for table in transport_tables:
+                    table.create(engine, checkfirst=True)
             except ImportError:
                 pass
             

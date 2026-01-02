@@ -224,6 +224,9 @@ class DocEX:
             multi_tenancy_model = security_config.get('multi_tenancy_model', 'row_level')
             legacy_database_level = multi_tenancy_model == 'database_level'
             
+            # Initialize tenant_id (default to None for single-tenant)
+            tenant_id = None
+            
             # v3.0 multi-tenancy enforcement
             if multi_tenancy_enabled:
                 if not user_context:
