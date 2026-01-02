@@ -45,6 +45,7 @@ class DocBasketDocumentManager:
         """
         self.basket = basket
     
+    
     def add(
         self, 
         file_path: str, 
@@ -104,7 +105,7 @@ class DocBasketDocumentManager:
                 return Document(
                     id=existing.id,
                     name=existing.name,
-                    path=existing.path,
+                    path=existing.path,  # Full path already stored
                     content_type=existing.content_type,
                     document_type=existing.document_type,
                     size=existing.size,
@@ -141,8 +142,8 @@ class DocBasketDocumentManager:
             session.add(document)
             session.flush()
             
-            # Build full path from IDs using path helper
-            # All operations center around basket_id and document_id - paths are built internally
+            # Build full path from IDs using path helper (for storage operations)
+            # Full path = Part A (config) + Part B (basket) + Part C (document)
             full_path = self.basket.path_helper.build_document_path(document, str(file_path), metadata)
             
             # Update document name to reflect the correct readable name
@@ -151,9 +152,16 @@ class DocBasketDocumentManager:
             document.name = f"{readable_name}{Path(str(file_path)).suffix}"
             
             # Store document using full path (built from IDs)
-            # StorageService now expects full paths, not IDs
+            # StorageService expects full paths for storage operations
             stored_path = self.basket.storage_service.store_document(str(file_path), full_path)
+            
+            # Store full path in document.path for consistency and simplicity
+            # For S3: Full path = Part A (config) + Part B (basket) + Part C (document)
+            # For filesystem: Full relative path = Part B (basket) + Part C (document)
+            # This avoids reconstruction logic and ensures consistency
             document.path = stored_path
+            
+            logger.debug(f"DocBasketDocumentManager.add: Stored full path in document.path: '{stored_path}'")
 
             # Update document name to reflect the correct readable name
             # This ensures the document record shows the right filename
@@ -278,10 +286,11 @@ class DocBasketDocumentManager:
             
             documents = session.execute(query).scalars().all()
             
+            # document.path already contains the full path (no reconstruction needed)
             return [Document(
                 id=doc.id,
                 name=doc.name,
-                path=doc.path,
+                path=doc.path,  # Full path already stored
                 content_type=doc.content_type,
                 document_type=doc.document_type,
                 size=doc.size,
@@ -501,10 +510,11 @@ class DocBasketDocumentManager:
                 query = query.distinct()
             documents = session.execute(query).scalars().all()
             
+            # document.path already contains the full path (no reconstruction needed)
             return [Document(
                 id=doc.id,
                 name=doc.name,
-                path=doc.path,
+                path=doc.path,  # Full path already stored
                 content_type=doc.content_type,
                 document_type=doc.document_type,
                 size=doc.size,
@@ -538,25 +548,12 @@ class DocBasketDocumentManager:
             if document is None:
                 return None
             
-            # Path is stored in DB, but we can verify/rebuild it from IDs if needed
-            # For now, use stored path (it was built from IDs when document was added)
-            stored_path = document.path
-            
-            # Rebuild path from IDs to ensure consistency
-            # This ensures path matches current configuration even if config changed
-            # Pass document.name as file_path so path_helper can extract the extension
-            full_path = self.basket.path_helper.build_document_path(
-                document, 
-                document.name if document.name else None, 
-                None
-            )
-            
-            # Use the path built from IDs (ensures consistency)
-            # This ensures all operations use paths built from IDs, not stored paths
+            # document.path already contains the full path (no reconstruction needed)
+            # For consistency, we could rebuild it, but using stored path is simpler
             return Document(
                 id=document.id,
                 name=document.name,
-                path=full_path,  # Use path built from IDs, not stored path
+                path=document.path,  # Full path already stored
                 content_type=document.content_type,
                 document_type=document.document_type,
                 size=document.size,
@@ -632,10 +629,11 @@ class DocBasketDocumentManager:
                     )
                     session.add(doc_metadata)
             session.commit()
+            # document.path already contains the full path (no reconstruction needed)
             return Document(
                 id=document.id,
                 name=document.name,
-                path=document.path,
+                path=document.path,  # Full path already stored
                 content_type=document.content_type,
                 document_type=document.document_type,
                 size=document.size,
@@ -668,23 +666,9 @@ class DocBasketDocumentManager:
             document_name = self.basket.path_helper.get_readable_document_name(document, None, None)
             file_ext = Path(document.name).suffix if document.name else ''
             
-            # Build full path using path helper
-            # Check if storage_config has existing prefix to avoid duplication
-            existing_prefix = None
-            # Use property to get storage type (validates it exists and is valid)
-            storage_type = self.basket.storage_type
-            if storage_type == 's3':
-                existing_prefix = self.basket.storage_config.get('s3', {}).get('prefix', '')
-                if existing_prefix:
-                    # Check if prefix already includes the basket path
-                    from docex.utils.s3_prefix_builder import sanitize_basket_name
-                    basket_id_suffix = self.basket.id.replace('bas_', '')[-4:] if self.basket.id.startswith('bas_') else self.basket.id[-4:]
-                    sanitized_name = sanitize_basket_name(self.basket.name)
-                    expected_basket_path = f"{sanitized_name}_{basket_id_suffix}"
-                    if expected_basket_path not in existing_prefix:
-                        existing_prefix = None
-            
-            # Use path helper to build full path from document
+            # Build full path using path helper (uses three-part structure)
+            # For S3: Part A (config) + Part B (basket) + Part C (document)
+            # The path helper will use config_prefix and basket_path from storage_config if available
             full_path = self.basket.path_helper.build_document_path(document, None, None)
             
             # Delete from storage using full path built from IDs

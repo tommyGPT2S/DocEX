@@ -135,11 +135,29 @@ class FileSystemStorage(AbstractStorage):
         if path.exists():
             path.unlink()
     
-    def cleanup(self) -> None:
-        """Clean up storage"""
-        if self.base_path.exists():
-            import shutil
-            shutil.rmtree(self.base_path)
+    def cleanup(self, prefix: Optional[str] = None) -> None:
+        """
+        Clean up storage.
+        
+        Args:
+            prefix: Optional prefix path to clean (for compatibility with S3Storage interface).
+                   For filesystem storage, if prefix is provided, it will be cleaned relative to base_path.
+                   If prefix is None, cleans entire base_path.
+        """
+        if prefix:
+            # Clean specific prefix path relative to base_path
+            prefix_path = self.base_path / prefix
+            if prefix_path.exists():
+                import shutil
+                if prefix_path.is_dir():
+                    shutil.rmtree(prefix_path)
+                else:
+                    prefix_path.unlink(missing_ok=True)
+        else:
+            # Clean entire base_path (original behavior)
+            if self.base_path.exists():
+                import shutil
+                shutil.rmtree(self.base_path)
     
     def _get_full_path(self, path: str) -> Path:
         """

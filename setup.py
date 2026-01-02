@@ -11,7 +11,7 @@ from setuptools import setup, find_packages
 # Version should match pyproject.toml
 setup(
     name="docex",
-    version="2.8.1",  # Must match pyproject.toml
+    version="2.8.2",  # Must match pyproject.toml
     packages=find_packages(),
     install_requires=[
         'pdfminer.six',

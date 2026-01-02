@@ -595,8 +595,9 @@ async def test_basket_storage_types(docex: DocEX, config, s3_mock=None) -> Tuple
             print_verbose(f"S3 Document path: {s3_doc.path}")
             s3_config = s3_basket.storage_config.get('s3', {})
             bucket = s3_config.get('bucket', 'N/A')
-            prefix = s3_config.get('prefix', '')
-            full_s3_path = f"s3://{bucket}/{prefix}/{s3_doc.path}" if prefix else f"s3://{bucket}/{s3_doc.path}"
+            # document.path already contains the full S3 key (including all prefixes)
+            # No need to add prefix again - just combine with bucket name
+            full_s3_path = f"s3://{bucket}/{s3_doc.path}"
             print_verbose(f"Full S3 path: {full_s3_path}")
         
         # 5.5 Add document to filesystem basket
@@ -641,6 +642,226 @@ async def test_basket_storage_types(docex: DocEX, config, s3_mock=None) -> Tuple
     
     except Exception as e:
         return False, f"Storage type test failed: {str(e)}"
+
+
+async def test_s3_comprehensive_operations(docex: DocEX, config, s3_mock=None) -> Tuple[bool, str]:
+    """Test Step 6: Comprehensive S3 Operations"""
+    print_section("Step 6: Comprehensive S3 Operations")
+    
+    try:
+        # Get S3 config from main config if available
+        main_storage_config = config.get('storage', {})
+        s3_config_from_main = main_storage_config.get('s3', {})
+        
+        # Use bucket from config or default test bucket
+        test_bucket = s3_config_from_main.get('bucket', 'docex-test-bucket')
+        test_region = s3_config_from_main.get('region', 'us-east-1')
+        
+        # Ensure S3 mocking is enabled for the test bucket
+        if not s3_mock and MOTO_AVAILABLE:
+            s3_mock = setup_s3_mocking(config, bucket_name=test_bucket, region=test_region)
+        
+        # 6.1 Create S3 basket with business-friendly name
+        s3_basket_name = f"invoices_pending_{int(datetime.now().timestamp())}"
+        s3_storage_config = {
+            'type': 's3',
+            's3': {
+                'bucket': test_bucket,
+                'region': test_region,
+                'path_namespace': s3_config_from_main.get('path_namespace', 'test'),
+                'prefix': s3_config_from_main.get('prefix', 'test-env'),
+                'access_key': s3_config_from_main.get('access_key', 'test-key'),
+                'secret_key': s3_config_from_main.get('secret_key', 'test-secret')
+            }
+        }
+        
+        s3_basket = docex.create_basket(s3_basket_name, "Pending invoices for processing", storage_config=s3_storage_config)
+        print_test("6.1: Create S3 basket", True, f"Created: {s3_basket.id} ({s3_basket.name})")
+        
+        if VERBOSE:
+            s3_config = s3_basket.storage_config.get('s3', {})
+            print_verbose(f"S3 Bucket: {s3_config.get('bucket', 'N/A')}")
+            print_verbose(f"S3 Region: {s3_config.get('region', 'N/A')}")
+            print_verbose(f"S3 Config Prefix (Part A): {s3_config.get('config_prefix', 'N/A')}")
+            print_verbose(f"S3 Basket Path (Part B): {s3_config.get('basket_path', 'N/A')}")
+            print_verbose(f"S3 Full Prefix (A+B): {s3_config.get('prefix', 'N/A')}")
+        
+        # 6.2 Add multiple documents to S3 basket (text, JSON, binary)
+        temp_dir = Path(tempfile.mkdtemp())
+        
+        # Text document
+        text_file = temp_dir / 'invoice_001.txt'
+        text_content = 'Invoice #001\nAmount: $1000.00\nStatus: Pending'
+        text_file.write_text(text_content)
+        text_doc = s3_basket.add(str(text_file), document_type='file', metadata={'type': 'text', 'invoice_number': '001', 'status': 'pending'})
+        print_test("6.2: Add text document to S3", True, f"Document ID: {text_doc.id}")
+        
+        if VERBOSE:
+            print_verbose(f"Text document path: {text_doc.path}")
+            print_verbose(f"Full S3 path: s3://{test_bucket}/{text_doc.path}")
+        
+        # JSON document
+        json_file = temp_dir / 'invoice_002.json'
+        json_content = '{"invoice_number": "002", "amount": 2000.00, "status": "pending"}'
+        json_file.write_text(json_content)
+        json_doc = s3_basket.add(str(json_file), document_type='file', metadata={'type': 'json', 'invoice_number': '002', 'status': 'pending'})
+        print_test("6.3: Add JSON document to S3", True, f"Document ID: {json_doc.id}")
+        
+        if VERBOSE:
+            print_verbose(f"JSON document path: {json_doc.path}")
+            print_verbose(f"Full S3 path: s3://{test_bucket}/{json_doc.path}")
+        
+        # Binary document (PDF-like)
+        binary_file = temp_dir / 'invoice_003.pdf'
+        binary_content = b'%PDF-1.4\nThis is a test PDF document for invoice 003'
+        binary_file.write_bytes(binary_content)
+        binary_doc = s3_basket.add(str(binary_file), document_type='file', metadata={'type': 'binary', 'invoice_number': '003', 'status': 'pending'})
+        print_test("6.4: Add binary document to S3", True, f"Document ID: {binary_doc.id}")
+        
+        if VERBOSE:
+            print_verbose(f"Binary document path: {binary_doc.path}")
+            print_verbose(f"Full S3 path: s3://{test_bucket}/{binary_doc.path}")
+        
+        # 6.5 List all documents from S3 basket
+        all_docs = s3_basket.list_documents()
+        if len(all_docs) == 3:
+            print_test("6.5: List all documents from S3 basket", True, f"Found {len(all_docs)} documents")
+            if VERBOSE:
+                for doc in all_docs:
+                    print_verbose(f"  - {doc.name} (ID: {doc.id}, Path: {doc.path})")
+        else:
+            return False, f"Expected 3 documents, found {len(all_docs)}"
+        
+        # 6.6 Get document by ID from S3 basket
+        retrieved_doc = s3_basket.get_document(text_doc.id)
+        if retrieved_doc and retrieved_doc.id == text_doc.id:
+            print_test("6.6: Get document by ID from S3", True, f"Retrieved: {retrieved_doc.id}")
+            if VERBOSE:
+                print_verbose(f"Retrieved document path: {retrieved_doc.path}")
+                print_verbose(f"Retrieved document name: {retrieved_doc.name}")
+        else:
+            return False, "Failed to retrieve document by ID from S3"
+        
+        # 6.7 Get document content as text from S3
+        text_content_retrieved = retrieved_doc.get_content(mode='text')
+        if text_content_retrieved and isinstance(text_content_retrieved, str) and 'Invoice #001' in text_content_retrieved:
+            print_test("6.7: Get document content as text from S3", True, f"Content length: {len(text_content_retrieved)}")
+            if VERBOSE:
+                print_verbose(f"Content preview: {text_content_retrieved[:50]}...")
+        else:
+            return False, "Failed to get document content as text from S3"
+        
+        # 6.8 Get document content as bytes from S3
+        binary_content_retrieved = binary_doc.get_content(mode='bytes')
+        if binary_content_retrieved and isinstance(binary_content_retrieved, bytes) and b'PDF' in binary_content_retrieved:
+            print_test("6.8: Get document content as bytes from S3", True, f"Content length: {len(binary_content_retrieved)}")
+            if VERBOSE:
+                print_verbose(f"Content preview: {binary_content_retrieved[:50]}...")
+        else:
+            return False, "Failed to get document content as bytes from S3"
+        
+        # 6.9 Get JSON document content from S3
+        json_content_retrieved = json_doc.get_content(mode='json')
+        if json_content_retrieved and isinstance(json_content_retrieved, dict) and json_content_retrieved.get('invoice_number') == '002':
+            print_test("6.9: Get JSON document content from S3", True, f"JSON keys: {list(json_content_retrieved.keys())}")
+            if VERBOSE:
+                print_verbose(f"JSON content: {json_content_retrieved}")
+        else:
+            return False, "Failed to get JSON document content from S3"
+        
+        # 6.10 Find documents by metadata in S3 basket
+        pending_docs = s3_basket.find_documents_by_metadata({'status': 'pending'})
+        if len(pending_docs) >= 3:
+            print_test("6.10: Find documents by metadata in S3", True, f"Found {len(pending_docs)} document(s) with status='pending'")
+            if VERBOSE:
+                for doc in pending_docs:
+                    print_verbose(f"  - {doc.name} (ID: {doc.id})")
+        else:
+            return False, f"Expected at least 3 documents with status='pending', found {len(pending_docs)}"
+        
+        # 6.11 Verify S3 path structure (Part A + Part B + Part C)
+        s3_config = s3_basket.storage_config.get('s3', {})
+        part_a = s3_config.get('config_prefix', '')
+        part_b = s3_config.get('basket_path', '')
+        
+        # Extract Part C from document path
+        # Full path = Part A + Part B + Part C
+        # So Part C = Full path - (Part A + Part B)
+        full_path = text_doc.path
+        expected_prefix = f"{part_a}{part_b}".rstrip('/')
+        
+        if full_path.startswith(expected_prefix):
+            part_c = full_path[len(expected_prefix):].lstrip('/')
+            print_test("6.11: Verify S3 path structure", True, f"Part A: {part_a[:30]}..., Part B: {part_b}, Part C: {part_c}")
+            if VERBOSE:
+                print_verbose(f"Full path structure verified:")
+                print_verbose(f"  Part A (config): {part_a}")
+                print_verbose(f"  Part B (basket): {part_b}")
+                print_verbose(f"  Part C (document): {part_c}")
+                print_verbose(f"  Full path: {full_path}")
+        else:
+            return False, f"S3 path structure mismatch. Expected prefix: {expected_prefix}, Got: {full_path[:len(expected_prefix)]}"
+        
+        # 6.12 Verify all documents have correct S3 paths
+        all_paths_valid = True
+        for doc in all_docs:
+            if not doc.path.startswith(expected_prefix):
+                all_paths_valid = False
+                if VERBOSE:
+                    print_verbose(f"Invalid path for {doc.name}: {doc.path}")
+        
+        if all_paths_valid:
+            print_test("6.12: Verify all documents have correct S3 paths", True, f"All {len(all_docs)} documents have valid paths")
+        else:
+            return False, "Some documents have invalid S3 paths"
+        
+        # 6.13 Verify document retrieval by different methods in S3 basket
+        # Test that we can retrieve the same document using different methods
+        retrieved_by_id = s3_basket.get_document(text_doc.id)
+        listed_docs = s3_basket.list_documents()
+        found_in_list = [d for d in listed_docs if d.id == text_doc.id]
+        
+        if retrieved_by_id and found_in_list and retrieved_by_id.id == found_in_list[0].id:
+            print_test("6.13: Verify document retrieval consistency in S3", True, "Document retrievable by ID and in list")
+            if VERBOSE:
+                print_verbose(f"Retrieved by ID: {retrieved_by_id.path}")
+                print_verbose(f"Found in list: {found_in_list[0].path}")
+        else:
+            return False, "Document retrieval inconsistency in S3 basket"
+        
+        # 6.14 Delete a document from S3 basket
+        s3_basket.delete_document(json_doc.id)
+        remaining_docs = s3_basket.list_documents()
+        if len(remaining_docs) == 2:
+            print_test("6.14: Delete document from S3 basket", True, f"Remaining documents: {len(remaining_docs)}")
+        else:
+            return False, f"Expected 2 documents after deletion, found {len(remaining_docs)}"
+        
+        # 6.15 Verify document count in S3 basket
+        doc_count = s3_basket.count_documents()
+        if doc_count == 2:
+            print_test("6.15: Verify document count in S3 basket", True, f"Count: {doc_count}")
+        else:
+            return False, f"Expected document count 2, got {doc_count}"
+        
+        # 6.16 Verify S3 basket stats
+        stats = s3_basket.get_stats()
+        if stats and 'id' in stats and stats['id'] == s3_basket.id:
+            print_test("6.16: Get S3 basket stats", True, f"Documents: {stats.get('document_counts', {})}")
+            if VERBOSE:
+                print_verbose(f"Basket stats: {stats}")
+        else:
+            return False, "Failed to get S3 basket stats"
+        
+        # Cleanup
+        shutil.rmtree(temp_dir)
+        s3_basket.delete()
+        print_test("6.17: Cleanup", True, "S3 test basket deleted")
+        
+        return True, "All S3 comprehensive operations passed"
+    
+    except Exception as e:
+        return False, f"S3 comprehensive operations test failed: {str(e)}"
 
 
 def setup_s3_mocking(config, bucket_name: Optional[str] = None, region: Optional[str] = None):
@@ -771,6 +992,11 @@ def main():
     # Pass s3_mock to ensure S3 mocking is available for S3 basket tests
     success, message = asyncio.run(test_basket_storage_types(docex, config, s3_mock=s3_mock))
     results.append(("Basket Storage Types", success, message))
+    
+    # Test 6: Comprehensive S3 Operations
+    # Pass s3_mock to ensure S3 mocking is available for comprehensive S3 tests
+    success, message = asyncio.run(test_s3_comprehensive_operations(docex, config, s3_mock=s3_mock))
+    results.append(("Comprehensive S3 Operations", success, message))
     
     # Print summary
     print_section("Test Summary")
