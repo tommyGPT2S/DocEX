@@ -303,6 +303,130 @@ class DocBasketDocumentManager:
                 db=self.basket.db  # Pass tenant-aware database to document
             ) for doc in documents]
     
+    def list_documents_with_metadata(
+        self,
+        columns: Optional[List[str]] = None,
+        filters: Optional[Dict[str, Any]] = None,
+        limit: Optional[int] = None,
+        offset: Optional[int] = None,
+        order_by: Optional[str] = None,
+        order_desc: bool = False
+    ) -> List[Dict[str, Any]]:
+        """
+        Efficiently list documents with selected metadata columns.
+        
+        This method returns lightweight dictionaries instead of full Document instances,
+        avoiding N+1 queries and object instantiation overhead.
+        
+        Args:
+            columns: List of column names to include in results. 
+                    Default: ['id', 'name', 'document_type', 'status', 'size', 'created_at']
+                    Available: 'id', 'name', 'path', 'document_type', 'content_type', 
+                              'size', 'checksum', 'status', 'created_at', 'updated_at'
+            filters: Optional dictionary of filters (e.g., {'document_type': 'invoice', 'status': 'RECEIVED'})
+            limit: Maximum number of results to return (for pagination)
+            offset: Number of results to skip (for pagination)
+            order_by: Field to sort by ('created_at', 'updated_at', 'name', 'size', 'status')
+            order_desc: If True, sort in descending order
+            
+        Returns:
+            List of dictionaries containing selected document fields
+            
+        Example:
+            >>> documents = basket.list_documents_with_metadata(
+            ...     columns=['id', 'name', 'document_type', 'created_at'],
+            ...     filters={'document_type': 'invoice'},
+            ...     limit=100
+            ... )
+            >>> # Returns:
+            >>> # [
+            >>> #     {'id': 'doc_123', 'name': 'invoice_001.pdf', 'document_type': 'invoice', 'created_at': datetime(...)},
+            >>> #     ...
+            >>> # ]
+        """
+        from sqlalchemy import select, func
+        
+        # Default columns if not specified
+        if columns is None:
+            columns = ['id', 'name', 'document_type', 'status', 'size', 'created_at']
+        
+        # Map column names to model attributes
+        column_map = {
+            'id': DocumentModel.id,
+            'name': DocumentModel.name,
+            'path': DocumentModel.path,
+            'document_type': DocumentModel.document_type,
+            'content_type': DocumentModel.content_type,
+            'size': DocumentModel.size,
+            'checksum': DocumentModel.checksum,
+            'status': DocumentModel.status,
+            'created_at': DocumentModel.created_at,
+            'updated_at': DocumentModel.updated_at,
+        }
+        
+        # Build select statement with only requested columns
+        selected_columns = []
+        for col in columns:
+            if col in column_map:
+                selected_columns.append(column_map[col])
+            else:
+                logger.warning(f"Unknown column '{col}' requested, skipping")
+        
+        if not selected_columns:
+            raise ValueError("No valid columns specified")
+        
+        with self.basket.db.session() as session:
+            # Build query with selected columns
+            query = select(*selected_columns).where(DocumentModel.basket_id == self.basket.id)
+            
+            # Add filters
+            if filters:
+                for key, value in filters.items():
+                    if key in column_map:
+                        query = query.where(column_map[key] == value)
+                    else:
+                        logger.warning(f"Unknown filter key '{key}', skipping")
+            
+            # Add sorting
+            if order_by:
+                order_field = column_map.get(order_by)
+                if order_field is not None:
+                    if order_desc:
+                        query = query.order_by(order_field.desc())
+                    else:
+                        query = query.order_by(order_field.asc())
+                else:
+                    logger.warning(f"Invalid order_by field: {order_by}, using default")
+                    query = query.order_by(DocumentModel.created_at.desc())
+            else:
+                # Default sorting by creation date (newest first)
+                query = query.order_by(DocumentModel.created_at.desc())
+            
+            # Add pagination
+            if limit is not None:
+                query = query.limit(limit)
+            if offset is not None:
+                query = query.offset(offset)
+            
+            # Execute query and convert to dictionaries
+            results = session.execute(query).all()
+            
+            # Convert to list of dictionaries
+            documents = []
+            for row in results:
+                doc_dict = {}
+                for i, col in enumerate(columns):
+                    if col in column_map:
+                        value = row[i]
+                        # Convert datetime to ISO format string for JSON serialization
+                        if hasattr(value, 'isoformat'):
+                            value = value.isoformat()
+                        doc_dict[col] = value
+                documents.append(doc_dict)
+            
+            logger.debug(f"Retrieved {len(documents)} documents with metadata (columns: {columns})")
+            return documents
+    
     def count_documents(
         self,
         status: Optional[str] = None,

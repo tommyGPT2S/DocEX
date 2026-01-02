@@ -43,14 +43,16 @@ class Database:
     When multi-tenancy is enabled, uses TenantDatabaseManager for tenant routing.
     """
     
-    def __init__(self, config: Optional[DocEXConfig] = None, tenant_id: Optional[str] = None):
+    def __init__(self, config: Optional[DocEXConfig] = None, tenant_id: Optional[str] = None, read_only: bool = False):
         """
         Initialize database connection
 
         Args:
             config: DocEXConfig instance. If None, uses DocEX configuration if available, otherwise default.
             tenant_id: Optional tenant identifier for database-level multi-tenancy.
+            read_only: If True, only check connectivity without creating schemas/tables (for status checks).
         """
+        self._read_only = read_only
         # Try to use DocEX's config first, then fallback to provided config or default
         if config is not None:
             self.config = config
@@ -89,7 +91,9 @@ class Database:
             # Use tenant-aware database manager
             from docex.db.tenant_database_manager import TenantDatabaseManager
             self.tenant_manager = TenantDatabaseManager()
-            self.engine = self.tenant_manager.get_tenant_engine(tenant_id)
+            # Check if read_only mode is requested (for status checks)
+            read_only = getattr(self, '_read_only', False)
+            self.engine = self.tenant_manager.get_tenant_engine(tenant_id, read_only=read_only)
             # Get session factory from tenant manager
             session_factory = self.tenant_manager._tenant_sessions.get(tenant_id)
             if session_factory:
@@ -326,8 +330,11 @@ class Database:
                     autoflush=False
                 )
                 
-                # Skip table creation if database-level multi-tenancy is enabled
-                # In multi-tenant mode, tables should only exist in tenant schemas, not default schema
+                # Skip table creation if in read-only mode or database-level multi-tenancy is enabled
+                if getattr(self, '_read_only', False):
+                    logger.debug("Read-only mode: skipping table creation")
+                    return
+                
                 if self.multi_tenancy_model == 'database_level':
                     logger.info("Database-level multi-tenancy enabled - skipping table creation in default schema")
                     logger.info("Tables will be created in tenant schemas on first access")

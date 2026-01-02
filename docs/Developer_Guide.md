@@ -23,14 +23,21 @@ Welcome to the DocEX developer guide! This document will help you get started wi
 
 ## 2. Getting Started: DocEX, Baskets, and Documents
 
+### Basic Usage (Single-Tenant)
+
 ```python
 from docex import DocEX
+
+# Initialize DocEX (one-time setup)
+DocEX.setup(
+    database={'type': 'sqlite', 'sqlite': {'path': 'docex.db'}}
+)
 
 # Create DocEX instance
 docEX = DocEX()
 
 # Create or get a basket
-basket = docEX.basket('mybasket')
+basket = docEX.create_basket('mybasket', description='My document basket')
 
 # Add a document
 doc = basket.add('path/to/file.txt', metadata={'source': 'example'})
@@ -38,6 +45,42 @@ doc = basket.add('path/to/file.txt', metadata={'source': 'example'})
 # List all baskets
 for b in docEX.list_baskets():
     print(b.name)
+```
+
+### Multi-Tenant Usage
+
+```python
+from docex import DocEX
+from docex.context import UserContext
+from docex.provisioning.bootstrap import BootstrapTenantManager
+from docex.provisioning.tenant_provisioner import TenantProvisioner
+
+# Step 1: Setup and bootstrap (one-time)
+DocEX.setup(
+    database={'type': 'postgresql', 'postgres': {...}},
+    multi_tenancy={'enabled': True, ...}
+)
+
+bootstrap_manager = BootstrapTenantManager()
+if not bootstrap_manager.is_initialized():
+    bootstrap_manager.initialize(created_by='admin')
+
+# Step 2: Provision tenant (one-time per tenant)
+provisioner = TenantProvisioner()
+if not provisioner.tenant_exists('acme_corp'):
+    provisioner.create(
+        tenant_id='acme_corp',
+        display_name='Acme Corporation',
+        created_by='admin'
+    )
+
+# Step 3: Use DocEX with tenant
+user_context = UserContext(
+    user_id='user123',
+    tenant_id='acme_corp'  # Required
+)
+docEX = DocEX(user_context=user_context)
+basket = docEX.create_basket('invoices')
 ```
 
 Please reference examples folders for sample files. 
@@ -65,6 +108,20 @@ Please reference examples folders for sample files.
 - **Get document operations:**
   ```python
   print(doc.get_operations())
+  ```
+- **Efficient document listing with metadata (NEW):**
+  ```python
+  # Get lightweight document list with selected columns (avoids N+1 queries)
+  documents = basket.list_documents_with_metadata(
+      columns=['id', 'name', 'document_type', 'status', 'created_at'],
+      filters={'document_type': 'invoice', 'status': 'RECEIVED'},
+      limit=100,
+      offset=0,
+      order_by='created_at',
+      order_desc=True
+  )
+  # Returns: [{'id': 'doc_123', 'name': 'invoice_001.pdf', ...}, ...]
+  # Much faster than basket.list_documents() for simple listing operations
   ```
 
 ---
@@ -191,15 +248,16 @@ Edit your config file:
 
 ```yaml
 storage:
-  default_type: s3
+  type: s3
   s3:
     bucket: docex-bucket
     region: us-east-1
     # Optional: credentials (can also use environment variables or IAM roles)
     access_key: your-access-key
     secret_key: your-secret-key
-    # Optional: S3 key prefix for organizing files
-    prefix: docex/
+    # S3 path configuration
+    path_namespace: finance_dept  # Optional: business identifier
+    prefix: production  # Optional: environment prefix
     # Optional: retry configuration
     max_retries: 3
     retry_delay: 1.0
@@ -207,6 +265,22 @@ storage:
     connect_timeout: 60
     read_timeout: 60
 ```
+
+**S3 Path Structure:**
+DocEX uses a three-part S3 path structure for organization:
+- **Part A (Config Prefix)**: `{tenant_id}/{path_namespace}/{prefix}/` - Set from configuration
+- **Part B (Basket Path)**: `{basket_name}_{last_4_of_basket_id}/` - Set when basket is created
+- **Part C (Document Path)**: `{document_name}_{last_6_of_document_id}.{ext}` - Set when document is added
+
+**Example S3 Path:**
+```
+s3://my-bucket/acme_corp/finance_dept/production/invoice_raw_2c03/invoice_001_585d29.pdf
+```
+- Part A: `acme_corp/finance_dept/production/`
+- Part B: `invoice_raw_2c03/`
+- Part C: `invoice_001_585d29.pdf`
+
+See [S3_PATH_STRUCTURE.md](S3_PATH_STRUCTURE.md) for detailed documentation.
 
 **Credential Sources (in priority order):**
 1. Config file credentials (highest priority)
@@ -325,20 +399,23 @@ MetadataService().update_metadata(doc.id, {custom_key: 'custom_value'})
 ## User Context and Multi-tenancy
 
 ### User Context
-DocEX supports user context for audit logging and operation tracking. The `UserContext` class provides a way to track user operations without implementing tenant-specific logic.
+DocEX supports user context for audit logging and operation tracking. The `UserContext` class provides a way to track user operations and enforce multi-tenancy.
 
 ```python
 from docex.context import UserContext
 from docex import DocEX
 
-# Create user context
+# Create user context (user_id is required)
 user_context = UserContext(
-    user_id="user123",
+    user_id="user123",  # Required
     user_email="user@example.com",
-    roles=["admin"]
+    tenant_id="acme_corp",  # Required for multi-tenant setups
+    roles=["admin"],
+    attributes={"department": "finance"}
 )
 
 # Initialize DocEX with user context
+# Note: When multi-tenancy is enabled, UserContext with tenant_id is REQUIRED
 docEX = DocEX(user_context=user_context)
 ```
 
@@ -346,18 +423,105 @@ The user context is used for:
 - Audit logging of operations
 - Operation tracking
 - User-aware logging
+- Multi-tenancy enforcement (tenant_id is required when multi-tenancy is enabled)
 
 ### Multi-tenancy
 
-DocEX supports two multi-tenancy models:
+DocEX 3.0 supports explicit tenant provisioning with schema-level isolation. Each tenant has its own database schema (PostgreSQL) or database file (SQLite), providing physical data isolation.
 
-#### Model A: Row-Level Isolation (Shared Database)
+#### DocEX 3.0 Multi-tenancy (Recommended) ✅
 
-All tenants share the same database/schema, with `tenant_id` columns providing logical isolation. This model is **proposed** but not yet implemented.
+**Key Features:**
+- Explicit tenant provisioning (no lazy creation)
+- Schema-level isolation (PostgreSQL) or database-level isolation (SQLite)
+- Bootstrap tenant for system metadata
+- Tenant registry for managing all tenants
+- Strong data isolation and compliance-ready
 
-#### Model B: Database-Level Isolation (Per-Tenant Database) ✅ Implemented
+**Configuration:**
+```yaml
+# ~/.docex/config.yaml
+multi_tenancy:
+  enabled: true
+  isolation_strategy: schema  # 'schema' for PostgreSQL, 'database' for SQLite
+  bootstrap_tenant:
+    id: _docex_system_
+    display_name: DocEX System
+    schema: docex_system
+    database_path: null  # Only for SQLite
+```
 
-Each tenant has its own database (SQLite) or schema (PostgreSQL), providing physical data isolation. This model is **fully implemented** and ready for production use.
+**Initialization Flow:**
+```python
+from docex import DocEX
+from docex.provisioning.bootstrap import BootstrapTenantManager
+from docex.provisioning.tenant_provisioner import TenantProvisioner
+from docex.context import UserContext
+
+# Step 1: Setup DocEX configuration
+DocEX.setup(
+    database={'type': 'postgresql', 'postgres': {...}},
+    multi_tenancy={'enabled': True, ...}
+)
+
+# Step 2: Bootstrap system tenant (one-time setup)
+bootstrap_manager = BootstrapTenantManager()
+if not bootstrap_manager.is_initialized():
+    bootstrap_manager.initialize(created_by='admin')
+
+# Step 3: Validate setup (read-only check, no side effects)
+if DocEX.is_properly_setup():
+    print("✅ DocEX is ready")
+else:
+    errors = DocEX.get_setup_errors()
+    print(f"Setup issues: {errors}")
+
+# Step 4: Provision business tenants
+provisioner = TenantProvisioner()
+if not provisioner.tenant_exists('acme_corp'):
+    provisioner.create(
+        tenant_id='acme_corp',
+        display_name='Acme Corporation',
+        created_by='admin'
+    )
+
+# Step 5: Use DocEX with tenant
+user_context = UserContext(
+    user_id='user123',
+    tenant_id='acme_corp'  # Required for multi-tenant
+)
+docex = DocEX(user_context=user_context)
+basket = docex.create_basket('invoices')
+```
+
+**Tenant Provisioning:**
+```python
+from docex.provisioning.tenant_provisioner import TenantProvisioner, TenantExistsError, InvalidTenantIdError
+
+provisioner = TenantProvisioner()
+
+# Check if tenant exists (always fresh query, no stale cache)
+if provisioner.tenant_exists('acme_corp'):
+    print("Tenant already exists")
+
+# Provision a new tenant
+try:
+    tenant = provisioner.create(
+        tenant_id='acme_corp',
+        display_name='Acme Corporation',
+        created_by='admin',
+        isolation_strategy='schema'  # Auto-detected if None
+    )
+    print(f"✅ Tenant provisioned: {tenant.tenant_id}")
+except TenantExistsError:
+    print("Tenant already exists")
+except InvalidTenantIdError as e:
+    print(f"Invalid tenant ID: {e}")
+```
+
+#### Legacy: Database-Level Isolation (v2.x)
+
+For backward compatibility, DocEX still supports v2.x database-level multi-tenancy:
 
 **Configuration**:
 ```yaml
@@ -478,6 +642,64 @@ class TenantAwareDocEX:
    - Use connection pooling for database access
    - Implement caching where appropriate
    - Monitor resource usage per tenant
+
+---
+
+## 10. System Status and Validation
+
+### Checking DocEX Setup Status
+
+DocEX provides read-only status checking methods that do not modify system state:
+
+```python
+from docex import DocEX
+
+# Quick check if configuration is loaded
+if DocEX.is_initialized():
+    print("✅ DocEX configuration is loaded")
+
+# Comprehensive setup validation (read-only, no side effects)
+if DocEX.is_properly_setup():
+    print("✅ DocEX is properly set up and ready for use")
+else:
+    # Get detailed error messages
+    errors = DocEX.get_setup_errors()
+    for error in errors:
+        print(f"  - {error}")
+```
+
+**Important:** `is_properly_setup()` is a **read-only** status check. It does not create schemas, tables, or perform any setup operations. It only validates that everything is already set up correctly.
+
+### Bootstrap Tenant Status
+
+```python
+from docex.provisioning.bootstrap import BootstrapTenantManager
+
+bootstrap_manager = BootstrapTenantManager()
+
+# Check if bootstrap tenant is initialized
+if bootstrap_manager.is_initialized():
+    print("✅ Bootstrap tenant is ready")
+else:
+    print("⚠️  Bootstrap tenant not initialized")
+    bootstrap_manager.initialize(created_by='admin')
+```
+
+### Tenant Existence Check
+
+```python
+from docex.provisioning.tenant_provisioner import TenantProvisioner
+
+provisioner = TenantProvisioner()
+
+# Check if tenant exists (always fresh query, no stale cache)
+if provisioner.tenant_exists('acme_corp'):
+    print("Tenant exists")
+else:
+    print("Tenant does not exist")
+```
+
+**Note:** `tenant_exists()` always queries the database directly to ensure fresh results and avoid stale cache issues.
 
 ---
 

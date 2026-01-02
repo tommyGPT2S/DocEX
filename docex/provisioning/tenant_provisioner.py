@@ -153,22 +153,33 @@ class TenantProvisioner:
                 "Tenant ID can only contain alphanumeric characters, underscores, and hyphens"
             )
     
-    def tenant_exists(self, tenant_id: str) -> bool:
+    def tenant_exists(self, tenant_id: str, use_cache: bool = False) -> bool:
         """
         Check if tenant already exists in registry.
         
         Args:
             tenant_id: Tenant identifier to check
+            use_cache: If True, use cached result (default: False to always check fresh)
             
         Returns:
             True if tenant exists, False otherwise
+            
+        Note:
+            By default, this method always queries the database to ensure fresh results.
+            Set use_cache=True only if you're certain the cache is valid (e.g., within the same transaction).
         """
+        # Always query database directly (no caching) to avoid stale results
+        # This ensures we detect tenants that were provisioned by other processes
         try:
             with self.bootstrap_db.session() as session:
+                # Use a fresh query to avoid cache issues
                 tenant = session.query(TenantRegistry).filter_by(tenant_id=tenant_id).first()
-                return tenant is not None
+                exists = tenant is not None
+                logger.debug(f"Tenant '{tenant_id}' exists check: {exists}")
+                return exists
         except Exception as e:
-            logger.error(f"Error checking tenant existence: {e}")
+            logger.error(f"Error checking tenant existence for '{tenant_id}': {e}")
+            # On error, return False to be safe (assume tenant doesn't exist)
             return False
     
     def create(

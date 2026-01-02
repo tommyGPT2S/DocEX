@@ -10,7 +10,7 @@
 
 **DocEX** is a robust, extensible document management and transport system for Python. It supports multiple storage backends, metadata management, and operation tracking, with a unified API for local, SFTP, HTTP, and other protocols.
 
-**⚠️ Current Version: 2.8.2 (Pre-Release of 3.0)** - This version introduces the new multi-tenancy architecture and tenant switching enforcement that will be finalized in DocEX 3.0. See [RELEASE_NOTES.md](RELEASE_NOTES.md) for details.
+**⚠️ Current Version: 2.8.3 (Pre-Release of 3.0)** - This version introduces the new multi-tenancy architecture and tenant switching enforcement that will be finalized in DocEX 3.0. See [RELEASE_NOTES.md](RELEASE_NOTES.md) for details.
 
 ## Features
 
