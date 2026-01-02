@@ -63,16 +63,16 @@ class TenantProvisioner:
         # Get bootstrap tenant database connection
         # Check if v3.0 multi-tenancy is enabled
         multi_tenancy_config = self.config.get('multi_tenancy', {})
-        multi_tenancy_enabled = multi_tenancy_config.get('enabled', False)
-        
+        self.multi_tenancy_enabled = multi_tenancy_config.get('enabled', False)
+
         # Check if v2.x database-level multi-tenancy is enabled
         security_config = self.config.get('security', {})
         v2_multi_tenancy = security_config.get('multi_tenancy_model', 'row_level') == 'database_level'
         
-        if multi_tenancy_enabled:
-            # v3.0: Use bootstrap tenant for tenant registry
-            bootstrap_tenant_id = multi_tenancy_config.get('bootstrap_tenant', {}).get('id', '_docex_system_')
-            self.bootstrap_db = Database(config=self.config, tenant_id=bootstrap_tenant_id)
+        if self.multi_tenancy_enabled:
+            # v3.0: Use bootstrap connection for tenant registry operations
+            # This bypasses tenant validation and ensures we use the bootstrap schema
+            self.bootstrap_db = Database.get_default_connection(config=self.config)
         elif v2_multi_tenancy:
             # v2.x: Use default tenant "docex_first_tenant" for provisioning operations
             # This tenant is automatically created/used in v2.x mode
@@ -462,26 +462,81 @@ class TenantProvisioner:
         from docex.db.tenant_registry_model import TenantRegistry
         if TenantRegistry.__table__.schema is not None:
             TenantRegistry.__table__.schema = None
-        
-        with self.bootstrap_db.session() as session:
-            tenant = TenantRegistry(
-                tenant_id=tenant_id,
-                display_name=display_name,
-                is_system=False,
-                isolation_strategy=isolation_strategy,
-                schema_name=schema_name,
-                database_path=database_path,
-                created_at=datetime.now(timezone.utc),
-                created_by=created_by,
-                last_updated_at=datetime.now(timezone.utc),
-                last_updated_by=None
-            )
-            
-            session.add(tenant)
-            session.commit()
-            session.refresh(tenant)
-            
-            return tenant
+
+        # For multi-tenancy enabled, ensure we use bootstrap connection with correct search_path
+        if hasattr(self, 'multi_tenancy_enabled') and self.multi_tenancy_enabled:
+            with self.bootstrap_db.get_bootstrap_connection() as conn:
+                # Use raw SQL to ensure tenant registry insertion uses correct schema
+                insert_sql = """
+                INSERT INTO tenant_registry (
+                    tenant_id, display_name, is_system, isolation_strategy,
+                    schema_name, database_path, created_at, created_by,
+                    last_updated_at, last_updated_by
+                ) VALUES (
+                    :tenant_id, :display_name, :is_system, :isolation_strategy,
+                    :schema_name, :database_path, :created_at, :created_by,
+                    :last_updated_at, :last_updated_by
+                )
+                ON CONFLICT (tenant_id) DO UPDATE SET
+                    display_name = EXCLUDED.display_name,
+                    isolation_strategy = EXCLUDED.isolation_strategy,
+                    schema_name = EXCLUDED.schema_name,
+                    database_path = EXCLUDED.database_path,
+                    last_updated_at = EXCLUDED.last_updated_at,
+                    last_updated_by = EXCLUDED.last_updated_by
+                RETURNING tenant_id, display_name, is_system, isolation_strategy,
+                         schema_name, database_path, created_at, created_by,
+                         last_updated_at, last_updated_by
+                """
+
+                result = conn.execute(text(insert_sql), {
+                    'tenant_id': tenant_id,
+                    'display_name': display_name,
+                    'is_system': False,
+                    'isolation_strategy': isolation_strategy,
+                    'schema_name': schema_name,
+                    'database_path': database_path,
+                    'created_at': datetime.now(timezone.utc),
+                    'created_by': created_by,
+                    'last_updated_at': datetime.now(timezone.utc),
+                    'last_updated_by': None
+                }).fetchone()
+
+                # Create TenantRegistry instance from result
+                tenant = TenantRegistry(
+                    tenant_id=result[0],
+                    display_name=result[1],
+                    is_system=result[2],
+                    isolation_strategy=result[3],
+                    schema_name=result[4],
+                    database_path=result[5],
+                    created_at=result[6],
+                    created_by=result[7],
+                    last_updated_at=result[8],
+                    last_updated_by=result[9]
+                )
+
+                return tenant
+        else:
+            with self.bootstrap_db.session() as session:
+                tenant = TenantRegistry(
+                    tenant_id=tenant_id,
+                    display_name=display_name,
+                    is_system=False,
+                    isolation_strategy=isolation_strategy,
+                    schema_name=schema_name,
+                    database_path=database_path,
+                    created_at=datetime.now(timezone.utc),
+                    created_by=created_by,
+                    last_updated_at=datetime.now(timezone.utc),
+                    last_updated_by=None
+                )
+
+                session.add(tenant)
+                session.commit()
+                session.refresh(tenant)
+
+                return tenant
     
     def _cleanup_partial_provisioning(
         self,

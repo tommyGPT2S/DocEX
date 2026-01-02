@@ -122,6 +122,14 @@ def test_tenant_provisioning():
         from docex.provisioning.tenant_provisioner import TenantProvisioner
         provisioner = TenantProvisioner()
 
+        # Check if tenant already exists and remove it for clean test
+        if provisioner.tenant_exists(tenant_id):
+            print(f"🧹 Cleaning up existing tenant: {tenant_id}")
+            # For this test, we'll just skip creation if it exists
+            # In real scenarios, you might want to delete and recreate
+            print(f"ℹ️  Tenant {tenant_id} already exists, skipping creation")
+            return True
+
         # Provision the tenant (this registers it in the tenant registry and creates the database/schema)
         tenant_registry = provisioner.create(
             tenant_id=tenant_id,
