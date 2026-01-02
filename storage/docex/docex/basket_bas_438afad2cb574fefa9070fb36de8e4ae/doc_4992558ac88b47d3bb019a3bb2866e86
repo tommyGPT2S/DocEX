@@ -1,6 +1,0 @@
-Natural Language Processing (NLP) enables computers to understand, interpret, and generate human language. 
-                Key tasks include tokenization, part-of-speech tagging, named entity recognition, sentiment analysis, machine translation, 
-                and text summarization. Modern NLP relies heavily on transformer architectures like BERT, GPT, T5, and their variants. 
-                Embedding models convert text into dense vector representations that capture semantic meaning, enabling similarity 
-                comparisons and downstream machine learning tasks. Applications range from chatbots and virtual assistants to 
-                document analysis and content generation.

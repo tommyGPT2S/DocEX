@@ -304,37 +304,30 @@ class DocBasket:
                     
                     logger.debug(f"DocBasket.create: S3 prefix resolution - tenant_id='{tenant_id}', existing_prefix='{existing_prefix}'")
                     
-                    if tenant_id:
-                        # Check if existing prefix already contains the correct tenant_id (simplified: just tenant_id, no "tenant_" prefix)
-                        # Build expected basket path: {friendly_name}_{last_4_of_basket_id}
-                        basket_id_suffix = basket_model.id.replace('bas_', '')[-4:] if basket_model.id.startswith('bas_') else basket_model.id[-4:]
-                        sanitized_name = sanitize_basket_name(name)
-                        expected_basket_path = f"{sanitized_name}_{basket_id_suffix}"
-                        
-                        # Check if prefix already has the correct tenant and basket path
-                        if existing_prefix and tenant_id in existing_prefix and expected_basket_path in existing_prefix:
-                            # Prefix already has correct tenant and basket - keep it as is
-                            logger.debug(f"DocBasket.create: Prefix already contains correct tenant and basket path")
-                        elif existing_prefix and tenant_id in existing_prefix:
-                            # Prefix has tenant but not basket - add basket path
-                            new_prefix = f"{existing_prefix.rstrip('/')}/{expected_basket_path}/"
-                            logger.debug(f"DocBasket.create: Adding basket path to existing prefix: '{new_prefix}'")
-                            storage_config['s3']['prefix'] = new_prefix
-                        else:
-                            # Prefix doesn't have correct tenant_id or is empty - use resolver
-                            basket_prefix = path_resolver.resolve_s3_basket_prefix(tenant_id, basket_model.id, name)
-                            logger.debug(f"DocBasket.create: Resolved basket prefix: '{basket_prefix}'")
-                            storage_config['s3']['prefix'] = basket_prefix.rstrip('/')
-                    else:
-                        # Fallback for non-multi-tenant: use simplified basket path
-                        basket_id_suffix = basket_model.id.replace('bas_', '')[-4:] if basket_model.id.startswith('bas_') else basket_model.id[-4:]
-                        sanitized_name = sanitize_basket_name(name)
-                        basket_path = f"{sanitized_name}_{basket_id_suffix}"
-                        if not existing_prefix:
-                            storage_config['s3']['prefix'] = f"{basket_path}/"
-                        else:
-                            # Add basket to existing prefix
-                            storage_config['s3']['prefix'] = f"{existing_prefix.rstrip('/')}/{basket_path}/"
+                    # Build three-part S3 path structure:
+                    # Part A: Config prefix (tenant_id, path_namespace, prefix) - from configuration
+                    # Part B: Basket path (basket_friendly_name + last_4_of_basket_id) - basket-specific
+                    # Part C: Document path (stored separately in document.path) - document-specific
+                    
+                    # Build Part A: Config prefix from configuration
+                    from docex.config.config_resolver import ConfigResolver
+                    config_resolver = ConfigResolver(config)
+                    part_a_config_prefix = config_resolver.resolve_s3_prefix(tenant_id) if tenant_id else ''
+                    
+                    # Build Part B: Relative basket path
+                    basket_id_suffix = basket_model.id.replace('bas_', '')[-4:] if basket_model.id.startswith('bas_') else basket_model.id[-4:]
+                    sanitized_name = sanitize_basket_name(name)
+                    part_b_basket_path = f"{sanitized_name}_{basket_id_suffix}/"
+                    
+                    # Store Part A and Part B separately for clarity and consistency
+                    storage_config['s3']['config_prefix'] = part_a_config_prefix  # Part A: Fixed config path
+                    storage_config['s3']['basket_path'] = part_b_basket_path      # Part B: Relative basket path
+                    
+                    # Also store combined prefix (A + B) for backward compatibility and path building
+                    full_basket_prefix = f"{part_a_config_prefix}{part_b_basket_path}".rstrip('/')
+                    storage_config['s3']['prefix'] = full_basket_prefix
+                    
+                    logger.debug(f"DocBasket.create: S3 three-part path structure - Part A (config): '{part_a_config_prefix}', Part B (basket): '{part_b_basket_path}', Full prefix (A+B): '{full_basket_prefix}'")
                 
                 # Update the storage config
                 basket_model.storage_config = json.dumps(storage_config)

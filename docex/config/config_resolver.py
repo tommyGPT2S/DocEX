@@ -35,6 +35,7 @@ class ConfigResolver:
         Constructs S3 prefix with tenant_id FIRST for better tenant isolation:
         - {tenant_id}/{path_namespace}/{prefix}/  (if prefix provided)
         - {tenant_id}/{path_namespace}/            (if prefix not provided)
+        - {tenant_id}/                              (if neither path_namespace nor prefix provided)
         
         All parts come from config.yaml except tenant_id.
         
@@ -49,6 +50,7 @@ class ConfigResolver:
                      Example: "acme_corp", "contoso", "tenant_001"
         - path_namespace: Business identifier (organization, business unit, or deployment name)
                           Optional, for multi-application deployments
+                          Supports backward compatibility with 'app_name' config key
                           Example: "acme-corp", "finance-department", "production-instance"
         - prefix: Environment-level namespace (optional, e.g., "production", "staging", "dev")
         
@@ -71,8 +73,8 @@ class ConfigResolver:
         storage_config = self.config.get('storage', {})
         s3_config = storage_config.get('s3', {})
         
-        # Get path_namespace and prefix from config
-        path_namespace = s3_config.get('path_namespace', '').strip('/')
+        # Get path_namespace (supports backward compatibility with app_name)
+        path_namespace = s3_config.get('path_namespace', s3_config.get('app_name', '')).strip('/')
         prefix = s3_config.get('prefix', '').strip('/')
         
         # Build prefix parts with tenant_id FIRST

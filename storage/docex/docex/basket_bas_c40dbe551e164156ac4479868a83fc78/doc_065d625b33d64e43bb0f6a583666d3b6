@@ -1,6 +1,0 @@
-Vector databases are specialized database systems designed to store, index, and query high-dimensional 
-                vectors efficiently. They are essential for modern AI applications including semantic search, recommendation systems, 
-                and retrieval-augmented generation (RAG). Popular vector databases include Pinecone, Weaviate, Qdrant, Milvus, and 
-                Chroma. These systems use sophisticated indexing algorithms like Approximate Nearest Neighbor (ANN) search, HNSW 
-                (Hierarchical Navigable Small Worlds), and IVF (Inverted File) to enable fast similarity search across millions 
-                or billions of vectors.

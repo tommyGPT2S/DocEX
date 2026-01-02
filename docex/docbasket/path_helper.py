@@ -179,14 +179,24 @@ class DocBasketPathHelper:
         # Get tenant_id (required for multi-tenant path building)
         tenant_id = self.extract_tenant_id()
         
-        # For S3, check if storage config already has a prefix with basket path
-        # If so, pass it to path builder to avoid duplication
+        # For S3, use three-part path structure:
+        # Part A: config_prefix (from storage_config['s3']['config_prefix'])
+        # Part B: basket_path (from storage_config['s3']['basket_path'])
+        # Part C: document_path (built here)
+        # If parts A and B are stored separately, use them; otherwise use combined prefix
         existing_prefix = None
         if storage_type == 's3':
-            existing_prefix = self.basket.storage_config.get('s3', {}).get('prefix', '')
-            if existing_prefix:
-                # Check if prefix already includes the basket path
-                # Basket path format: {basket_friendly_name}_{last_4_of_basket_id}
+            s3_config = self.basket.storage_config.get('s3', {})
+            # Prefer using separately stored parts (new structure)
+            if 'config_prefix' in s3_config and 'basket_path' in s3_config:
+                part_a = s3_config['config_prefix']
+                part_b = s3_config['basket_path']
+                existing_prefix = f"{part_a}{part_b}".rstrip('/')
+                logger.debug(f"Using three-part structure: Part A='{part_a}', Part B='{part_b}', Combined='{existing_prefix}'")
+            elif 'prefix' in s3_config:
+                # Fallback to combined prefix (backward compatibility)
+                existing_prefix = s3_config['prefix']
+                # Verify it includes basket path
                 basket_id_suffix = self.basket.id.replace('bas_', '')[-4:] if self.basket.id.startswith('bas_') else self.basket.id[-4:]
                 sanitized_name = sanitize_basket_name(self.basket.name)
                 expected_basket_path = f"{sanitized_name}_{basket_id_suffix}"
@@ -210,6 +220,51 @@ class DocBasketPathHelper:
         )
         
         return full_path
+    
+    def reconstruct_full_path(self, document_path: str) -> str:
+        """
+        Reconstruct full storage path from stored document path (Part C).
+        
+        Uses the three-part S3 path structure:
+        - Part A: config_prefix (from basket.storage_config) - S3 only
+        - Part B: basket_path (from basket.storage_config)
+        - Part C: document_path (parameter)
+        
+        For filesystem storage, document_path may already be the full relative path
+        (including tenant_id and basket_path), so we return it as-is.
+        
+        Args:
+            document_path: Part C - relative document path (e.g., "invoice_001_585d29.pdf")
+                          For filesystem, this may already include basket path
+            
+        Returns:
+            Full storage path:
+            - S3: Part A + Part B + Part C
+            - Filesystem: document_path as-is (already includes full relative path)
+        """
+        storage_type = self.basket.storage_type
+        
+        if storage_type == 's3':
+            s3_config = self.basket.storage_config.get('s3', {})
+            # Prefer using separately stored parts (new structure)
+            if 'config_prefix' in s3_config and 'basket_path' in s3_config:
+                part_a = s3_config['config_prefix']
+                part_b = s3_config['basket_path']
+                full_path = f"{part_a}{part_b}{document_path}"
+                logger.debug(f"Reconstructed full S3 path from three-part structure: '{full_path}'")
+                return full_path
+            elif 'prefix' in s3_config:
+                # Fallback to combined prefix (backward compatibility)
+                prefix = s3_config['prefix']
+                full_path = f"{prefix.rstrip('/')}/{document_path}"
+                logger.debug(f"Reconstructed full S3 path from combined prefix: '{full_path}'")
+                return full_path
+        
+        # For filesystem, document_path is already the full relative path
+        # (it was stored as the full path relative to base_path when document was added)
+        # So we return it as-is
+        logger.debug(f"Filesystem path (returning as-is): '{document_path}'")
+        return document_path
     
     def parse_tenant_basket_name(self) -> tuple[str, str]:
         """

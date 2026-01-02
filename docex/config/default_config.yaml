@@ -90,6 +90,7 @@ storage:
     # DISTINCTION:
     #   - bucket_application: Used to BUILD bucket name (e.g., "acme-corp" -> "acme-corp-documents-bucket")
     #   - path_namespace: Used for S3 path prefix (optional, for multi-application deployments)
+    #                     Also supports backward compatibility with 'app_name' config key
     #   - prefix: Environment prefix (optional, e.g., "production", "staging")
     #
     # Examples for path_namespace:
@@ -100,7 +101,7 @@ storage:
     
     # Optional: Environment prefix for S3 path (e.g., dev, staging, production)
     # Final S3 key structure: {tenant_id}/{path_namespace}/{prefix}/{basket_friendly_name}_{last_4}/{friendly_name}_{last_6}.{ext}
-    # Example: "acme_corp/acme-corp/production/invoices_a1b2/invoice_c3d4e5.pdf"
+    # Example: "acme_corp/finance_dept/production/invoices_a1b2/invoice_c3d4e5.pdf"
     prefix: production
     # Optional: AWS credentials (if not using IAM roles or default profile)
     access_key: null

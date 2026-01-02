@@ -4,6 +4,7 @@ include LICENSE
 include docs/DocEX_Design.md
 include docs/Developer_Guide.md
 include docs/API_Reference.md
+include docs/Platform_Integration_Guide.md
 include docs/DocEX_Architecture.jpeg
 
 # Include configuration files

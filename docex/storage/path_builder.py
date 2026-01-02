@@ -135,10 +135,17 @@ class DocEXPathBuilder:
         storage_type: Optional[str] = None
     ) -> str:
         """
-        Build storage path for a document.
+        Build storage path for a document using three-part S3 path structure.
         
-        This is the main method for building document paths. It constructs
-        the complete path including all prefixes (tenant, namespace, basket).
+        Three-Part Structure:
+        - Part A: Config prefix (tenant_id, path_namespace, prefix) - from configuration
+        - Part B: Basket path (basket_friendly_name + last_4_of_basket_id) - basket-specific
+        - Part C: Document path (document_friendly_name + last_6_of_document_id + ext) - document-specific
+        
+        Full path = Part A + Part B + Part C
+        
+        This method constructs the complete path including all three parts.
+        If existing_prefix is provided and contains Part A + Part B, it uses that directly.
         
         Args:
             basket_id: Basket ID (e.g., "bas_1234567890abcdef")
@@ -147,18 +154,39 @@ class DocEXPathBuilder:
             document_name: Document friendly name (e.g., "invoice_001")
             file_ext: File extension (e.g., ".pdf")
             tenant_id: Optional tenant ID (required for multi-tenant)
-            existing_prefix: Optional existing prefix from storage_config (avoids duplication)
+            existing_prefix: Optional existing prefix from storage_config (Part A + Part B)
                             If provided and contains basket path, use it instead of building from scratch
             storage_type: Optional storage type override (e.g., 's3', 'filesystem')
                           If not provided, uses config's storage type
             
         Returns:
             Document path:
-            - S3: Full S3 key (e.g., "acme_corp/finance_dept/test-env/invoices_a1b2/invoice_001_c3d4e5.pdf")
-            - Filesystem: Relative path (e.g., "acme_corp/invoices_a1b2/invoice_001_c3d4e5.pdf") - relative to base_path
+            - S3: Full S3 key (Part A + Part B + Part C)
+                  Example: "acme_corp/finance_dept/production/invoice_raw_2c03/invoice_001_585d29.pdf"
+            - Filesystem: Relative path (Part B + Part C) - relative to base_path
+                  Example: "acme_corp/invoice_raw_2c03/invoice_001_585d29.pdf"
         """
         if storage_type is None:
             storage_type = self.config.get('storage', {}).get('type', 'filesystem')
+        
+        # For S3, if existing_prefix is provided and contains the basket path, use it directly
+        # This avoids rebuilding the path and prevents duplication
+        if storage_type == 's3' and existing_prefix:
+            # Check if existing_prefix already contains the basket path
+            from docex.utils.s3_prefix_builder import sanitize_basket_name
+            basket_id_suffix = basket_id.replace('bas_', '')[-4:] if basket_id.startswith('bas_') else basket_id[-4:]
+            sanitized_name = sanitize_basket_name(basket_name)
+            expected_basket_path = f"{sanitized_name}_{basket_id_suffix}"
+            
+            # If existing_prefix contains the basket path, use it directly
+            # existing_prefix format: {tenant_id}/{path_namespace}/{prefix}/{basket_friendly_name}_{last_4}
+            if expected_basket_path in existing_prefix:
+                # Build document filename: {friendly_name}_{last_6_of_doc_id}.{ext}
+                doc_id_suffix = document_id.replace('doc_', '')[-6:] if document_id.startswith('doc_') else document_id[-6:]
+                document_filename = f"{document_name}_{doc_id_suffix}{file_ext}"
+                # Use existing_prefix directly (it already includes tenant_id, path_namespace, prefix, and basket path)
+                # No need to rebuild - just append document filename
+                return f"{existing_prefix.rstrip('/')}/{document_filename}"
         
         # Build basket path first (pass existing_prefix and storage_type to avoid duplication)
         basket_path = self.build_basket_path(basket_id, basket_name, tenant_id, existing_prefix, storage_type)
@@ -169,11 +197,11 @@ class DocEXPathBuilder:
         
         if storage_type == 's3':
             # For S3, combine basket prefix with document filename
-            # basket_path is already the full prefix (e.g., "acme-corp/production/acme/invoices_a1b2")
+            # basket_path is already the full prefix (e.g., "acme_corp/finance_dept/production/invoices_a1b2")
             return f"{basket_path}/{document_filename}"
         else:
             # For filesystem, combine basket directory with document filename
-            # basket_path is already relative (e.g., "acme/invoices_a1b2")
+            # basket_path is already relative (e.g., "acme_corp/invoices_a1b2")
             # Return relative path: basket_path/document_filename
             return f"{basket_path}/{document_filename}"
     

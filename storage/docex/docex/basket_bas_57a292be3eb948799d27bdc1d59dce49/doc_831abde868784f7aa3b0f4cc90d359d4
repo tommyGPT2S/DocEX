@@ -1,5 +1,0 @@
-Cloud computing provides on-demand access to computing resources over the internet. Major providers 
-                include Amazon Web Services (AWS), Microsoft Azure, and Google Cloud Platform (GCP). Services encompass Infrastructure 
-                as a Service (IaaS), Platform as a Service (PaaS), and Software as a Service (SaaS). Key benefits include scalability, 
-                cost-effectiveness, reliability, and global accessibility. Cloud-native technologies like containers (Docker), 
-                orchestration (Kubernetes), and serverless computing enable modern application deployment and management.
