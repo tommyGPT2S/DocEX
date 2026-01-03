@@ -231,6 +231,7 @@ class Database:
         db.Session = None
         db.multi_tenancy_model = 'row_level'  # Force single-tenant mode
         db.tenant_database_routing = False
+        db._read_only = True  # Skip table creation for system queries
         db._initialize()
         return db
     def _initialize(self):
@@ -554,16 +555,43 @@ class Database:
         This fixes the bug where tenant_registry table is created in public schema
         instead of the configured bootstrap schema.
         """
-        # Prevent multiple executions
-        if hasattr(self, '_tenant_registry_initialized') and self._tenant_registry_initialized:
-            return
-
         db_config = self.config.get('database', {})
         if db_config.get('type') not in ['postgresql', 'postgres']:
             return  # Only applies to PostgreSQL
 
         postgres_config = db_config.get('postgres', db_config.get('postgresql', {}))
         bootstrap_schema = postgres_config.get('system_schema', 'docex_system')
+
+        # Check if already initialized (both in-memory flag and database check)
+        if hasattr(Database, '_tenant_registry_initialized') and Database._tenant_registry_initialized:
+            logger.debug("Tenant registry schema already initialized (flag check), skipping")
+            return
+
+        # Check if the bootstrap schema and table already exist in the database
+        try:
+            with self.engine.connect() as conn:
+                # Check if bootstrap schema exists
+                schema_result = conn.execute(text(
+                    "SELECT schema_name FROM information_schema.schemata WHERE schema_name = :schema_name"
+                ), {"schema_name": bootstrap_schema})
+                schema_exists = schema_result.fetchone() is not None
+
+                if schema_exists:
+                    # Check if tenant_registry table exists in the schema
+                    table_result = conn.execute(text(
+                        "SELECT table_name FROM information_schema.tables " +
+                        "WHERE table_schema = :schema_name AND table_name = 'tenant_registry'"
+                    ), {"schema_name": bootstrap_schema})
+                    table_exists = table_result.fetchone() is not None
+
+                    if table_exists:
+                        logger.debug(f"Tenant registry table already exists in schema {bootstrap_schema}")
+                        Database._tenant_registry_initialized = True
+                        return
+
+            logger.debug(f"Bootstrap schema or tenant_registry table not found, initializing...")
+        except Exception as e:
+            logger.debug(f"Error checking existing tenant registry: {e}, proceeding with initialization")
 
         # SQL to create tenant_registry table in bootstrap schema
         create_table_sql = f"""
@@ -583,14 +611,22 @@ class Database:
         """
 
         try:
-            with self.get_bootstrap_connection() as conn:
-                # Create table in bootstrap schema (schema creation handled by get_bootstrap_connection)
-                conn.execute(text(create_table_sql))
+            # Use a direct connection with explicit schema setup
+            with self.engine.connect() as conn:
+                # Ensure we're in the bootstrap schema
+                conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS {bootstrap_schema}'))
+                conn.execute(text(f'SET search_path TO {bootstrap_schema}'))
                 conn.commit()
-                logger.info(f"Ensured tenant_registry table exists in schema: {bootstrap_schema}")
-                self._tenant_registry_initialized = True
+
+                # Create table (without schema qualification since search_path is set)
+                conn.execute(text(create_table_sql.replace(f'{bootstrap_schema}.', '')))
+                conn.commit()
+
+                logger.info(f"Created tenant_registry table in schema: {bootstrap_schema}")
+                Database._tenant_registry_initialized = True
         except Exception as e:
             logger.warning(f"Failed to create tenant_registry table in bootstrap schema: {e}")
+            # Don't re-raise the exception to avoid breaking initialization
 
     def get_bootstrap_schema(self) -> str:
         """Get the bootstrap/system schema name."""

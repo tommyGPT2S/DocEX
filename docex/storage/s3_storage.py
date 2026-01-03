@@ -370,8 +370,8 @@ class S3Storage(AbstractStorage):
             try:
                 # Try to parse as JSON
                 return json.loads(content)
-            except json.JSONDecodeError:
-                # Return raw bytes if not JSON
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                # Return raw bytes if not valid JSON or not valid UTF-8
                 return content
         except ClientError as e:
             error_code = e.response.get('Error', {}).get('Code', '')
