@@ -70,9 +70,9 @@ class TenantProvisioner:
         v2_multi_tenancy = security_config.get('multi_tenancy_model', 'row_level') == 'database_level'
         
         if self.multi_tenancy_enabled:
-            # v3.0: Use bootstrap connection for tenant registry operations
-            # This bypasses tenant validation and ensures we use the bootstrap schema
-            self.bootstrap_db = Database.get_default_connection(config=self.config)
+            # v3.0: Use bootstrap tenant connection for tenant registry operations
+            # This ensures we can access the tenant_registry in the docex_system schema
+            self.bootstrap_db = Database(config=self.config, tenant_id='_docex_system_')
         elif v2_multi_tenancy:
             # v2.x: Use default tenant "docex_first_tenant" for provisioning operations
             # This tenant is automatically created/used in v2.x mode

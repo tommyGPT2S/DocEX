@@ -119,9 +119,16 @@ CREATE INDEX IF NOT EXISTS idx_document_metadata_key ON document_metadata(key);
 CREATE INDEX IF NOT EXISTS idx_document_metadata_type ON document_metadata(metadata_type);
 CREATE INDEX IF NOT EXISTS idx_document_metadata_key_value ON document_metadata(key, value);
 
+-- Indexes for basket queries
+CREATE INDEX IF NOT EXISTS idx_docbasket_status ON docbasket(status);
+CREATE INDEX IF NOT EXISTS idx_docbasket_created_at ON docbasket(created_at DESC);
+
 -- Composite indexes for optimized document queries with basket_id
 CREATE INDEX IF NOT EXISTS idx_document_basket_status ON document(basket_id, status);
 CREATE INDEX IF NOT EXISTS idx_document_basket_type ON document(basket_id, document_type);
 CREATE INDEX IF NOT EXISTS idx_document_basket_created ON document(basket_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_document_basket_updated ON document(basket_id, updated_at DESC);
-CREATE INDEX IF NOT EXISTS idx_document_basket_name ON document(basket_id, name); 
+CREATE INDEX IF NOT EXISTS idx_document_basket_name ON document(basket_id, name);
+
+-- Composite index for document metadata queries with document_id
+CREATE INDEX IF NOT EXISTS idx_document_metadata_doc_key_value ON document_metadata(document_id, key, value); 

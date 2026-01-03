@@ -5,6 +5,17 @@ Welcome to the DocEX developer guide! This document will help you get started wi
 ---
 ![DocEX Architecture](DocEX_Architecture.jpeg)
 
+## Table of Contents
+
+1. [Setup & Installation](#1-setup--installation)
+2. [Getting Started: DocEX, Baskets, and Documents](#2-getting-started-docex-baskets-and-documents)
+3. [Document Capabilities](#3-document-capabilities)
+4. [Performance Optimization](#4-performance-optimization)
+5. [Platform Integration](#5-platform-integration)
+6. [Multi-tenancy](#6-user-context-and-multi-tenancy)
+7. [System Status and Validation](#7-system-status-and-validation)
+8. [Reference Documentation](#8-reference-documentation)
+
 ## 1. Setup & Installation
 
 1. **Install DocEX** (from PyPI or GitHub):
@@ -86,7 +97,65 @@ basket = docEX.create_basket('invoices')
 Please reference examples folders for sample files. 
 ---
 
-## 3. Document Capabilities
+## 3. Platform Integration
+
+For platform integrators who need to bootstrap DocEX from their platform's system settings, see the comprehensive [Platform Integration Guide](Platform_Integration_Guide.md).
+
+### Quick Integration Overview
+
+```python
+from docex import DocEX
+from docex.provisioning.bootstrap import BootstrapTenantManager
+from docex.provisioning.tenant_provisioner import TenantProvisioner
+from docex.context import UserContext
+
+# Step 1: Build configuration from platform settings
+config = build_docex_config_from_platform(platform_settings)
+
+# Step 2: Initialize DocEX
+DocEX.setup(**config)
+
+# Step 3: Bootstrap system tenant (if multi-tenancy enabled)
+if config.get('multi_tenancy', {}).get('enabled', False):
+    bootstrap_manager = BootstrapTenantManager()
+    if not bootstrap_manager.is_initialized():
+        bootstrap_manager.initialize(created_by='platform')
+
+# Step 4: Validate setup
+if DocEX.is_properly_setup():
+    print("✅ DocEX is ready")
+else:
+    errors = DocEX.get_setup_errors()
+    print(f"Setup issues: {errors}")
+
+# Step 5: Provision business tenants
+provisioner = TenantProvisioner()
+if not provisioner.tenant_exists('acme_corp'):
+    provisioner.create(
+        tenant_id='acme_corp',
+        display_name='Acme Corporation',
+        created_by='admin'
+    )
+
+# Step 6: Use DocEX with tenant
+user_context = UserContext(user_id='user123', tenant_id='acme_corp')
+docex = DocEX(user_context=user_context)
+basket = docex.create_basket('invoices')
+```
+
+**Key Methods for Platform Integration:**
+- `DocEX.setup(**config)` - Initialize DocEX with configuration
+- `DocEX.is_initialized()` - Check if configuration is loaded
+- `DocEX.is_properly_setup()` - Comprehensive validation (read-only)
+- `DocEX.get_setup_errors()` - Get detailed error messages
+- `BootstrapTenantManager.initialize()` - Bootstrap system tenant
+- `TenantProvisioner.create()` - Provision business tenants
+
+See [Platform_Integration_Guide.md](Platform_Integration_Guide.md) for complete integration examples, error handling, and best practices.
+
+---
+
+## 4. Document Capabilities
 
 - **Get document details:**
   ```python
@@ -126,7 +195,179 @@ Please reference examples folders for sample files.
 
 ---
 
-## 4. Using Routes (Upload/Download)
+## 3.1 Choosing the Right Listing Method
+
+DocEX provides multiple methods for listing baskets and documents. Choose the right one based on your needs:
+
+### Basket Listing: `list_baskets()` vs `list_baskets_with_metadata()`
+
+**Use `list_baskets_with_metadata()` when:**
+- ✅ You only need basic basket information (id, name, status, dates)
+- ✅ You're building dropdowns, lists, or selection UIs
+- ✅ Performance is critical for large result sets
+- ✅ You need document counts per basket
+- ✅ You don't need to call basket methods like `list_documents()`
+
+**Use `list_baskets()` when:**
+- ✅ You need full `DocBasket` functionality
+- ✅ You'll call methods like `basket.list_documents()`, `basket.add()`, etc.
+- ✅ You need access to `storage_config` or other complex properties
+- ✅ You need to perform operations on the baskets
+
+**Examples:**
+
+```python
+# ✅ FASTEST: Get lightweight basket list with document counts
+baskets = docex.list_baskets_with_metadata(
+    columns=['id', 'name', 'status', 'document_count'],
+    filters={'status': 'active'},
+    order_by='document_count',
+    order_desc=True,
+    limit=50
+)
+# Returns: [{'id': 'bas_123', 'name': 'invoice_raw', 'status': 'active', 'document_count': 42}, ...]
+
+# ✅ GOOD: Get baskets for dropdown/selection
+baskets = docex.list_baskets_with_metadata(
+    columns=['id', 'name'],
+    order_by='name'
+)
+# Returns: [{'id': 'bas_123', 'name': 'invoice_raw'}, ...]
+
+# ⚠️  HEAVIER: Use full objects when you need basket methods
+baskets = docex.list_baskets(status='active', limit=50)
+for basket in baskets:
+    # Can call basket methods
+    documents = basket.list_documents(limit=10)
+    basket.add('path/to/file.pdf')
+```
+
+### Document Listing: `list_documents()` vs `list_documents_with_metadata()`
+
+**Use `list_documents_with_metadata()` when:**
+- ✅ You only need specific document fields (id, name, status, etc.)
+- ✅ You're displaying document lists in UIs
+- ✅ Performance is critical (avoids N+1 queries)
+- ✅ You don't need full Document object functionality
+
+**Use `list_documents()` when:**
+- ✅ You need full `Document` objects with all methods
+- ✅ You'll call methods like `document.get_content()`, `document.get_metadata()`, etc.
+- ✅ You need to perform operations on the documents
+
+**Examples:**
+
+```python
+# ✅ FASTEST: Get lightweight document list
+documents = basket.list_documents_with_metadata(
+    columns=['id', 'name', 'status', 'created_at'],
+    filters={'status': 'RECEIVED'},
+    limit=100
+)
+# Returns: [{'id': 'doc_123', 'name': 'invoice_001.pdf', ...}, ...]
+
+# ⚠️  HEAVIER: Use full objects when you need document methods
+documents = basket.list_documents(status='RECEIVED', limit=100)
+for doc in documents:
+    # Can call document methods
+    content = doc.get_content(mode='text')
+    metadata = doc.get_metadata()
+```
+
+### Performance Comparison
+
+| Operation | Method | Performance | Use Case |
+|-----------|--------|-------------|----------|
+| List baskets (1000) | `list_baskets()` | ~10ms | Need basket methods |
+| List baskets (1000) | `list_baskets_with_metadata()` | ~5ms | Display/selection only |
+| List documents (10k) | `list_documents()` | ~50ms | Need document methods |
+| List documents (10k) | `list_documents_with_metadata()` | ~20ms | Display/listing only |
+
+*Note: Actual performance depends on database type, hardware, and data distribution*
+
+### Recommended Pattern: Lazy Object Instantiation
+
+**Best Practice:** Even when you need full object functionality, it's often more efficient to:
+1. First use `*_with_metadata()` to get IDs and basic info
+2. Then instantiate full objects only for items you actually need to work with
+
+This pattern avoids instantiating many objects that might never be used.
+
+**Example: Efficient Basket Operations**
+
+```python
+# ✅ EFFICIENT: Get IDs first, then instantiate only what you need
+baskets_metadata = docex.list_baskets_with_metadata(
+    columns=['id', 'name', 'status', 'document_count'],
+    filters={'status': 'active'},
+    order_by='document_count',
+    order_desc=True,
+    limit=100
+)
+
+# Display list to user (no object instantiation needed)
+for basket_info in baskets_metadata:
+    print(f"{basket_info['name']}: {basket_info['document_count']} documents")
+
+# User selects a basket - NOW instantiate the full object
+selected_basket_id = baskets_metadata[0]['id']
+basket = docex.get_basket(basket_id=selected_basket_id)
+
+# Now use full basket functionality
+documents = basket.list_documents(limit=10)
+basket.add('path/to/file.pdf')
+```
+
+**Example: Efficient Document Operations**
+
+```python
+# ✅ EFFICIENT: Get document IDs first, then instantiate only what you need
+documents_metadata = basket.list_documents_with_metadata(
+    columns=['id', 'name', 'status', 'created_at'],
+    filters={'status': 'RECEIVED'},
+    limit=100
+)
+
+# Display list to user (no object instantiation needed)
+for doc_info in documents_metadata:
+    print(f"{doc_info['name']} - {doc_info['status']}")
+
+# User selects documents to process - NOW instantiate only those
+selected_doc_ids = [doc['id'] for doc in documents_metadata[:5]]  # First 5
+
+for doc_id in selected_doc_ids:
+    # Only instantiate objects for documents we actually process
+    document = basket.get_document(doc_id)
+    content = document.get_content(mode='text')
+    # Process document...
+```
+
+**Performance Benefits:**
+
+| Scenario | Traditional Approach | Lazy Instantiation | Improvement |
+|----------|---------------------|-------------------|-------------|
+| List 1000 baskets, use 10 | Instantiate 1000 objects | Instantiate 10 objects | **100x fewer objects** |
+| List 10k documents, process 5 | Instantiate 10k objects | Instantiate 5 objects | **2000x fewer objects** |
+| Memory usage (1000 baskets) | ~50MB | ~0.5MB | **100x less memory** |
+
+**When to Use Each Pattern:**
+
+- **Use lazy instantiation when:**
+  - ✅ Displaying lists/selections to users
+  - ✅ Filtering/searching before operations
+  - ✅ Processing only a subset of items
+  - ✅ Memory is constrained
+  - ✅ You have large result sets
+
+- **Use direct full objects when:**
+  - ✅ You need to process ALL items
+  - ✅ Result set is small (< 100 items)
+  - ✅ You need to iterate and call methods immediately
+  - ✅ Code simplicity is more important than performance
+
+---
+
+## 6. Using Routes (Upload/Download)
 
 - **List routes:**
   ```python
@@ -148,7 +389,7 @@ Please reference examples folders for sample files.
 
 ---
 
-## 5. Using Processors (Processing Documents)
+## 7. Using Processors (Processing Documents)
 
 - **List available processors:**
   ```sh
@@ -168,7 +409,7 @@ Please reference examples folders for sample files.
 
 ---
 
-## 6. Building Your Own Processor
+## 8. Building Your Own Processor
 
 1. **Create a new processor class:**
    ```python
@@ -209,7 +450,7 @@ Please reference examples folders for sample files.
 
 ---
 
-## 7. Best Practices & Tips
+## 9. Best Practices & Tips
 
 - Always use the Document API for content and metadata access (never access storage directly).
 - Use baskets to organize documents by business context.
@@ -219,7 +460,7 @@ Please reference examples folders for sample files.
 
 ---
 
-## 8. Configuring Storage and Database Backends
+## 10. Configuring Storage and Database Backends
 
 DocEX supports multiple storage and database backends. You can configure these in your config file (usually `~/.docex/config.yaml`) or during `docex init`.
 
@@ -347,7 +588,7 @@ storage:
 
 ---
 
-## 9. Reference: Standard Metadata Keys (ENUM)
+## 11. Reference: Standard Metadata Keys (ENUM)
 
 DocEX provides a set of standard metadata keys in `docex/models/metadata_keys.py` via the `MetadataKey` enum. These help you use consistent, searchable metadata across your documents.
 
@@ -396,7 +637,7 @@ MetadataService().update_metadata(doc.id, {custom_key: 'custom_value'})
 
 ---
 
-## User Context and Multi-tenancy
+## 12. User Context and Multi-tenancy
 
 ### User Context
 DocEX supports user context for audit logging and operation tracking. The `UserContext` class provides a way to track user operations and enforce multi-tenancy.
@@ -645,7 +886,7 @@ class TenantAwareDocEX:
 
 ---
 
-## 10. System Status and Validation
+## 13. System Status and Validation
 
 ### Checking DocEX Setup Status
 
@@ -700,6 +941,19 @@ else:
 ```
 
 **Note:** `tenant_exists()` always queries the database directly to ensure fresh results and avoid stale cache issues.
+
+---
+
+## 14. Reference Documentation
+
+- **[API Reference](API_Reference.md)** - Complete API documentation
+- **[Platform Integration Guide](Platform_Integration_Guide.md)** - Platform integration patterns and examples
+- **[Multi-Tenancy Guide](MULTI_TENANCY_GUIDE.md)** - Detailed multi-tenancy documentation
+- **[Tenant Provisioning](TENANT_PROVISIONING.md)** - Tenant provisioning guide
+- **[S3 Path Structure](S3_PATH_STRUCTURE.md)** - S3 path structure documentation
+- **[CLI Guide](CLI_GUIDE.md)** - Command-line interface reference
+- **[DocBasket Usage Guide](DocBasket_Usage_Guide.md)** - Basket operations guide
+- **[Test Scripts Summary](Test_Scripts_Summary.md)** - Available test scripts
 
 ---
 

@@ -245,6 +245,7 @@ class TenantDatabaseManager:
         connection_url = f'postgresql://{user_encoded}:{password_encoded}@{host}:{port}/{database}?sslmode={sslmode}'
         
         # Create engine with schema in search_path
+        # Use both connection options and event listener for maximum reliability
         engine = create_engine(
             connection_url,
             poolclass=QueuePool,
@@ -256,21 +257,27 @@ class TenantDatabaseManager:
                 'options': f'-csearch_path={schema_name}'
             }
         )
-        
-        # Set search path on connection
-        # Quote schema name to handle special characters (e.g., hyphens)
+
+        # Set search path on every connection using event listener
+        # This ensures search_path is set even for pooled connections
         @event.listens_for(engine, "connect")
         def set_search_path(dbapi_connection, connection_record):
+            # Execute search_path setting immediately on connection
             with dbapi_connection.cursor() as cursor:
                 # Use parameterized query to safely handle schema name with special characters
                 cursor.execute('SET search_path TO %s', (schema_name,))
+                dbapi_connection.commit()  # Ensure the SET command is committed
         
         # Only create schema and initialize if not in read-only mode
         if not read_only:
-            # Create schema and initialize for tenant
-            self._create_postgres_schema(engine, schema_name, tenant_id)
-            # Exclude tenant_registry table from tenant schemas (it only exists in bootstrap schema)
-            self._initialize_tenant_schema(engine, tenant_id, schema_name, exclude_tables=['tenant_registry'])
+            # Check if tenant schema is already fully initialized
+            if not self._is_tenant_schema_initialized(engine, schema_name):
+                # Create schema and initialize for tenant
+                self._create_postgres_schema(engine, schema_name, tenant_id)
+                # Exclude tenant_registry table from tenant schemas (it only exists in bootstrap schema)
+                self._initialize_tenant_schema(engine, tenant_id, schema_name, exclude_tables=['tenant_registry'])
+            else:
+                logger.debug(f"Tenant {tenant_id} schema {schema_name} already initialized, skipping creation")
         else:
             # In read-only mode, just verify schema exists (don't create)
             try:
@@ -284,7 +291,46 @@ class TenantDatabaseManager:
                 logger.debug(f"Could not verify schema existence (read-only check): {e}")
         
         return engine
-    
+
+    def _is_tenant_schema_initialized(self, engine: Any, schema_name: str) -> bool:
+        """
+        Check if tenant schema is already fully initialized with required tables.
+
+        Args:
+            engine: SQLAlchemy engine
+            schema_name: Schema name to check
+
+        Returns:
+            True if schema exists and has required tables, False otherwise
+        """
+        try:
+            inspector = inspect(engine)
+
+            # Check if schema exists
+            schemas = inspector.get_schema_names()
+            if schema_name not in schemas:
+                return False
+
+            # Get tables in the schema
+            tables = inspector.get_table_names(schema=schema_name)
+
+            # Check for core required tables
+            required_tables = [
+                'docbasket', 'document', 'document_metadata',
+                'operations', 'doc_events'
+            ]
+
+            missing_tables = [table for table in required_tables if table not in tables]
+            if missing_tables:
+                logger.debug(f"Schema {schema_name} missing tables: {missing_tables}")
+                return False
+
+            return True
+
+        except Exception as e:
+            logger.debug(f"Error checking schema initialization for {schema_name}: {e}")
+            return False
+
     def _create_postgres_schema(self, engine: Any, schema_name: str, tenant_id: str) -> None:
         """
         Create PostgreSQL schema for tenant if it doesn't exist.
@@ -682,8 +728,10 @@ class TenantDatabaseManager:
                 db.Session = sessionmaker(bind=engine)
                 return db
             else:
-                # For PostgreSQL, use get_default_connection
-                return Database.get_default_connection(config=self.config)
+                # For PostgreSQL, use bootstrap tenant connection to ensure tenant_registry is accessible
+                # The tenant registry is stored in the bootstrap schema, so we need bootstrap tenant access
+                bootstrap_tenant_id = '_docex_system_'  # Default bootstrap tenant
+                return Database(config=self.config, tenant_id=bootstrap_tenant_id)
         elif multi_tenancy_enabled:
             # For v3.0, use bootstrap tenant for tenant registry
             bootstrap_tenant_id = multi_tenancy_config.get('bootstrap_tenant', {}).get('id', '_docex_system_')

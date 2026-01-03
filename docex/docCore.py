@@ -589,24 +589,39 @@ class DocEX:
             
         return basket
     
-    def get_basket(self, basket_id: str) -> Optional[DocBasket]:
+    def get_basket(self, basket_id: Optional[str] = None, basket_name: Optional[str] = None) -> Optional[DocBasket]:
         """
-        Get a document basket by ID
+        Get a document basket by ID (preferred) or name (fallback).
+        
+        Performance:
+        - basket_id: O(1) primary key lookup (fastest)
+        - basket_name: O(log n) unique index lookup (fast, but slower than ID)
         
         Args:
-            basket_id: Basket ID (string)
+            basket_id: Basket ID (preferred for performance)
+            basket_name: Basket name (fallback if ID not provided)
             
         Returns:
             Basket if found, None otherwise
+            
+        Raises:
+            ValueError: If neither basket_id nor basket_name is provided
         """
-        # Use DocBasket.get() with tenant-aware database
-        basket = DocBasket.get(basket_id, db=self.db)
+        if not basket_id and not basket_name:
+            raise ValueError("Either basket_id or basket_name must be provided")
         
-        if basket and self.user_context:
-            # Log access for auditing
-            logger.info(f"Basket {basket_id} accessed by user {self.user_context.user_id}")
-                
-        return basket
+        # Prefer basket_id for performance (primary key lookup)
+        if basket_id:
+            basket = DocBasket.get(basket_id, db=self.db)
+            if basket and self.user_context:
+                logger.info(f"Basket {basket_id} accessed by user {self.user_context.user_id}")
+            return basket
+        else:
+            # Fallback to name lookup (unique index lookup)
+            basket = DocBasket.find_by_name(basket_name, db=self.db)
+            if basket and self.user_context:
+                logger.info(f"Basket {basket_name} (ID: {basket.id}) accessed by user {self.user_context.user_id}")
+            return basket
     
     def close(self) -> None:
         """
@@ -650,16 +665,287 @@ class DocEX:
         """
         self.close()
     
-    def list_baskets(self) -> List[DocBasket]:
+    def list_baskets(
+        self,
+        status: Optional[str] = None,
+        limit: Optional[int] = None,
+        offset: Optional[int] = None,
+        order_by: str = 'created_at',
+        order_desc: bool = True
+    ) -> List[DocBasket]:
         """
-        List all document baskets
+        List document baskets with optional filtering, pagination, and sorting.
+        Optimized with proper indexes.
         
+        **Note:** For better performance when you only need basic basket information,
+        consider using `list_baskets_with_metadata()` which returns lightweight dictionaries
+        instead of full DocBasket objects.
+        
+        Args:
+            status: Optional filter by basket status (e.g., 'active', 'inactive')
+            limit: Maximum number of results to return (for pagination)
+            offset: Number of results to skip (for pagination)
+            order_by: Field to sort by ('created_at', 'name', 'updated_at')
+            order_desc: If True, sort in descending order (default: True)
+            
         Returns:
-            List of document baskets
+            List of document baskets (full DocBasket objects)
+            
+        Example:
+            >>> # List active baskets, newest first
+            >>> baskets = docex.list_baskets(status='active', limit=10)
+            
+            >>> # List all baskets sorted by name
+            >>> baskets = docex.list_baskets(order_by='name', order_desc=False)
         """
-        # Pass tenant-aware database to list operation
-        # Use the internal _list_all_baskets method to avoid instance method shadowing
-        return DocBasket._list_all_baskets(db=self.db)
+        from docex.db.models import DocBasket as DocBasketModel
+        from sqlalchemy import select
+        import json
+        
+        with self.db.session() as session:
+            query = select(DocBasketModel)
+            
+            # Add status filter (uses idx_docbasket_status index)
+            if status:
+                query = query.where(DocBasketModel.status == status)
+            
+            # Add sorting (uses idx_docbasket_created_at index for created_at)
+            if order_by == 'created_at':
+                query = query.order_by(
+                    DocBasketModel.created_at.desc() if order_desc 
+                    else DocBasketModel.created_at.asc()
+                )
+            elif order_by == 'name':
+                query = query.order_by(
+                    DocBasketModel.name.asc() if not order_desc 
+                    else DocBasketModel.name.desc()
+                )
+            elif order_by == 'updated_at':
+                query = query.order_by(
+                    DocBasketModel.updated_at.desc() if order_desc 
+                    else DocBasketModel.updated_at.asc()
+                )
+            else:
+                # Default to created_at descending
+                query = query.order_by(DocBasketModel.created_at.desc())
+            
+            # Add pagination
+            if limit is not None:
+                query = query.limit(limit)
+            if offset is not None:
+                query = query.offset(offset)
+            
+            # Execute query
+            basket_models = session.execute(query).scalars().all()
+            
+            # Convert to DocBasket instances
+            baskets = []
+            for basket_model in basket_models:
+                storage_config = json.loads(basket_model.storage_config) if isinstance(basket_model.storage_config, str) else basket_model.storage_config
+                
+                basket = DocBasket(
+                    id=basket_model.id,
+                    name=basket_model.name,
+                    description=basket_model.description,
+                    storage_config=storage_config,
+                    created_at=basket_model.created_at,
+                    updated_at=basket_model.updated_at,
+                    model=basket_model,
+                    db=self.db
+                )
+                baskets.append(basket)
+            
+            return baskets
+    
+    def list_baskets_with_metadata(
+        self,
+        columns: Optional[List[str]] = None,
+        filters: Optional[Dict[str, Any]] = None,
+        limit: Optional[int] = None,
+        offset: Optional[int] = None,
+        order_by: Optional[str] = None,
+        order_desc: bool = False
+    ) -> List[Dict[str, Any]]:
+        """
+        Efficiently list baskets with selected metadata columns.
+        
+        This method returns lightweight dictionaries instead of full DocBasket instances,
+        avoiding object instantiation overhead and providing better performance for
+        listing operations where you don't need full basket functionality.
+        
+        **Performance Benefits:**
+        - No DocBasket object instantiation (saves memory and CPU)
+        - No path_helper, document_manager, or storage_service initialization
+        - Direct column projection from database (index-only scans possible)
+        - Faster for large result sets
+        
+        Args:
+            columns: List of column names to include in results.
+                    Default: ['id', 'name', 'status', 'created_at', 'updated_at']
+                    Available: 'id', 'name', 'description', 'status', 'created_at', 'updated_at', 'document_count'
+                    Note: 'document_count' requires a JOIN query and may be slower for large datasets
+            filters: Optional dictionary of filters (e.g., {'status': 'active'})
+            limit: Maximum number of results to return (for pagination)
+            offset: Number of results to skip (for pagination)
+            order_by: Field to sort by ('created_at', 'name', 'updated_at', 'status', 'document_count')
+            order_desc: If True, sort in descending order
+            
+        Returns:
+            List of dictionaries containing selected basket fields
+            
+        Example:
+            >>> # Get lightweight basket list with basic info
+            >>> baskets = docex.list_baskets_with_metadata(
+            ...     columns=['id', 'name', 'status', 'created_at'],
+            ...     filters={'status': 'active'},
+            ...     limit=100
+            ... )
+            >>> # Returns:
+            >>> # [
+            >>> #     {'id': 'bas_123', 'name': 'invoice_raw', 'status': 'active', 'created_at': '2024-01-01T00:00:00'},
+            >>> #     ...
+            >>> # ]
+            
+            >>> # Get baskets with document count
+            >>> baskets = docex.list_baskets_with_metadata(
+            ...     columns=['id', 'name', 'document_count'],
+            ...     order_by='document_count',
+            ...     order_desc=True
+            ... )
+            >>> # Returns:
+            >>> # [
+            >>> #     {'id': 'bas_123', 'name': 'invoice_raw', 'document_count': 42},
+            >>> #     ...
+            >>> # ]
+            
+            >>> # Get basket IDs and names only (fastest)
+            >>> baskets = docex.list_baskets_with_metadata(
+            ...     columns=['id', 'name'],
+            ...     order_by='name'
+            ... )
+        """
+        from docex.db.models import DocBasket as DocBasketModel, Document as DocumentModel
+        from sqlalchemy import select, func, outerjoin
+        
+        # Default columns if not specified
+        if columns is None:
+            columns = ['id', 'name', 'status', 'created_at', 'updated_at']
+        
+        # Check if document_count is requested
+        include_document_count = 'document_count' in columns
+        
+        # Map column names to model attributes
+        column_map = {
+            'id': DocBasketModel.id,
+            'name': DocBasketModel.name,
+            'description': DocBasketModel.description,
+            'status': DocBasketModel.status,
+            'created_at': DocBasketModel.created_at,
+            'updated_at': DocBasketModel.updated_at,
+        }
+        
+        # Build select statement with only requested columns
+        selected_columns = []
+        for col in columns:
+            if col in column_map:
+                selected_columns.append(column_map[col])
+            elif col == 'document_count':
+                # document_count will be added via subquery/join
+                pass
+            else:
+                logger.warning(f"Unknown column '{col}' requested for basket listing, skipping")
+        
+        if not selected_columns and not include_document_count:
+            raise ValueError("No valid columns specified for basket listing")
+        
+        with self.db.session() as session:
+            # If document_count is requested, use LEFT JOIN with COUNT
+            if include_document_count:
+                # Create subquery for document counts
+                doc_count_subquery = (
+                    select(
+                        DocumentModel.basket_id,
+                        func.count(DocumentModel.id).label('document_count')
+                    )
+                    .group_by(DocumentModel.basket_id)
+                    .subquery()
+                )
+                
+                # Build query with LEFT JOIN to get document counts
+                query = select(
+                    *selected_columns,
+                    func.coalesce(doc_count_subquery.c.document_count, 0).label('document_count')
+                ).outerjoin(
+                    doc_count_subquery,
+                    DocBasketModel.id == doc_count_subquery.c.basket_id
+                )
+            else:
+                # Simple query without document count
+                query = select(*selected_columns)
+            
+            # Add filters
+            if filters:
+                for key, value in filters.items():
+                    if key in column_map:
+                        query = query.where(column_map[key] == value)
+                    else:
+                        logger.warning(f"Unknown filter key '{key}' for basket listing, skipping")
+            
+            # Add sorting
+            if order_by:
+                if order_by == 'document_count':
+                    if include_document_count:
+                        # Sort by document count (doc_count_subquery is defined above)
+                        if order_desc:
+                            query = query.order_by(func.coalesce(doc_count_subquery.c.document_count, 0).desc())
+                        else:
+                            query = query.order_by(func.coalesce(doc_count_subquery.c.document_count, 0).asc())
+                    else:
+                        logger.warning("Cannot sort by 'document_count' - column not requested. Add 'document_count' to columns list.")
+                        query = query.order_by(DocBasketModel.created_at.desc())
+                elif order_by in column_map:
+                    order_field = column_map[order_by]
+                    if order_desc:
+                        query = query.order_by(order_field.desc())
+                    else:
+                        query = query.order_by(order_field.asc())
+                else:
+                    logger.warning(f"Invalid order_by field: {order_by}, using default")
+                    query = query.order_by(DocBasketModel.created_at.desc())
+            else:
+                # Default sorting by creation date (newest first)
+                query = query.order_by(DocBasketModel.created_at.desc())
+            
+            # Add pagination
+            if limit is not None:
+                query = query.limit(limit)
+            if offset is not None:
+                query = query.offset(offset)
+            
+            # Execute query and convert to dictionaries
+            results = session.execute(query).all()
+            
+            # Convert to list of dictionaries
+            baskets = []
+            for row in results:
+                basket_dict = {}
+                row_index = 0
+                for col in columns:
+                    if col in column_map:
+                        value = row[row_index]
+                        # Convert datetime to ISO format string for JSON serialization
+                        if hasattr(value, 'isoformat'):
+                            value = value.isoformat()
+                        basket_dict[col] = value
+                        row_index += 1
+                    elif col == 'document_count':
+                        # document_count is the last column in the row
+                        value = row[-1] if include_document_count else 0
+                        basket_dict[col] = int(value) if value is not None else 0
+                baskets.append(basket_dict)
+            
+            logger.debug(f"Retrieved {len(baskets)} baskets with metadata (columns: {columns})")
+            return baskets
     
     @classmethod
     def setup_database(cls, db_type: str, is_default_db: bool = False, **config) -> None:
@@ -908,12 +1194,20 @@ class DocEX:
                 return True
             return False
     
-    def send_document(self, basket_id: int, document_id: int, route_name: str, destination: str) -> TransportResult:
+    def send_document(
+        self,
+        document_id: str,
+        route_name: str,
+        destination: str,
+        basket_id: Optional[str] = None,
+        basket_name: Optional[str] = None
+    ) -> TransportResult:
         """
         Send a document using a transport route
         
         Args:
-            basket_id: Basket ID containing the document
+            basket_id: Basket ID containing the document (preferred for performance)
+            basket_name: Basket name (fallback if basket_id not provided)
             document_id: Document ID to send
             route_name: Name of the route to use
             destination: Destination path/name
@@ -921,12 +1215,13 @@ class DocEX:
         Returns:
             TransportResult indicating success/failure
         """
-        # Get basket
-        basket = self.get_basket(basket_id)
+        # Get basket (supports both basket_id and basket_name)
+        basket = self.get_basket(basket_id=basket_id, basket_name=basket_name)
         if not basket:
+            basket_identifier = basket_id or basket_name or "unknown"
             return TransportResult(
                 success=False,
-                message=f"Basket {basket_id} not found"
+                message=f"Basket {basket_identifier} not found"
             )
         
         # Get document
