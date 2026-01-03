@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Test script for DocEX 2.8.3 performance improvements.
+Test script for DocEX 2.8.4 performance improvements.
 
 This script demonstrates:
 1. list_baskets_with_metadata() with document_count
@@ -408,7 +408,7 @@ def test_document_count_feature(docex: DocEX, verbose: bool = False):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Test DocEX 2.8.3 performance improvements')
+    parser = argparse.ArgumentParser(description='Test DocEX 2.8.4 performance improvements')
     parser.add_argument('--tenant-id', type=str, help='Tenant ID for multi-tenant mode')
     parser.add_argument('--user-id', type=str, default='test_user', help='User ID (default: test_user)')
     parser.add_argument('--verbose', '-v', action='store_true', help='Verbose output')
@@ -417,7 +417,7 @@ def main():
     args = parser.parse_args()
     
     print("=" * 80)
-    print("DocEX 2.8.3 Performance Improvements Test")
+    print("DocEX 2.8.4 Performance Improvements Test")
     print("=" * 80)
     
     # Initialize DocEX
