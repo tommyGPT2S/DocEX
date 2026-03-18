@@ -1,15 +1,15 @@
-import os
 import logging
-from contextlib import contextmanager
-from typing import Dict, Any, List, Optional, Generator, Type, TypeVar, Union
-from pathlib import Path
 import time
+from contextlib import contextmanager
+from pathlib import Path
+from typing import Any, Dict, Generator, List, Optional, Type, TypeVar, Union
 
-from sqlalchemy import create_engine, text, MetaData, Table, Column, String, Integer, DateTime, JSON, ForeignKey, select, insert, update, delete, event, inspect
-from sqlalchemy.orm import sessionmaker, Session, declarative_base
-from sqlalchemy.pool import QueuePool, StaticPool
+from sqlalchemy import MetaData, create_engine, event, inspect, text
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.engine import Engine
+from sqlalchemy.orm import Session as ORMSession
+from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy.pool import QueuePool
+
 from docex.config.docex_config import DocEXConfig
 
 # Configure logging
@@ -64,7 +64,7 @@ class Database:
                     self.config = DocEX._config
                 else:
                     self.config = DocEXConfig()
-            except:
+            except Exception:
                 self.config = DocEXConfig()
         self.tenant_id = tenant_id
         self.engine = None
@@ -132,7 +132,6 @@ class Database:
                         db_path.chmod(0o644)
 
                     # Create SQLite engine
-                    from sqlalchemy import create_engine, event
                     self.engine = create_engine(
                         f'sqlite:///{db_path}',
                         poolclass=QueuePool,
@@ -156,7 +155,6 @@ class Database:
                 elif db_type in ['postgresql', 'postgres']:
                     # PostgreSQL configuration
                     from urllib.parse import quote_plus
-                    from sqlalchemy import create_engine, text
 
                     postgres_config = db_config.get('postgres', db_config.get('postgresql', {}))
                     host = postgres_config.get('host', 'localhost')
@@ -396,15 +394,6 @@ class Database:
                 self._initialize()
         return self.Session()
     
-    def transaction(self):
-        """
-        Get a database session with transaction
-        
-        Returns:
-            SQLAlchemy session
-        """
-        return self.session()
-    
     def initialize(self):
         """Initialize database schema"""
         Base.metadata.create_all(self.engine)
@@ -414,7 +403,7 @@ class Database:
         Base.metadata.drop_all(self.engine)
     
     @contextmanager
-    def transaction(self) -> Generator[Session, None, None]:
+    def transaction(self) -> Generator[ORMSession, None, None]:
         """
         Get a database session with transaction management
         
@@ -585,13 +574,21 @@ class Database:
                     table_exists = table_result.fetchone() is not None
 
                     if table_exists:
-                        logger.debug(f"Tenant registry table already exists in schema {bootstrap_schema}")
+                        logger.debug(
+                            "Tenant registry table already exists in schema %s",
+                            bootstrap_schema,
+                        )
                         Database._tenant_registry_initialized = True
                         return
 
-            logger.debug(f"Bootstrap schema or tenant_registry table not found, initializing...")
+            logger.debug(
+                "Bootstrap schema or tenant_registry table not found, initializing..."
+            )
         except Exception as e:
-            logger.debug(f"Error checking existing tenant registry: {e}, proceeding with initialization")
+            logger.debug(
+                "Error checking existing tenant registry: %s, proceeding with initialization",
+                e,
+            )
 
         # SQL to create tenant_registry table in bootstrap schema
         create_table_sql = f"""

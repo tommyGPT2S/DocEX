@@ -1,20 +1,21 @@
-from typing import Dict, Any, Optional, Union, List
-from pathlib import Path
-from datetime import datetime, timezone
 import json
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional, Union
 
 try:  # Python 3.11+ exposes datetime.UTC
     from datetime import UTC
 except ImportError:  # Fallback for older runtimes (e.g., macOS system Python 3.9)
     UTC = timezone.utc
 
-from docex.services.storage_service import StorageService
+from sqlalchemy import text
+
 from docex.config.config_manager import ConfigManager
-from docex.services.metadata_service import MetadataService
 from docex.db.connection import Database
 from docex.db.models import Operation
+from docex.services.metadata_service import MetadataService
+from docex.services.storage_service import StorageService
 from docex.transport.models import RouteOperation
-from sqlalchemy import text
+
 
 class Document:
     """Represents a document in DocEX"""
@@ -33,6 +34,7 @@ class Document:
         updated_at: datetime,
         model: Any = None,  # Reference to database model
         storage_service: Optional[StorageService] = None,  # Allow passing storage service directly
+        storage_config: Optional[Dict[str, Any]] = None,
         db: Optional[Database] = None  # Optional tenant-aware database instance
     ):
         self.id = id
@@ -46,19 +48,29 @@ class Document:
         self.created_at = created_at
         self.updated_at = updated_at
         self.model = model
-        
-        # Initialize storage service
-        if storage_service:
-            self.storage_service = storage_service
-        elif model and model.basket:
-            self.storage_service = StorageService(json.loads(model.basket.storage_config))
-        else:
-            # Fallback to default storage config
-            config_manager = ConfigManager()
-            self.storage_service = StorageService(config_manager.get_storage_config())
+        self._storage_service = storage_service
+        self._storage_config = storage_config
         
         # Store tenant-aware database if provided (for multi-tenancy support)
         self.db = db
+
+    @property
+    def storage_service(self) -> StorageService:
+        """Lazily create the storage service when content access actually needs it."""
+        if self._storage_service is None:
+            self._storage_service = self._build_storage_service()
+        return self._storage_service
+
+    def _build_storage_service(self) -> StorageService:
+        if self._storage_config:
+            return StorageService(self._storage_config)
+        if self.model and self.model.basket:
+            storage_config = self.model.basket.storage_config
+            if isinstance(storage_config, str):
+                storage_config = json.loads(storage_config)
+            return StorageService(storage_config)
+        config_manager = ConfigManager()
+        return StorageService(config_manager.get_storage_config())
     
     @staticmethod
     def _get_content_static(document: 'Document', mode: str = 'bytes') -> Union[bytes, str, Dict[str, Any]]:
