@@ -7,26 +7,26 @@ The class has been refactored to use helper classes for better organization:
 - DocBasketDocumentManager: Document CRUD operations
 """
 
-from typing import Optional, Dict, Any, List, Union, TYPE_CHECKING
-from pathlib import Path
-from datetime import datetime, timezone
 import json
 import logging
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
 
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 
-from docex.db.connection import Database
-from docex.db.models import Document as DocumentModel, DocBasket as DocBasketModel
-from docex.services.storage_service import StorageService
-from docex.services.metadata_service import MetadataService
 from docex.config.docex_config import DocEXConfig
-from docex.config.path_resolver import DocEXPathResolver
-from docex.storage.path_builder import DocEXPathBuilder
-from docex.utils.s3_prefix_builder import sanitize_basket_name
+from docex.db.connection import Database
+from docex.db.models import DocBasket as DocBasketModel
+from docex.db.models import Document as DocumentModel
+from docex.docbasket.document_manager import DocBasketDocumentManager
 
 # Import helper classes
 from docex.docbasket.path_helper import DocBasketPathHelper
-from docex.docbasket.document_manager import DocBasketDocumentManager
+from docex.services.metadata_service import MetadataService
+from docex.services.storage_service import StorageService
+from docex.storage.path_builder import DocEXPathBuilder
+from docex.utils.s3_prefix_builder import sanitize_basket_name
 
 # Avoid circular import
 if TYPE_CHECKING:
@@ -87,19 +87,7 @@ class DocBasket:
         # Initialize database connection - use provided db or create new one
         # If db is provided, it should be tenant-aware (from DocEX instance)
         self.db = db or Database()
-        
-        # Initialize storage service
-        # Note: S3 storage initialization may fail if credentials are not available
-        # This is acceptable when just listing baskets - storage will be initialized when actually used
-        try:
-            self.storage_service = StorageService(self.storage_config)
-            self.storage_service.ensure_storage_exists()
-        except Exception as e:
-            # If storage initialization fails (e.g., S3 without credentials), log warning but continue
-            # Storage will be re-initialized when actually needed
-            logger.warning(f"Storage initialization failed for basket {self.name} (this is OK if just listing): {e}")
-            # Create a minimal storage service that will fail gracefully when used
-            self.storage_service = None
+        self._storage_service: Optional[StorageService] = None
         
         # Initialize metadata service
         self.metadata_service = MetadataService(self.db)
@@ -111,6 +99,18 @@ class DocBasket:
         # Initialize helper classes
         self.path_helper = DocBasketPathHelper(self)
         self.document_manager = DocBasketDocumentManager(self)
+
+    @property
+    def storage_service(self) -> StorageService:
+        """
+        Lazily initialize the storage service.
+
+        Basket construction should stay cheap for metadata-only list/read paths.
+        Storage is created only when content or storage mutation operations need it.
+        """
+        if self._storage_service is None:
+            self._storage_service = StorageService(self.storage_config)
+        return self._storage_service
     
     @property
     def storage_type(self) -> str:
@@ -244,9 +244,6 @@ class DocBasket:
                 session.flush()  # Get the ID without committing
                 
                 # Now that we have the ID, set up the storage path/configuration
-                # Use unified path resolver for consistent path construction
-                path_resolver = DocEXPathResolver(config)
-                
                 # Get tenant_id from database if available (for multi-tenancy)
                 tenant_id = getattr(basket_db, 'tenant_id', None)
                 
@@ -332,15 +329,6 @@ class DocBasket:
                 # Update the storage config
                 basket_model.storage_config = json.dumps(storage_config)
                 session.commit()  # Commit the transaction to ensure ID is persisted
-                
-                # Create storage service and ensure storage exists
-                storage_service = StorageService(storage_config)
-                storage_service.ensure_storage_exists()
-                
-                # Create the basket directory (only for filesystem)
-                if storage_config['type'] == 'filesystem':
-                    basket_path = Path(storage_config['path'])
-                    basket_path.mkdir(parents=True, exist_ok=True)
                 
                 return cls(
                     id=basket_model.id,
@@ -648,11 +636,35 @@ class DocBasket:
             List of Document instances matching the metadata criteria
         """
         return self.document_manager.find_documents_by_metadata(metadata, limit, offset, order_by, order_desc)
+
+    def find_documents_by_metadata_with_metadata(
+        self,
+        metadata: Union[Dict[str, Any], str],
+        columns: Optional[List[str]] = None,
+        limit: Optional[int] = None,
+        offset: Optional[int] = None,
+        order_by: Optional[str] = None,
+        order_desc: bool = False,
+    ) -> List[Dict[str, Any]]:
+        """
+        Find documents by metadata and return lightweight dictionaries.
+
+        Use this method when callers only need DB-backed document records and
+        want to avoid constructing full `Document` objects.
+        """
+        return self.document_manager.find_documents_by_metadata_with_metadata(
+            metadata,
+            columns,
+            limit,
+            offset,
+            order_by,
+            order_desc,
+        )
     
     # Instance method list() for listing documents - this shadows the classmethod
     # but Python's method resolution will use the classmethod when called on the class
     # and the instance method when called on an instance
-    def list(self) -> List['Document']:
+    def list(self) -> List['Document']:  # noqa: F811
         """
         List all documents in this basket (alias for list_documents for backward compatibility).
         
@@ -877,4 +889,3 @@ class DocBasket:
                 'created_at': basket.created_at,
                 'updated_at': basket.updated_at
             }
-

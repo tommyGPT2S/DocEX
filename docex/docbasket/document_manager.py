@@ -5,19 +5,32 @@ This module provides document CRUD operations for DocBasket.
 All document-related operations are centralized here for better maintainability.
 """
 
-from typing import Optional, Dict, Any, Union, List, TYPE_CHECKING
-from pathlib import Path
-from datetime import datetime, timezone
+from __future__ import annotations
+
 import hashlib
 import json
 import logging
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
 
-from sqlalchemy import select, and_, func
+from sqlalchemy import and_, func, select
 
-from docex.db.models import Document as DocumentModel, DocEvent, Operation, DocumentMetadata
-from docex.utils.file_utils import is_binary_file
-from docex.models.metadata_keys import MetadataKey
+from docex.db.models import (
+    DocEvent,
+    DocumentMetadata,
+    Operation,
+)
+from docex.db.models import (
+    Document as DocumentModel,
+)
 from docex.models.document_metadata import DocumentMetadata as MetaModel
+from docex.models.metadata_keys import MetadataKey
+from docex.utils.file_utils import is_binary_file
+
+if TYPE_CHECKING:
+    from docex.docbasket import DocBasket
+    from docex.document import Document
 
 # Avoid circular import - import Document lazily when needed
 def _get_document_class():
@@ -36,7 +49,7 @@ class DocBasketDocumentManager:
     DocBasket class focused on basket-level operations.
     """
     
-    def __init__(self, basket: 'DocBasket'):
+    def __init__(self, basket: DocBasket):
         """
         Initialize document manager with reference to parent basket.
         
@@ -44,6 +57,76 @@ class DocBasketDocumentManager:
             basket: DocBasket instance that owns this manager
         """
         self.basket = basket
+
+    def _document_instance(self, document: DocumentModel) -> Document:
+        """Build a runtime Document with lazy storage initialization."""
+        Document = _get_document_class()
+        return Document(
+            id=document.id,
+            name=document.name,
+            path=document.path,
+            content_type=document.content_type,
+            document_type=document.document_type,
+            size=document.size,
+            checksum=document.checksum,
+            status=document.status,
+            created_at=document.created_at,
+            updated_at=document.updated_at,
+            model=document,
+            storage_config=self.basket.storage_config,
+            db=self.basket.db,
+        )
+
+    def _serialize_metadata_value(self, value: Any) -> str:
+        """Serialize metadata values the same way the write path stores them."""
+        if isinstance(value, MetaModel):
+            value = value.to_dict()
+        if isinstance(value, dict) and 'extra' in value:
+            value = value['extra'].get('value', None)
+        try:
+            return json.dumps(value, default=str)
+        except (TypeError, ValueError):
+            return json.dumps(str(value))
+
+    def _apply_metadata_filter(
+        self,
+        query: Any,
+        metadata: Union[Dict[str, Any], str],
+    ) -> Any:
+        """Apply metadata filtering to a base document query."""
+        if isinstance(metadata, dict):
+            metadata_filters = []
+            for key, value in metadata.items():
+                value_json = self._serialize_metadata_value(value)
+                subquery = select(DocumentMetadata.document_id).where(
+                    and_(
+                        DocumentMetadata.key == key,
+                        DocumentMetadata.value == value_json,
+                        DocumentMetadata.document_id.in_(
+                            select(DocumentModel.id).where(
+                                DocumentModel.basket_id == self.basket.id
+                            )
+                        ),
+                    )
+                )
+                metadata_filters.append(subquery)
+            if not metadata_filters:
+                return None
+
+            base_subquery = metadata_filters[0]
+            for subquery in metadata_filters[1:]:
+                base_subquery = base_subquery.intersect(subquery)
+            return query.where(DocumentModel.id.in_(base_subquery))
+
+        if isinstance(metadata, str):
+            search_value_json = json.dumps(metadata)
+            query = query.join(
+                DocumentMetadata,
+                DocumentMetadata.document_id == DocumentModel.id,
+            )
+            return query.where(DocumentMetadata.value == search_value_json).distinct()
+
+        raise ValueError("Metadata must be a dictionary or a string.")
     
     
     def add(
@@ -51,7 +134,7 @@ class DocBasketDocumentManager:
         file_path: str, 
         document_type: str = 'file', 
         metadata: Optional[Dict[str, Any]] = None
-    ) -> 'Document':
+    ) -> Document:
         """
         Add a document to the basket.
         
@@ -63,9 +146,6 @@ class DocBasketDocumentManager:
         Returns:
             Document instance
         """
-        # Import Document class lazily to avoid circular imports
-        Document = _get_document_class()
-        
         # Use tenant-aware database from basket instance
         with self.basket.db.session() as session:
             file_path = Path(file_path)
@@ -82,7 +162,6 @@ class DocBasketDocumentManager:
             
             # Check for duplicates: same checksum AND same source/filename
             # This allows same file content with different names to be treated as different documents
-            file_name = file_path.name if hasattr(file_path, 'name') else str(file_path)
             existing = session.execute(
                 select(DocumentModel).where(
                     and_(
@@ -102,21 +181,7 @@ class DocBasketDocumentManager:
                 )
                 session.add(event)
                 session.commit()
-                return Document(
-                    id=existing.id,
-                    name=existing.name,
-                    path=existing.path,  # Full path already stored
-                    content_type=existing.content_type,
-                    document_type=existing.document_type,
-                    size=existing.size,
-                    checksum=existing.checksum,
-                    status=existing.status,
-                    created_at=existing.created_at,
-                    updated_at=existing.updated_at,
-                    model=existing,
-                    storage_service=self.basket.storage_service,
-                    db=self.basket.db  # Pass tenant-aware database to document
-                )
+                return self._document_instance(existing)
             
             # Generate the correct readable name using path helper
             readable_name = self.basket.path_helper.get_readable_document_name(
@@ -211,21 +276,7 @@ class DocBasketDocumentManager:
             session.add(operation)
             session.commit()
             
-            return Document(
-                id=document.id,
-                name=document.name,
-                path=document.path,
-                content_type=document.content_type,
-                document_type=document.document_type,
-                size=document.size,
-                checksum=document.checksum,
-                status=document.status,
-                created_at=document.created_at,
-                updated_at=document.updated_at,
-                model=document,
-                storage_service=self.basket.storage_service,
-                db=self.basket.db  # Pass tenant-aware database to document
-            )
+            return self._document_instance(document)
     
     def list_documents(
         self,
@@ -235,7 +286,7 @@ class DocBasketDocumentManager:
         order_desc: bool = False,
         status: Optional[str] = None,
         document_type: Optional[str] = None
-    ) -> List['Document']:
+    ) -> List[Document]:
         """
         List documents in this basket with pagination, sorting, and filtering.
         Optimized for large datasets using indexed queries.
@@ -251,9 +302,6 @@ class DocBasketDocumentManager:
         Returns:
             List of Document instances
         """
-        # Import Document class lazily to avoid circular imports
-        Document = _get_document_class()
-        
         with self.basket.db.session() as session:
             query = select(DocumentModel).where(DocumentModel.basket_id == self.basket.id)
             
@@ -287,21 +335,7 @@ class DocBasketDocumentManager:
             documents = session.execute(query).scalars().all()
             
             # document.path already contains the full path (no reconstruction needed)
-            return [Document(
-                id=doc.id,
-                name=doc.name,
-                path=doc.path,  # Full path already stored
-                content_type=doc.content_type,
-                document_type=doc.document_type,
-                size=doc.size,
-                checksum=doc.checksum,
-                status=doc.status,
-                created_at=doc.created_at,
-                updated_at=doc.updated_at,
-                model=doc,
-                storage_service=self.basket.storage_service,
-                db=self.basket.db  # Pass tenant-aware database to document
-            ) for doc in documents]
+            return [self._document_instance(doc) for doc in documents]
     
     def list_documents_with_metadata(
         self,
@@ -344,8 +378,6 @@ class DocBasketDocumentManager:
             >>> #     ...
             >>> # ]
         """
-        from sqlalchemy import select, func
-        
         # Default columns if not specified
         if columns is None:
             columns = ['id', 'name', 'document_type', 'status', 'size', 'created_at']
@@ -471,53 +503,12 @@ class DocBasketDocumentManager:
         Returns:
             Count of documents matching the metadata criteria
         """
-        with self.basket.db.transaction() as session:
+        with self.basket.db.session() as session:
             # Start with documents in this basket
             query = select(DocumentModel).where(DocumentModel.basket_id == self.basket.id)
-            
-            if isinstance(metadata, dict):
-                # Handle dictionary input - multiple key-value pairs (AND logic)
-                metadata_filters = []
-                for key, value in metadata.items():
-                    if isinstance(value, MetaModel):
-                        value = value.to_dict()
-                    if isinstance(value, dict) and 'extra' in value:
-                        value = value['extra'].get('value', None)
-                    
-                    # Metadata values are stored as JSON strings, so we need to JSON-encode the search value
-                    try:
-                        value_json = json.dumps(value, default=str)
-                    except (TypeError, ValueError):
-                        value_json = json.dumps(str(value))
-                    
-                    # Create subquery for each metadata key-value pair
-                    subquery = select(DocumentMetadata.document_id).where(
-                        and_(
-                            DocumentMetadata.key == key,
-                            DocumentMetadata.value == value_json,
-                            DocumentMetadata.document_id.in_(
-                                select(DocumentModel.id).where(DocumentModel.basket_id == self.basket.id)
-                            )
-                        )
-                    )
-                    metadata_filters.append(subquery)
-                
-                # Intersect all subqueries to get documents matching ALL metadata criteria
-                if metadata_filters:
-                    base_subquery = metadata_filters[0]
-                    for subquery in metadata_filters[1:]:
-                        base_subquery = base_subquery.intersect(subquery)
-                    query = query.where(DocumentModel.id.in_(base_subquery))
-                else:
-                    return 0
-            elif isinstance(metadata, str):
-                # Handle string input (search across all metadata values)
-                # Metadata values are stored as JSON strings
-                search_value_json = json.dumps(metadata)
-                query = query.join(DocumentMetadata, DocumentMetadata.document_id == DocumentModel.id)
-                query = query.where(DocumentMetadata.value == search_value_json)
-            else:
-                raise ValueError("Metadata must be a dictionary or a string.")
+            query = self._apply_metadata_filter(query, metadata)
+            if query is None:
+                return 0
             
             # Count distinct documents
             count_query = select(func.count()).select_from(query.subquery())
@@ -531,7 +522,7 @@ class DocBasketDocumentManager:
         offset: Optional[int] = None,
         order_by: Optional[str] = None,
         order_desc: bool = False
-    ) -> List['Document']:
+    ) -> List[Document]:
         """
         Find documents by metadata with pagination and sorting support.
         Optimized for large datasets with proper basket_id filtering.
@@ -546,67 +537,12 @@ class DocBasketDocumentManager:
         Returns:
             List of Document instances matching the metadata criteria
         """
-        # Import Document class lazily to avoid circular imports
-        Document = _get_document_class()
-        
-        with self.basket.db.transaction() as session:
+        with self.basket.db.session() as session:
             # Start with documents in this basket - CRITICAL for performance
             query = select(DocumentModel).where(DocumentModel.basket_id == self.basket.id)
-            
-            if isinstance(metadata, dict):
-                # Handle dictionary input - multiple key-value pairs (AND logic)
-                # For AND logic with multiple metadata filters, we need to ensure
-                # the document has ALL specified key-value pairs
-                metadata_filters = []
-                for key, value in metadata.items():
-                    if isinstance(value, MetaModel):
-                        value = value.to_dict()
-                    if isinstance(value, dict) and 'extra' in value:
-                        value = value['extra'].get('value', None)
-                    
-                    # Metadata values are stored as JSON strings, so we need to JSON-encode the search value
-                    try:
-                        # Try to encode as JSON to match how it's stored
-                        value_json = json.dumps(value, default=str)
-                    except (TypeError, ValueError):
-                        # Fallback to string if JSON encoding fails
-                        value_json = json.dumps(str(value))
-                    
-                    # Create subquery for each metadata key-value pair
-                    # This ensures AND logic: document must match ALL filters
-                    subquery = select(DocumentMetadata.document_id).where(
-                        and_(
-                            DocumentMetadata.key == key,
-                            DocumentMetadata.value == value_json,
-                            DocumentMetadata.document_id.in_(
-                                select(DocumentModel.id).where(DocumentModel.basket_id == self.basket.id)
-                            )
-                        )
-                    )
-                    metadata_filters.append(subquery)
-                
-                # Intersect all subqueries to get documents matching ALL metadata criteria
-                if metadata_filters:
-                    # Start with first filter
-                    base_subquery = metadata_filters[0]
-                    # Intersect with remaining filters
-                    for subquery in metadata_filters[1:]:
-                        base_subquery = base_subquery.intersect(subquery)
-                    
-                    # Filter documents by IDs from intersected subqueries
-                    query = query.where(DocumentModel.id.in_(base_subquery))
-                else:
-                    # No valid metadata filters, return empty
-                    return []
-            elif isinstance(metadata, str):
-                # Handle string input (search across all metadata values)
-                # Join with metadata table for string search
-                # Metadata values are stored as JSON strings, so we need to search for JSON-encoded value
-                search_value_json = json.dumps(metadata)
-                query = query.join(DocumentMetadata, DocumentMetadata.document_id == DocumentModel.id)
-                query = query.where(DocumentMetadata.value == search_value_json)
-            else:
-                raise ValueError("Metadata must be a dictionary or a string.")
+            query = self._apply_metadata_filter(query, metadata)
+            if query is None:
+                return []
             
             # Add sorting
             if order_by:
@@ -629,29 +565,79 @@ class DocBasketDocumentManager:
             if offset is not None:
                 query = query.offset(offset)
             
-            # Execute query - use distinct() to avoid duplicates from joins (if any)
-            if isinstance(metadata, str):
-                query = query.distinct()
             documents = session.execute(query).scalars().all()
-            
-            # document.path already contains the full path (no reconstruction needed)
-            return [Document(
-                id=doc.id,
-                name=doc.name,
-                path=doc.path,  # Full path already stored
-                content_type=doc.content_type,
-                document_type=doc.document_type,
-                size=doc.size,
-                checksum=doc.checksum,
-                status=doc.status,
-                created_at=doc.created_at,
-                updated_at=doc.updated_at,
-                model=doc,
-                storage_service=self.basket.storage_service,
-                db=self.basket.db  # Pass tenant-aware database to document
-            ) for doc in documents]
+            return [self._document_instance(doc) for doc in documents]
+
+    def find_documents_by_metadata_with_metadata(
+        self,
+        metadata: Union[Dict[str, Any], str],
+        columns: Optional[List[str]] = None,
+        limit: Optional[int] = None,
+        offset: Optional[int] = None,
+        order_by: Optional[str] = None,
+        order_desc: bool = False,
+    ) -> List[Dict[str, Any]]:
+        """
+        Find documents by metadata and return lightweight dictionaries.
+
+        This is the metadata-first alternative to `find_documents_by_metadata()`
+        when callers do not need runtime `Document` objects or content access.
+        """
+        if columns is None:
+            columns = ['id', 'name', 'document_type', 'status', 'size', 'created_at']
+
+        column_map = {
+            'id': DocumentModel.id,
+            'name': DocumentModel.name,
+            'path': DocumentModel.path,
+            'document_type': DocumentModel.document_type,
+            'content_type': DocumentModel.content_type,
+            'size': DocumentModel.size,
+            'checksum': DocumentModel.checksum,
+            'status': DocumentModel.status,
+            'created_at': DocumentModel.created_at,
+            'updated_at': DocumentModel.updated_at,
+        }
+        valid_columns = [col for col in columns if col in column_map]
+        selected_columns = [column_map[col] for col in valid_columns]
+        if not selected_columns:
+            raise ValueError("No valid columns specified")
+
+        with self.basket.db.session() as session:
+            query = select(*selected_columns).where(
+                DocumentModel.basket_id == self.basket.id
+            )
+            query = self._apply_metadata_filter(query, metadata)
+            if query is None:
+                return []
+
+            if order_by:
+                order_field = column_map.get(order_by)
+                if order_field is not None:
+                    query = query.order_by(
+                        order_field.desc() if order_desc else order_field.asc()
+                    )
+            else:
+                query = query.order_by(DocumentModel.created_at.desc())
+
+            if limit is not None:
+                query = query.limit(limit)
+            if offset is not None:
+                query = query.offset(offset)
+
+            results = session.execute(query).all()
+            documents = []
+            for row in results:
+                doc_dict = {}
+                for index, col in enumerate(valid_columns):
+                    value = row[index]
+                    if hasattr(value, 'isoformat'):
+                        value = value.isoformat()
+                    doc_dict[col] = value
+                documents.append(doc_dict)
+            return documents
     
-    def get_document(self, document_id: int) -> Optional['Document']:
+    def get_document(self, document_id: int) -> Optional[Document]:
         """
         Get a document by document_id.
         
@@ -664,33 +650,13 @@ class DocBasketDocumentManager:
         Returns:
             Document or None if not found
         """
-        # Import Document class lazily to avoid circular imports
-        Document = _get_document_class()
-        
-        with self.basket.db.transaction() as session:
+        with self.basket.db.session() as session:
             document = session.get(DocumentModel, document_id)
             if document is None:
                 return None
-            
-            # document.path already contains the full path (no reconstruction needed)
-            # For consistency, we could rebuild it, but using stored path is simpler
-            return Document(
-                id=document.id,
-                name=document.name,
-                path=document.path,  # Full path already stored
-                content_type=document.content_type,
-                document_type=document.document_type,
-                size=document.size,
-                checksum=document.checksum,
-                status=document.status,
-                created_at=document.created_at,
-                updated_at=document.updated_at,
-                model=document,
-                storage_service=self.basket.storage_service,
-                db=self.basket.db  # Pass tenant-aware database to document
-            )
+            return self._document_instance(document)
     
-    def update_document(self, document_id: int, file_path: str) -> 'Document':
+    def update_document(self, document_id: int, file_path: str) -> Document:
         """
         Update a document.
         
@@ -701,9 +667,6 @@ class DocBasketDocumentManager:
         Returns:
             Updated document
         """
-        # Import Document class lazily to avoid circular imports
-        Document = _get_document_class()
-        
         with open(file_path, 'r') as f:
             raw_content = f.read()
             try:
@@ -754,21 +717,7 @@ class DocBasketDocumentManager:
                     session.add(doc_metadata)
             session.commit()
             # document.path already contains the full path (no reconstruction needed)
-            return Document(
-                id=document.id,
-                name=document.name,
-                path=document.path,  # Full path already stored
-                content_type=document.content_type,
-                document_type=document.document_type,
-                size=document.size,
-                checksum=document.checksum,
-                status=document.status,
-                created_at=document.created_at,
-                updated_at=document.updated_at,
-                model=document,
-                storage_service=self.basket.storage_service,
-                db=self.basket.db  # Pass tenant-aware database to document
-            )
+            return self._document_instance(document)
     
     def delete_document(self, document_id: int) -> None:
         """
@@ -786,10 +735,6 @@ class DocBasketDocumentManager:
             
             # Build full path from IDs to ensure we delete the correct file
             # This ensures consistency: all operations use IDs, paths are built internally
-            tenant_id = self.basket.path_helper.extract_tenant_id()
-            document_name = self.basket.path_helper.get_readable_document_name(document, None, None)
-            file_ext = Path(document.name).suffix if document.name else ''
-            
             # Build full path using path helper (uses three-part structure)
             # For S3: Part A (config) + Part B (basket) + Part C (document)
             # The path helper will use config_prefix and basket_path from storage_config if available
@@ -807,4 +752,3 @@ class DocBasketDocumentManager:
             # Delete from database
             session.delete(document)
             session.commit()
-

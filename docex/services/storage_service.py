@@ -1,8 +1,8 @@
 import logging
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Any, Dict
+
 from docex.storage.storage_factory import StorageFactory
-import shutil
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +58,7 @@ class StorageService:
             if not bucket_name or len(bucket_name) < 3 or len(bucket_name) > 63:
                 raise ValueError(f"Invalid S3 bucket name: {bucket_name}")
         
-        logger.info(f"Initialized storage service with type: {storage_type}")
+        logger.debug("Initialized storage service with type: %s", storage_type)
         self.storage = StorageFactory.create_storage(config)
     
     def store_document(self, source_path: str, full_document_path: str) -> str:
