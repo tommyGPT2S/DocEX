@@ -274,11 +274,11 @@ class TestDocEXPostgres(unittest.TestCase):
         # Get document details
         details = doc.get_details()
         self.assertIsNotNone(details)
-        self.assertEqual(details['name'], 'test.txt')
-        self.assertEqual(details['content_type'], 'text/plain')
-        self.assertEqual(details['status'], 'RECEIVED')
-        self.assertIn('created_at', details)
-        self.assertIn('updated_at', details)
+        self.assertEqual(details.name, 'test.txt')
+        self.assertEqual(details.content_type, 'text/plain')
+        self.assertEqual(details.status, 'RECEIVED')
+        self.assertIsNotNone(details.created_at)
+        self.assertIsNotNone(details.updated_at)
         
         # Get document content
         content = doc.get_content()

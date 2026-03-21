@@ -29,9 +29,10 @@ Basic usage:
     print(DocEX.get_metadata_keys())
 """
 
-from docex.docCore import DocEX  # Updated to use docCore instead of docex
 from docex.config.docex_config import DocEXConfig  # Updated import
+from docex.docCore import DocEX  # Updated to use docCore instead of docex
+from docex.models.records import BasketRecord, DocumentRecord
 
-__all__ = ['DocEX', 'DocEXConfig']
+__all__ = ['DocEX', 'DocEXConfig', 'BasketRecord', 'DocumentRecord']
 
 __version__ = '2.8.4'

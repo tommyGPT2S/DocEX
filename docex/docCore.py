@@ -1,18 +1,21 @@
+from __future__ import annotations
+
 import logging
-import os
-from typing import Dict, Any, Optional, List
 from pathlib import Path
+from typing import Any, Dict, List, Optional
+
 import yaml
+from sqlalchemy import inspect, text
+
 from docex.config.docex_config import DocEXConfig
+from docex.context import UserContext
 from docex.db.connection import Database
+from docex.db.models import Base
 from docex.docbasket import DocBasket
 from docex.models.metadata_keys import MetadataKey
-from docex.db.models import Base
+from docex.models.records import BasketRecord
 from docex.transport.models import Base as TransportBase
 from docex.transport.transport_result import TransportResult
-from docex.context import UserContext
-from sqlalchemy import inspect, text
-from datetime import datetime, timezone
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -327,9 +330,9 @@ class DocEX:
             ValueError: If tenant does not exist in registry
         """
         try:
-            from docex.db.tenant_registry_model import TenantRegistry
-            from docex.db.connection import Database
             from docex.config.docex_config import DocEXConfig
+            from docex.db.connection import Database
+            from docex.db.tenant_registry_model import TenantRegistry
             
             # Get database connection for tenant registry query
             # Use bootstrap tenant's database for v3.0, or default for v2.x
@@ -485,8 +488,6 @@ class DocEX:
                     return True
                 else:
                     # Ensure all models are imported
-                    import docex.db.models
-                    import docex.transport.models
                     db = Database()
                     
                     # Drop all tables first (only if we have permission)
@@ -698,9 +699,11 @@ class DocEX:
             >>> # List all baskets sorted by name
             >>> baskets = docex.list_baskets(order_by='name', order_desc=False)
         """
-        from docex.db.models import DocBasket as DocBasketModel
-        from sqlalchemy import select
         import json
+
+        from sqlalchemy import select
+
+        from docex.db.models import DocBasket as DocBasketModel
         
         with self.db.session() as session:
             query = select(DocBasketModel)
@@ -765,34 +768,39 @@ class DocEX:
         offset: Optional[int] = None,
         order_by: Optional[str] = None,
         order_desc: bool = False
-    ) -> List[Dict[str, Any]]:
+    ) -> List[BasketRecord]:
         """
         Efficiently list baskets with selected metadata columns.
-        
-        This method returns lightweight dictionaries instead of full DocBasket instances,
-        avoiding object instantiation overhead and providing better performance for
-        listing operations where you don't need full basket functionality.
-        
+
+        This method returns typed :class:`~docex.models.records.BasketRecord`
+        instances instead of full DocBasket objects, avoiding instantiation
+        overhead and providing better performance for listing operations where
+        full basket functionality is not required.
+
         **Performance Benefits:**
         - No DocBasket object instantiation (saves memory and CPU)
         - No path_helper, document_manager, or storage_service initialization
         - Direct column projection from database (index-only scans possible)
         - Faster for large result sets
-        
+
         Args:
             columns: List of column names to include in results.
-                    Default: ['id', 'name', 'status', 'created_at', 'updated_at']
-                    Available: 'id', 'name', 'description', 'status', 'created_at', 'updated_at', 'document_count'
-                    Note: 'document_count' requires a JOIN query and may be slower for large datasets
+                Default: ['id', 'name', 'status', 'created_at', 'updated_at']
+                Available: 'id', 'name', 'description', 'status',
+                'created_at', 'updated_at', 'document_count'. Note:
+                'document_count' requires a JOIN query and may be slower
+                for large datasets.
             filters: Optional dictionary of filters (e.g., {'status': 'active'})
             limit: Maximum number of results to return (for pagination)
             offset: Number of results to skip (for pagination)
-            order_by: Field to sort by ('created_at', 'name', 'updated_at', 'status', 'document_count')
+            order_by: Field to sort by ('created_at', 'name', 'updated_at',
+                'status', 'document_count')
             order_desc: If True, sort in descending order
-            
+
         Returns:
-            List of dictionaries containing selected basket fields
-            
+            List of :class:`~docex.models.records.BasketRecord` instances
+            containing the selected basket fields.
+
         Example:
             >>> # Get lightweight basket list with basic info
             >>> baskets = docex.list_baskets_with_metadata(
@@ -800,32 +808,27 @@ class DocEX:
             ...     filters={'status': 'active'},
             ...     limit=100
             ... )
-            >>> # Returns:
-            >>> # [
-            >>> #     {'id': 'bas_123', 'name': 'invoice_raw', 'status': 'active', 'created_at': '2024-01-01T00:00:00'},
-            >>> #     ...
-            >>> # ]
-            
+            >>> basket = baskets[0]
+            >>> print(basket.name, basket.status, basket.created_at)
+
             >>> # Get baskets with document count
             >>> baskets = docex.list_baskets_with_metadata(
             ...     columns=['id', 'name', 'document_count'],
             ...     order_by='document_count',
             ...     order_desc=True
             ... )
-            >>> # Returns:
-            >>> # [
-            >>> #     {'id': 'bas_123', 'name': 'invoice_raw', 'document_count': 42},
-            >>> #     ...
-            >>> # ]
-            
+            >>> print(baskets[0].name, baskets[0].document_count)
+
             >>> # Get basket IDs and names only (fastest)
             >>> baskets = docex.list_baskets_with_metadata(
             ...     columns=['id', 'name'],
             ...     order_by='name'
             ... )
         """
-        from docex.db.models import DocBasket as DocBasketModel, Document as DocumentModel
-        from sqlalchemy import select, func, outerjoin
+        from sqlalchemy import func, select
+
+        from docex.db.models import DocBasket as DocBasketModel
+        from docex.db.models import Document as DocumentModel
         
         # Default columns if not specified
         if columns is None:
@@ -925,24 +928,20 @@ class DocEX:
             # Execute query and convert to dictionaries
             results = session.execute(query).all()
             
-            # Convert to list of dictionaries
+            # Convert to list of BasketRecord instances
             baskets = []
             for row in results:
-                basket_dict = {}
+                record_kwargs: Dict[str, Any] = {}
                 row_index = 0
                 for col in columns:
                     if col in column_map:
-                        value = row[row_index]
-                        # Convert datetime to ISO format string for JSON serialization
-                        if hasattr(value, 'isoformat'):
-                            value = value.isoformat()
-                        basket_dict[col] = value
+                        record_kwargs[col] = row[row_index]
                         row_index += 1
                     elif col == 'document_count':
                         # document_count is the last column in the row
                         value = row[-1] if include_document_count else 0
-                        basket_dict[col] = int(value) if value is not None else 0
-                baskets.append(basket_dict)
+                        record_kwargs[col] = int(value) if value is not None else 0
+                baskets.append(BasketRecord(**record_kwargs))
             
             logger.debug(f"Retrieved {len(baskets)} baskets with metadata (columns: {columns})")
             return baskets
@@ -1008,7 +1007,7 @@ class DocEX:
         can_delete: bool = False,
         enabled: bool = True,
         other_party: Optional[Dict[str, str]] = None
-    ) -> 'Route':
+    ) -> "Route":  # noqa: F821
         """Create a new transport route
         
         Args:
@@ -1026,14 +1025,16 @@ class DocEX:
         Returns:
             Created route instance
         """
-        from docex.transport.config import (
-            RouteConfig, OtherParty, TransportType,
-            LocalTransportConfig, SFTPTransportConfig, HTTPTransportConfig
-        )
-        from docex.transport.transporter_factory import TransporterFactory
-        from docex.transport.models import Route as RouteModel
-        from docex.db.connection import Database
         from uuid import uuid4
+
+        from docex.transport.config import (
+            LocalTransportConfig,
+            OtherParty,
+            RouteConfig,
+            TransportType,
+        )
+        from docex.transport.models import Route as RouteModel
+        from docex.transport.transporter_factory import TransporterFactory
         
         # Create transport config based on type
         transport_type_enum = TransportType(transport_type)
@@ -1109,7 +1110,7 @@ class DocEX:
         route.db = self.db
         return route
     
-    def get_route(self, name: str) -> Optional['Route']:
+    def get_route(self, name: str) -> Optional["Route"]:  # noqa: F821
         """Get a route by name
         
         Args:
@@ -1137,7 +1138,7 @@ class DocEX:
         purpose: Optional[str] = None,
         transport_type: Optional[str] = None,
         enabled: Optional[bool] = None
-    ) -> List['Route']:
+    ) -> List["Route"]:  # noqa: F821
         """List routes with optional filters
         
         Args:

@@ -141,11 +141,14 @@ hello_file.write_text('Hello scos.ai!')
 # Add the document to the basket
 doc = basket.add(str(hello_file))
 
-# Print document details
-print(doc.get_details())
+# Print document details — access fields as attributes, e.g. record.name, record.status
+details = doc.get_details()
+print(details.name, details.status, details.created_at)
 
 hello_file.unlink()
 ```
+
+These methods return typed `BasketRecord` and `DocumentRecord` instances instead of plain dictionaries.
 
 ### Security and Multi-Tenancy
 

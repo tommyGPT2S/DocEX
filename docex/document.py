@@ -12,6 +12,7 @@ from sqlalchemy import text
 from docex.config.config_manager import ConfigManager
 from docex.db.connection import Database
 from docex.db.models import Operation
+from docex.models.records import DocumentRecord
 from docex.services.metadata_service import MetadataService
 from docex.services.storage_service import StorageService
 from docex.transport.models import RouteOperation
@@ -119,20 +120,26 @@ class Document:
         """Instance method version of get_content for compatibility."""
         return Document._get_content_static(self, mode)
     
-    def get_details(self) -> Dict[str, Any]:
-        """Get document details"""
-        return {
-            "id": self.id,
-            "name": self.name,
-            "path": self.path,
-            "content_type": self.content_type,
-            "document_type": self.document_type,
-            "size": self.size,
-            "checksum": self.checksum,
-            "status": self.status,
-            "created_at": self.created_at,
-            "updated_at": self.updated_at
-        }
+    def get_details(self) -> DocumentRecord:
+        """Get document details.
+
+        Returns:
+            A :class:`~docex.models.records.DocumentRecord` containing the
+            core document fields. Use ``.model_dump()`` if a plain dict is
+            required for serialisation.
+        """
+        return DocumentRecord(
+            id=self.id,
+            name=self.name,
+            path=self.path,
+            content_type=self.content_type,
+            document_type=self.document_type,
+            size=self.size,
+            checksum=self.checksum,
+            status=self.status,
+            created_at=self.created_at,
+            updated_at=self.updated_at,
+        )
 
     def get_metadata(self) -> Dict[str, Any]:
         """Get all metadata for this document from the database as direct values."""
