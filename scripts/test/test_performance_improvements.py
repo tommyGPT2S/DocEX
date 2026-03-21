@@ -122,10 +122,10 @@ def test_basket_listing_with_metadata(docex: DocEX, verbose: bool = False):
         if verbose:
             print("\nBaskets with document counts:")
             for basket in baskets_metadata:
-                print(f"  - {basket['name']} (ID: {basket['id'][:20]}...): {basket['document_count']} documents")
+                print(f"  - {basket.name} (ID: {basket.id[:20]}...): {basket.document_count} documents")
         else:
             if baskets_metadata:
-                print(f"  Example: {baskets_metadata[0]['name']} has {baskets_metadata[0]['document_count']} documents")
+                print(f"  Example: {baskets_metadata[0].name} has {baskets_metadata[0].document_count} documents")
         
         # Test 1.2: Get lightweight basket list (IDs and names only)
         print("\n1.2: Getting lightweight basket list (IDs and names only)...")
@@ -139,14 +139,14 @@ def test_basket_listing_with_metadata(docex: DocEX, verbose: bool = False):
         if verbose and baskets_lightweight:
             print("  First 5 baskets:")
             for basket in baskets_lightweight[:5]:
-                print(f"    - {basket['name']} (ID: {basket['id']})")
+                print(f"    - {basket.name} (ID: {basket.id})")
         
         # Test 1.3: Lazy instantiation pattern
         print("\n1.3: Testing lazy instantiation pattern...")
         if baskets_metadata:
             # Get ID from metadata (no object instantiation)
-            selected_basket_id = baskets_metadata[0]['id']
-            selected_basket_name = baskets_metadata[0]['name']
+            selected_basket_id = baskets_metadata[0].id
+            selected_basket_name = baskets_metadata[0].name
             
             print(f"  Selected basket from metadata: {selected_basket_name} (ID: {selected_basket_id[:20]}...)")
             
@@ -187,10 +187,10 @@ def test_document_listing_with_metadata(docex: DocEX, verbose: bool = False):
         # Find a basket that has documents
         basket = None
         for basket_info in baskets_with_docs:
-            if basket_info.get('document_count', 0) > 0:
-                basket_id = basket_info['id']
+            if (basket_info.document_count or 0) > 0:
+                basket_id = basket_info.id
                 basket = docex.get_basket(basket_id=basket_id)
-                print(f"Using basket: {basket.name} (ID: {basket.id[:20]}...) with {basket_info['document_count']} documents")
+                print(f"Using basket: {basket.name} (ID: {basket.id[:20]}...) with {basket_info.document_count} documents")
                 break
         
         # If no baskets with documents, create a test basket with documents
@@ -307,10 +307,10 @@ def test_performance_comparison(docex: DocEX, verbose: bool = False):
         # Find a basket that has documents
         basket_with_docs = None
         for basket_info in baskets_with_docs:
-            if basket_info.get('document_count', 0) > 0:
-                basket_id = basket_info['id']
+            if (basket_info.document_count or 0) > 0:
+                basket_id = basket_info.id
                 basket_with_docs = docex.get_basket(basket_id=basket_id)
-                print(f"  Using basket '{basket_info['name']}' with {basket_info['document_count']} documents")
+                print(f"  Using basket '{basket_info.name}' with {basket_info.document_count} documents")
                 break
         
         if not basket_with_docs:
@@ -380,7 +380,7 @@ def test_document_count_feature(docex: DocEX, verbose: bool = False):
         if baskets_with_counts:
             print("\nBaskets sorted by document count (descending):")
             for i, basket in enumerate(baskets_with_counts, 1):
-                print(f"  {i}. {basket['name']}: {basket['document_count']} documents")
+                print(f"  {i}. {basket.name}: {basket.document_count} documents")
         
         # Test 4.2: Filter baskets with document counts
         print("\n4.2: Filtering baskets with document counts...")
@@ -396,7 +396,7 @@ def test_document_count_feature(docex: DocEX, verbose: bool = False):
         if baskets_filtered:
             print("  Baskets with fewest documents first:")
             for basket in baskets_filtered:
-                print(f"    - {basket['name']}: {basket['document_count']} documents")
+                print(f"    - {basket.name}: {basket.document_count} documents")
         
         return True
         

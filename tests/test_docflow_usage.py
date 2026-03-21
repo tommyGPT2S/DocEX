@@ -95,4 +95,4 @@ class TestDocEXUsage(unittest.TestCase):
         
         # 5. Verify document status
         doc_status = doc.get_details()
-        self.assertEqual(doc_status["status"], "SENT") 
+        self.assertEqual(doc_status.status, "SENT")

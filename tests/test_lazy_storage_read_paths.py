@@ -119,11 +119,13 @@ def test_list_basket_reads_do_not_initialize_storage(populated_basket, monkeypat
     basket_rows = docex.list_baskets_with_metadata(columns=["id", "name"])
 
     matching_baskets = [listed for listed in baskets if listed.id == basket.id]
-    matching_rows = [row for row in basket_rows if row["id"] == basket.id]
+    matching_rows = [row for row in basket_rows if row.id == basket.id]
 
     assert len(matching_baskets) == 1
     assert matching_baskets[0]._storage_service is None
-    assert matching_rows == [{"id": basket.id, "name": basket.name}]
+    assert len(matching_rows) == 1
+    assert matching_rows[0].id == basket.id
+    assert matching_rows[0].name == basket.name
 
 
 def test_doccore_lightweight_basket_listing_skips_docbasket_instantiation(
@@ -143,7 +145,7 @@ def test_doccore_lightweight_basket_listing_skips_docbasket_instantiation(
     monkeypatch.setattr(DocBasket, "__init__", tracked_init)
 
     basket_rows = docex.list_baskets_with_metadata(columns=["id", "name"])
-    assert any(row["id"] == basket.id for row in basket_rows)
+    assert any(row.id == basket.id for row in basket_rows)
     assert constructed_baskets == []
 
     baskets = docex.list_baskets()
