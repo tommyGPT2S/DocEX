@@ -50,6 +50,7 @@
 - `DocEXPathResolver` for unified path resolution
 - `ConfigResolver` for tenant-aware configuration resolution
 - `SchemaResolver` for database schema resolution
+- Added BasketRecord and DocumentRecord typed models for lightweight metadata reads (#4)
 
 ### 📚 Documentation
 
