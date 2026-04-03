@@ -109,19 +109,10 @@ class DocEXPathBuilder:
             return basket_prefix.rstrip('/')  # Return without trailing slash for consistency
         else:
             # Filesystem storage
-            # Return RELATIVE path (relative to base_path) for FileSystemStorage
-            # FileSystemStorage expects relative paths and will combine with base_path
-            if tenant_id:
-                # Build: {tenant_id}/{basket_friendly_name}_{last_4}/
-                from docex.utils.s3_prefix_builder import sanitize_basket_name
-                basket_id_suffix = basket_id.replace('bas_', '')[-4:] if basket_id.startswith('bas_') else basket_id[-4:]
-                friendly_name = sanitize_basket_name(basket_name)
-                basket_path_segment = f"{friendly_name}_{basket_id_suffix}"
-                # Return relative path: tenant_id/basket_path_segment
-                return f"{tenant_id}/{basket_path_segment}"
-            else:
-                # Non-multi-tenant: {basket_id}/
-                return basket_id
+            # The basket storage root is already basket-scoped when the basket is created,
+            # so document paths must remain document-local to avoid duplicating
+            # tenant/basket segments under the basket base path.
+            return ''
     
     def build_document_path(
         self,
@@ -163,8 +154,8 @@ class DocEXPathBuilder:
             Document path:
             - S3: Full S3 key (Part A + Part B + Part C)
                   Example: "acme_corp/finance_dept/production/invoice_raw_2c03/invoice_001_585d29.pdf"
-            - Filesystem: Relative path (Part B + Part C) - relative to base_path
-                  Example: "acme_corp/invoice_raw_2c03/invoice_001_585d29.pdf"
+            - Filesystem: Relative document path (Part C only) - relative to the basket storage root
+                  Example: "invoice_001_585d29.pdf"
         """
         if storage_type is None:
             storage_type = self.config.get('storage', {}).get('type', 'filesystem')
@@ -200,10 +191,11 @@ class DocEXPathBuilder:
             # basket_path is already the full prefix (e.g., "acme_corp/finance_dept/production/invoices_a1b2")
             return f"{basket_path}/{document_filename}"
         else:
-            # For filesystem, combine basket directory with document filename
-            # basket_path is already relative (e.g., "acme_corp/invoices_a1b2")
-            # Return relative path: basket_path/document_filename
-            return f"{basket_path}/{document_filename}"
+            # For filesystem, the basket storage root is already basket-scoped.
+            # Only append the document-local filename when no basket prefix is returned.
+            if basket_path:
+                return f"{basket_path}/{document_filename}"
+            return document_filename
     
     def parse_path_to_ids(self, full_path: str, storage_type: Optional[str] = None) -> Dict[str, Optional[str]]:
         """
