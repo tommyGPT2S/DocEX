@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional
 import yaml
 from sqlalchemy import inspect, text
 
-from docex.config.docex_config import DocEXConfig
+from docex.config.docex_config import DocEXConfig, resolve_docex_config_file
 from docex.context import UserContext
 from docex.db.connection import Database
 from docex.db.models import Base
@@ -80,7 +80,7 @@ class DocEX:
             return True
             
         # Try to load configuration from file
-        config_path = Path.home() / '.docex' / 'config.yaml'
+        config_path = resolve_docex_config_file()
         if not config_path.exists():
             logger.error(f"Configuration file not found at {config_path}")
             return False
@@ -128,7 +128,7 @@ class DocEX:
         try:
             # Check 1: Configuration exists and is valid
             if not cls.is_initialized():
-                config_path = Path.home() / '.docex' / 'config.yaml'
+                config_path = resolve_docex_config_file()
                 errors.append(f"Configuration not initialized: config file not found at {config_path}")
                 return errors  # Can't continue without config
             
