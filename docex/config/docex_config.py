@@ -8,6 +8,19 @@ from pathlib import Path
 # Configure logging
 logger = logging.getLogger(__name__)
 
+
+def resolve_docex_config_file() -> Path:
+    """Resolve the DocEX config file path from environment or home directory."""
+    explicit_config_file = os.getenv("DOCEX_CONFIG_FILE")
+    if explicit_config_file:
+        return Path(explicit_config_file).expanduser().resolve()
+
+    explicit_home = os.getenv("DOCEX_HOME")
+    if explicit_home:
+        return Path(explicit_home).expanduser().resolve() / "config.yaml"
+
+    return Path.home() / ".docex" / "config.yaml"
+
 class DocEXConfig:
     """
     Manages system-wide configuration for DocEX
@@ -34,7 +47,7 @@ class DocEXConfig:
                 self.config = yaml.safe_load(f)
             
             # Load configuration from file if it exists
-            self.config_file = Path.home() / '.docex' / 'config.yaml'
+            self.config_file = resolve_docex_config_file()
             if self.config_file.exists():
                 self._load_config()
             

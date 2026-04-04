@@ -9,7 +9,7 @@ import os
 from pathlib import Path
 import yaml
 from docex import DocEX
-from docex.config.docex_config import DocEXConfig
+from docex.config.docex_config import DocEXConfig, resolve_docex_config_file
 from docex.db.connection import Database
 from docex.db.models import Base
 from docex.transport.models import Base as TransportBase
@@ -125,7 +125,7 @@ def init(config, force, db_type, db_path, db_host, db_port, db_name, db_user, db
         DocEX.setup(**user_config)
         
         # Save configuration
-        config_path = Path.home() / '.docex' / 'config.yaml'
+        config_path = resolve_docex_config_file()
         config_path.parent.mkdir(parents=True, exist_ok=True)
         
         # Convert Path objects to strings in configuration
@@ -740,7 +740,7 @@ def provision_tenant(tenant_id, verify, enable_multi_tenancy):
             if enable_multi_tenancy:
                 click.echo("📝 Enabling database-level multi-tenancy in configuration...")
                 # Update config file
-                config_path = Path.home() / '.docex' / 'config.yaml'
+                config_path = resolve_docex_config_file()
                 if not config_path.exists():
                     config_path.parent.mkdir(parents=True, exist_ok=True)
                     current_config = {}
