@@ -651,7 +651,14 @@ class DocBasketDocumentManager:
             Document or None if not found
         """
         with self.basket.db.session() as session:
-            document = session.get(DocumentModel, document_id)
+            document = session.execute(
+                select(DocumentModel).where(
+                    and_(
+                        DocumentModel.id == document_id,
+                        DocumentModel.basket_id == self.basket.id,
+                    )
+                )
+            ).scalar_one_or_none()
             if document is None:
                 return None
             return self._document_instance(document)
