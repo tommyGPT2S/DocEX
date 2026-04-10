@@ -1149,7 +1149,7 @@ def search_documents(tenant_id, basket_id, metadata, limit, offset, order_by, or
 
 @document.command('get')
 @click.option('--tenant-id', help='Tenant ID for multi-tenant setups')
-@click.option('--basket-id', required=True, help='Basket ID')
+@click.option('--basket-id', help='Basket ID')
 @click.option('--document-id', required=True, help='Document ID')
 @click.option('--format', type=click.Choice(['table', 'json', 'simple']), default='table', help='Output format')
 def get_document(tenant_id, basket_id, document_id, format):
@@ -1162,13 +1162,7 @@ def get_document(tenant_id, basket_id, document_id, format):
             user_context = UserContext(user_id='cli_user', tenant_id=tenant_id)
         
         doc_ex = DocEX(user_context=user_context)
-        basket = doc_ex.get_basket(basket_id)
-        
-        if not basket:
-            click.echo(f"❌ Basket not found: {basket_id}", err=True)
-            raise click.Abort()
-        
-        doc = basket.get_document(document_id)
+        doc = doc_ex.get_document(document_id=document_id, basket_id=basket_id)
         
         if not doc:
             click.echo(f"❌ Document not found: {document_id}", err=True)

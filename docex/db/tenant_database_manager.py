@@ -244,8 +244,10 @@ class TenantDatabaseManager:
         sslmode = postgres_config.get('sslmode', 'prefer')
         connection_url = f'postgresql://{user_encoded}:{password_encoded}@{host}:{port}/{database}?sslmode={sslmode}'
         
-        # Create engine with schema in search_path
+        # Create engine with tenant schema first, then public for extensions (e.g., pgvector),
+        # then pg_catalog for system objects.
         # Use both connection options and event listener for maximum reliability
+        search_path = f"{schema_name},public,pg_catalog"
         engine = create_engine(
             connection_url,
             poolclass=QueuePool,
@@ -254,7 +256,7 @@ class TenantDatabaseManager:
             pool_timeout=30,
             pool_recycle=1800,
             connect_args={
-                'options': f'-csearch_path={schema_name}'
+                'options': f'-csearch_path={search_path}'
             }
         )
 
@@ -264,8 +266,10 @@ class TenantDatabaseManager:
         def set_search_path(dbapi_connection, connection_record):
             # Execute search_path setting immediately on connection
             with dbapi_connection.cursor() as cursor:
-                # Use parameterized query to safely handle schema name with special characters
-                cursor.execute('SET search_path TO %s', (schema_name,))
+                # Keep tenant schema first while allowing extension types/functions in public.
+                if not all(c.isalnum() or c == "_" for c in schema_name):
+                    raise ValueError(f"Invalid schema name for search_path: {schema_name}")
+                cursor.execute(f'SET search_path TO "{schema_name}", public, pg_catalog')
                 dbapi_connection.commit()  # Ensure the SET command is committed
         
         # Only create schema and initialize if not in read-only mode

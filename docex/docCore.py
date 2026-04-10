@@ -11,6 +11,7 @@ from docex.config.docex_config import DocEXConfig, resolve_docex_config_file
 from docex.context import UserContext
 from docex.db.connection import Database
 from docex.db.models import Base
+from docex.db.models import Document as DocumentModel
 from docex.docbasket import DocBasket
 from docex.models.metadata_keys import MetadataKey
 from docex.models.records import BasketRecord
@@ -623,6 +624,57 @@ class DocEX:
             if basket and self.user_context:
                 logger.info(f"Basket {basket_name} (ID: {basket.id}) accessed by user {self.user_context.user_id}")
             return basket
+
+    def get_document(
+        self,
+        document_id: str,
+        basket_id: Optional[str] = None,
+        basket_name: Optional[str] = None,
+    ):
+        """
+        Get a document directly from DocEX.
+
+        Performance:
+        - document_id only: O(1) primary key lookup on the tenant document table
+        - basket_id/basket_name provided: validates the owning basket before returning
+
+        Args:
+            document_id: Document ID
+            basket_id: Optional owning basket ID for validation and direct access
+            basket_name: Optional owning basket name for validation and direct access
+
+        Returns:
+            Document if found, None otherwise
+        """
+        if basket_id or basket_name:
+            basket = self.get_basket(basket_id=basket_id, basket_name=basket_name)
+            if not basket:
+                return None
+            document = basket.get_document(document_id)
+            if not document:
+                return None
+            document_basket_id = getattr(getattr(document, "model", None), "basket_id", None)
+            if document_basket_id and document_basket_id != basket.id:
+                return None
+            return document
+
+        with self.db.session() as session:
+            document_model = session.get(DocumentModel, document_id)
+            if document_model is None:
+                return None
+
+            basket = self.get_basket(basket_id=document_model.basket_id)
+            if basket is None:
+                return None
+
+            document = basket.get_document(document_id)
+            if document is None:
+                return None
+
+            document_basket_id = getattr(getattr(document, "model", None), "basket_id", None)
+            if document_basket_id and document_basket_id != basket.id:
+                return None
+            return document
     
     def close(self) -> None:
         """
