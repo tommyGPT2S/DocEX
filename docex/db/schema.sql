@@ -94,6 +94,8 @@ CREATE TABLE IF NOT EXISTS document_metadata (
     key VARCHAR(100) NOT NULL,
     value JSON NOT NULL,  -- SQLite will store as TEXT, handled by SQLAlchemy
     metadata_type VARCHAR(50) NOT NULL DEFAULT 'custom',
+    profile VARCHAR(64),
+    group_id UUID,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(document_id, key)
@@ -117,7 +119,7 @@ CREATE INDEX IF NOT EXISTS idx_doc_events_status ON doc_events(status);
 CREATE INDEX IF NOT EXISTS idx_document_metadata_document_id ON document_metadata(document_id);
 CREATE INDEX IF NOT EXISTS idx_document_metadata_key ON document_metadata(key);
 CREATE INDEX IF NOT EXISTS idx_document_metadata_type ON document_metadata(metadata_type);
-CREATE INDEX IF NOT EXISTS idx_document_metadata_key_value ON document_metadata(key, value);
+CREATE INDEX IF NOT EXISTS idx_document_metadata_key_value ON document_metadata(key);
 
 -- Indexes for basket queries
 CREATE INDEX IF NOT EXISTS idx_docbasket_status ON docbasket(status);
@@ -131,4 +133,4 @@ CREATE INDEX IF NOT EXISTS idx_document_basket_updated ON document(basket_id, up
 CREATE INDEX IF NOT EXISTS idx_document_basket_name ON document(basket_id, name);
 
 -- Composite index for document metadata queries with document_id
-CREATE INDEX IF NOT EXISTS idx_document_metadata_doc_key_value ON document_metadata(document_id, key, value); 
+CREATE INDEX IF NOT EXISTS idx_document_metadata_doc_key_value ON document_metadata(document_id, key); 

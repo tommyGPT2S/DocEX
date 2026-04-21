@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional, Type
-from sqlalchemy import Column, String, Integer, DateTime, JSON, ForeignKey, Text, text, UniqueConstraint, Table, MetaData, Boolean
+from sqlalchemy import Column, String, Integer, DateTime, JSON, ForeignKey, Text, text, UniqueConstraint, Table, MetaData, Boolean, Uuid
 from sqlalchemy.orm import relationship
 from uuid import uuid4
 from docex.config.config_manager import ConfigManager
@@ -153,6 +153,8 @@ class DocumentMetadata(Base):
     key = Column(String(255), nullable=False)
     value = Column(Text, nullable=False)
     metadata_type = Column(String(50), nullable=False, default='custom')
+    profile = Column(String(64), nullable=True)
+    group_id = Column(Uuid(as_uuid=False), nullable=True)
     created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     
