@@ -94,8 +94,7 @@ CREATE TABLE IF NOT EXISTS document_metadata (
     key VARCHAR(100) NOT NULL,
     value JSON NOT NULL,  -- SQLite will store as TEXT, handled by SQLAlchemy
     metadata_type VARCHAR(50) NOT NULL DEFAULT 'custom',
-    profile VARCHAR(64),
-    group_id UUID,
+    coordination_id UUID,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(document_id, key)

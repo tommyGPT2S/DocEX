@@ -153,8 +153,7 @@ class DocumentMetadata(Base):
     key = Column(String(255), nullable=False)
     value = Column(Text, nullable=False)
     metadata_type = Column(String(50), nullable=False, default='custom')
-    profile = Column(String(64), nullable=True)
-    group_id = Column(Uuid(as_uuid=False), nullable=True)
+    coordination_id = Column(Uuid(as_uuid=False), nullable=True)
     created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     
