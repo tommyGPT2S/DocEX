@@ -14,7 +14,7 @@ async def simple_ollama_pinecone_test():
     
     try:
         # Test Pinecone search
-        from docex.processors.rag.vector_databases import PineconeVectorDatabase
+        from examples.patterns.rag.vector_databases import PineconeVectorDatabase
         import numpy as np
         
         # Initialize Pinecone

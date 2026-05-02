@@ -24,13 +24,13 @@ if str(parent_dir) not in sys.path:
 
 from docex import DocEX
 from docex.docbasket import DocBasket
-from docex.processors.rag.enhanced_rag_service import EnhancedRAGService, EnhancedRAGConfig
+from examples.patterns.rag import EnhancedRAGService, EnhancedRAGConfig
 from docex.processors.vector.semantic_search_service import SemanticSearchService
 from docex.processors.vector import VectorIndexingProcessor
-from docex.processors.llm.openai_adapter import OpenAIAdapter
-from docex.processors.llm.local_llm_adapter import LocalLLMAdapter
-from docex.services.generic_knowledge_base_service import GenericKnowledgeBaseService
-from docex.processors.kb.generic_kb_processor import GenericKBProcessor
+from examples.integrations.openai import OpenAIAdapter
+from examples.integrations.local_llm import LocalLLMAdapter
+from examples.patterns.knowledge_base import GenericKnowledgeBaseService
+from examples.patterns.knowledge_base import GenericKBProcessor
 
 
 async def setup_llm_adapter():
@@ -137,7 +137,7 @@ async def main():
     except Exception as e:
         print(f"  [WARN] Enhanced RAG not available, using basic RAG: {e}")
         # Fallback to basic RAG service
-        from docex.processors.rag import RAGService
+        from examples.patterns.rag import RAGService
         rag_service = RAGService(
             semantic_search_service=semantic_search,
             llm_adapter=llm_adapter,

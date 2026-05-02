@@ -9,10 +9,6 @@ from .base import ChunkingStrategy, ChunkingConfig
 from .fixed_size import FixedSizeChunking
 from .recursive import RecursiveChunking
 from .document_based import DocumentBasedChunking
-from .semantic import SemanticChunking
-from .llm_based import LLMBasedChunking
-from .agentic import AgenticChunking
-from .late import LateChunking
 from .hierarchical import HierarchicalChunking
 
 
@@ -31,12 +27,6 @@ class ChunkingFactory:
         'recursive': RecursiveChunking,
         'document': DocumentBasedChunking,
         'document_based': DocumentBasedChunking,
-        'semantic': SemanticChunking,
-        'llm': LLMBasedChunking,
-        'llm_based': LLMBasedChunking,
-        'agentic': AgenticChunking,
-        'late': LateChunking,
-        'late_chunking': LateChunking,
         'hierarchical': HierarchicalChunking,
     }
     
@@ -49,18 +39,18 @@ class ChunkingFactory:
         'manual': 'hierarchical',
         'handbook': 'hierarchical',
         'article': 'document_based',
-        'blog': 'semantic',
-        'research_paper': 'semantic',
-        'textbook': 'semantic',
-        'whitepaper': 'semantic',
-        'legal': 'llm_based',
-        'contract': 'llm_based',
-        'medical': 'llm_based',
-        'regulation': 'agentic',
-        'compliance': 'agentic',
-        'policy': 'agentic',
-        'case_study': 'late_chunking',
-        'analysis': 'late_chunking',
+        'blog': 'document_based',
+        'research_paper': 'hierarchical',
+        'textbook': 'hierarchical',
+        'whitepaper': 'hierarchical',
+        'legal': 'hierarchical',
+        'contract': 'hierarchical',
+        'medical': 'hierarchical',
+        'regulation': 'hierarchical',
+        'compliance': 'hierarchical',
+        'policy': 'hierarchical',
+        'case_study': 'hierarchical',
+        'analysis': 'hierarchical',
         'report': 'hierarchical',
     }
     
@@ -152,10 +142,6 @@ class ChunkingFactory:
             'fixed_size': 'Fast, deterministic token/character-based splitting',
             'recursive': 'Hierarchical splitting with structure preservation',
             'document_based': 'Split at document boundaries (headers, sections)',
-            'semantic': 'Topic-aware splitting using embeddings',
-            'llm_based': 'Context-aware splitting using language models',
-            'agentic': 'Autonomous AI-driven chunking decisions',
-            'late_chunking': 'Whole-document embedding with derived chunks',
             'hierarchical': 'Multi-level document structure preservation',
         }
     

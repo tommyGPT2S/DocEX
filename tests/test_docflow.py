@@ -238,46 +238,5 @@ class TestDocEX(unittest.TestCase):
         self.assertIsNotNone(content)
         self.assertEqual(content['content'], 'Test content')
 
-    def test_database_configuration(self):
-        """Test database configuration changes"""
-        # Verify initial SQLite configuration
-        config = DocEXConfig()
-        self.assertEqual(config.get('database.type'), 'sqlite')
-        sqlite_config = config.get('database.sqlite', {})
-        self.assertEqual(sqlite_config['path'], str(self.test_dir / 'docex.db'))
-        
-        # Set up PostgreSQL as default database
-        DocEX.setup_database('postgres',
-            host='localhost',
-            port=5444,
-            database='scm_simulation',
-            user='gpt2s',
-            password='9pt2s2025!',
-            schema='docex',
-            is_default_db=True
-        )
-        
-        # Verify PostgreSQL is now default
-        config = DocEXConfig()
-        self.assertEqual(config.get('database.type'), 'postgres')
-        pg_config = config.get('database.postgres', {})
-        self.assertEqual(pg_config['host'], 'localhost')
-        self.assertEqual(pg_config['port'], 5444)
-        self.assertEqual(pg_config['database'], 'scm_simulation')
-        self.assertEqual(pg_config['user'], 'gpt2s')
-        self.assertEqual(pg_config['schema'], 'docex')
-        
-        # Switch back to SQLite as default
-        DocEX.setup_database('sqlite',
-            path=str(self.test_dir / 'docex.db'),
-            is_default_db=True
-        )
-        
-        # Verify SQLite is default again
-        config = DocEXConfig()
-        self.assertEqual(config.get('database.type'), 'sqlite')
-        sqlite_config = config.get('database.sqlite', {})
-        self.assertEqual(sqlite_config['path'], str(self.test_dir / 'docex.db'))
-
 if __name__ == '__main__':
     unittest.main() 

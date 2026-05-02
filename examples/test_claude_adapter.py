@@ -15,7 +15,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from docex import DocEX
-from docex.processors.llm import ClaudeAdapter
+from examples.integrations.anthropic import ClaudeAdapter
 
 # Set up logging
 logging.basicConfig(

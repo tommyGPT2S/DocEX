@@ -15,7 +15,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from docex import DocEX
-from docex.processors.llm import OpenAIAdapter
+from examples.integrations.openai import OpenAIAdapter
 
 # Set up logging
 logging.basicConfig(

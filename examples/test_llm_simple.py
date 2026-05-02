@@ -12,7 +12,8 @@ from dotenv import load_dotenv
 # Load .env file
 load_dotenv()
 
-from docex.processors.llm import OpenAILLMService, PromptManager
+from examples.integrations.openai import OpenAILLMService
+from examples.integrations._shared.prompt_manager import PromptManager
 
 # Set up logging
 logging.basicConfig(

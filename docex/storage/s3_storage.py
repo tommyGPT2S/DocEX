@@ -79,8 +79,8 @@ class S3Storage(AbstractStorage):
         # Extract configuration
         self.region = credentials['region']
         
-        # NOTE: No prefix storage - S3Storage accepts full paths only
-        # All path building happens in DocEXPathBuilder before calling S3Storage
+        self.prefix = config.get('prefix', '')
+        self.prefix = self._normalize_prefix(self.prefix)
         
         # Retry configuration
         self.max_retries = config.get('max_retries', 3)
@@ -243,8 +243,22 @@ class S3Storage(AbstractStorage):
             Path building should happen in DocEXPathBuilder before calling S3Storage.
             S3Storage does NOT interpret or build paths - it uses paths as provided.
         """
-        # Remove leading slash if present (S3 keys should not start with /)
-        return path.lstrip('/')
+        key = path.lstrip('/')
+        if self.prefix and not key.startswith(self.prefix):
+            key = f"{self.prefix}{key}"
+        return key
+
+    def _normalize_prefix(self, prefix: str) -> str:
+        """Normalize optional S3 key prefix."""
+        prefix = (prefix or '').lstrip('/')
+        if prefix and not prefix.endswith('/'):
+            prefix += '/'
+        return prefix
+
+    def _strip_prefix(self, key: str) -> str:
+        if self.prefix and key.startswith(self.prefix):
+            return key[len(self.prefix):]
+        return key
     
     def _retry_on_error(self, func, *args, **kwargs):
         """
@@ -328,7 +342,7 @@ class S3Storage(AbstractStorage):
             data = content.encode('utf-8')
         elif isinstance(content, bytes):
             data = content
-        elif isinstance(content, BinaryIO):
+        elif hasattr(content, 'read'):
             data = content.read()
         else:
             raise ValueError(f"Unsupported content type: {type(content)}")
@@ -489,7 +503,7 @@ class S3Storage(AbstractStorage):
                     for obj in page['Contents']:
                         full_key = obj['Key']
                         if full_key != key:  # Skip the directory marker itself
-                            keys.append(full_key)  # Return full keys (no prefix removal)
+                            keys.append(self._strip_prefix(full_key))
             
             return keys
         except ClientError as e:
@@ -602,7 +616,7 @@ class S3Storage(AbstractStorage):
             return self.delete(source_path)
         return False
     
-    def store(self, source_path: str, document_path: str) -> str:
+    def store(self, source_path: str, document_path: Union[str, bytes, BinaryIO]) -> Union[str, bool]:
         """
         Store a document from source path to S3
         
@@ -614,7 +628,10 @@ class S3Storage(AbstractStorage):
             Path where document was stored (relative path without prefix)
         """
         try:
-            # Read source file
+            if isinstance(document_path, bytes) or hasattr(document_path, 'read'):
+                self.save(source_path, document_path)
+                return True
+
             source_file = Path(source_path)
             if not source_file.exists():
                 raise FileNotFoundError(f"Source file not found: {source_path}")
@@ -679,7 +696,7 @@ class S3Storage(AbstractStorage):
             logger.warning(error_msg)
             return False
     
-    def cleanup(self, prefix: str) -> None:
+    def cleanup(self, prefix: Optional[str] = None) -> None:
         """
         Clean up storage (delete all objects in bucket with prefix)
         
@@ -689,15 +706,13 @@ class S3Storage(AbstractStorage):
             prefix: Full S3 key prefix path (must include all prefixes)
                    Path should be built by DocEXPathBuilder before calling this method.
         """
-        if not prefix:
-            raise ValueError("prefix is required for cleanup operation")
-        
         try:
-            # Normalize prefix
-            normalized_prefix = self._normalize_key(prefix)
-            # Ensure prefix ends with /
-            if not normalized_prefix.endswith('/'):
-                normalized_prefix += '/'
+            if prefix is None:
+                normalized_prefix = self.prefix
+            else:
+                normalized_prefix = self._normalize_key(prefix)
+                if normalized_prefix and not normalized_prefix.endswith('/'):
+                    normalized_prefix += '/'
             
             paginator = self.s3.get_paginator('list_objects_v2')
             

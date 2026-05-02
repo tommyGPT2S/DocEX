@@ -12,9 +12,9 @@ import numpy as np
 import hashlib
 from typing import List
 from docex.docbasket import DocBasket
-from docex.processors.llm.claude_adapter import ClaudeAdapter
+from examples.integrations.anthropic import ClaudeAdapter
 from docex.processors.vector.semantic_search_service import SemanticSearchService
-from docex.processors.rag import EnhancedRAGService, EnhancedRAGConfig
+from examples.patterns.rag import EnhancedRAGService, EnhancedRAGConfig
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -307,7 +307,7 @@ async def faiss_rag_example():
         # Step 3: Initialize LLM adapter
         print("🤖 Initializing Ollama LLM adapter...")
         try:
-            from docex.processors.llm.ollama_adapter import OllamaAdapter
+            from examples.integrations.local_llm import OllamaAdapter
             ollama_config = {
                 'base_url': 'http://127.0.0.1:11434',
                 'model': 'llama3.2',  # Use available model
@@ -534,7 +534,7 @@ async def pinecone_rag_example():
         # Initialize LLM adapter
         print("🤖 Initializing Ollama LLM adapter...")
         try:
-            from docex.processors.llm.ollama_adapter import OllamaAdapter
+            from examples.integrations.local_llm import OllamaAdapter
             ollama_config = {
                 'base_url': 'http://127.0.0.1:11434',
                 'model': 'llama3.2',  # Use available model
@@ -547,7 +547,7 @@ async def pinecone_rag_example():
             # Fallback to Claude if Ollama adapter doesn't work
             print(f"   ❌ Ollama adapter failed: {e}")
             print("   Fallback to Claude...")
-            from docex.processors.llm.claude_adapter import ClaudeAdapter
+            from examples.integrations.anthropic import ClaudeAdapter
             claude_config = {
                 'api_key': os.getenv('ANTHROPIC_API_KEY'),  # Use environment variable
                 'model': 'claude-3-sonnet-20240229',

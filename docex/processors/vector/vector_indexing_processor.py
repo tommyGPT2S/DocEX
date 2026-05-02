@@ -7,15 +7,32 @@ for semantic search capabilities.
 
 import logging
 import json
-from typing import Dict, Any, Optional, List
-from datetime import datetime
+import inspect
+from collections.abc import Awaitable, Callable
+from typing import Dict, Any, Optional, List, Union
+from datetime import UTC, datetime
 
 from docex.processors.base import BaseProcessor, ProcessingResult
 from docex.document import Document
-from docex.processors.llm import BaseLLMProcessor
 from docex.db.connection import Database
 
 logger = logging.getLogger(__name__)
+
+EmbeddingFn = Callable[[str], Union[List[float], Awaitable[List[float]]]]
+
+
+async def _resolve_embedding(embedding_fn: EmbeddingFn, text: str) -> List[float]:
+    embedding = embedding_fn(text)
+    if inspect.isawaitable(embedding):
+        embedding = await embedding
+
+    if not isinstance(embedding, list) or not embedding:
+        raise ValueError("embedding_fn must return a non-empty list of floats")
+
+    try:
+        return [float(value) for value in embedding]
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"embedding_fn returned non-numeric values: {exc}") from exc
 
 
 class VectorIndexingProcessor(BaseProcessor):
@@ -23,56 +40,63 @@ class VectorIndexingProcessor(BaseProcessor):
     Processor that indexes documents in a vector database for semantic search.
     
     This processor:
-    1. Generates embeddings using an LLM adapter
+    1. Generates embeddings using a caller-provided embedding function
     2. Stores embeddings in a vector database (pgvector for production, memory for testing)
     3. Stores vector metadata in DocEX metadata system
     4. Tracks indexing operations in DocEX
     """
     
-    def __init__(self, config: Dict[str, Any], db: Optional[Database] = None):
+    def __init__(
+        self,
+        embedding_fn: EmbeddingFn,
+        vector_db_type: str = 'memory',
+        vector_db_config: Optional[Dict[str, Any]] = None,
+        store_in_metadata: bool = True,
+        include_metadata: bool = True,
+        metadata_fields: Optional[List[str]] = None,
+        force_reindex: bool = False,
+        db: Optional[Database] = None,
+        tenant_id: Optional[str] = None,
+    ):
         """
         Initialize vector indexing processor
         
         Args:
-            config: Configuration dictionary with:
-                - llm_adapter: LLM adapter instance or config for creating one
-                - vector_db_type: 'pgvector' (recommended for production) or 'memory' (for testing)
-                - vector_db_config: Configuration for vector database (not needed for memory)
-                - store_in_metadata: Whether to store embeddings in DocEX metadata (default: True)
+            embedding_fn: Sync or async callable that accepts text and returns an embedding.
+            vector_db_type: 'pgvector' (recommended for production) or 'memory' (for testing)
+            vector_db_config: Configuration for vector database (not needed for memory)
+            store_in_metadata: Whether to store embeddings in DocEX metadata (default: True)
             db: Optional tenant-aware database instance (for multi-tenancy support)
         """
-        # Store original config for serialization (without llm_adapter object)
-        # Remove llm_adapter object from config before passing to super()
-        # This prevents JSON serialization errors when storing processor config
-        serializable_config = {k: v for k, v in config.items() if k != 'llm_adapter'}
-        llm_adapter_config = config.get('llm_adapter')
+        if not callable(embedding_fn):
+            raise ValueError("embedding_fn is required and must be callable")
+
+        self.embedding_fn = embedding_fn
+
+        serializable_config = {
+            'vector_db_type': vector_db_type,
+            'vector_db_config': vector_db_config or {},
+            'store_in_metadata': store_in_metadata,
+            'include_metadata': include_metadata,
+            'metadata_fields': metadata_fields,
+            'force_reindex': force_reindex,
+        }
+        if tenant_id:
+            serializable_config['tenant_id'] = tenant_id
         
-        super().__init__(serializable_config, db=db)
-        
-        # Initialize LLM adapter for generating embeddings
-        # Check if it's already a BaseLLMProcessor instance (passed from workflow executor)
-        from docex.processors.llm.base_llm_processor import BaseLLMProcessor
-        if isinstance(llm_adapter_config, BaseLLMProcessor):
-            self.llm_adapter = llm_adapter_config
-        else:
-            # Create LLM adapter from config
-            # Default to OpenAIAdapter, but workflow executor should provide adapter
-            from docex.processors.llm import OpenAIAdapter
-            # Pass db to adapter if available (for multi-tenancy)
-            adapter_db = db if db else None
-            if adapter_db:
-                self.llm_adapter = OpenAIAdapter(llm_adapter_config or {}, db=adapter_db)
-            else:
-                self.llm_adapter = OpenAIAdapter(llm_adapter_config or {})
-        
+        # Vector indexing should not create an implicit default Database. Memory
+        # indexing can run without one; pgvector requires an explicit db handle.
+        self.config = serializable_config
+        self.db = db
+
         # Vector database configuration
-        self.vector_db_type = config.get('vector_db_type', 'memory')
-        self.vector_db_config = config.get('vector_db_config', {})
-        self.store_in_metadata = config.get('store_in_metadata', True)
+        self.vector_db_type = vector_db_type
+        self.vector_db_config = vector_db_config or {}
+        self.store_in_metadata = store_in_metadata
         
         # Metadata inclusion configuration
-        self.include_metadata = config.get('include_metadata', True)  # Include metadata in embeddings by default
-        self.metadata_fields = config.get('metadata_fields', None)  # None = include all relevant fields
+        self.include_metadata = include_metadata  # Include metadata in embeddings by default
+        self.metadata_fields = metadata_fields  # None = include all relevant fields
         # Default fields to include if metadata_fields not specified
         self.default_metadata_fields = [
             'document_type', 'business_process',
@@ -102,9 +126,10 @@ class VectorIndexingProcessor(BaseProcessor):
     def _init_pgvector(self):
         """Initialize pgvector (PostgreSQL extension)"""
         try:
-            from docex.db.connection import Database
             # Use tenant-aware database from processor instance
             db = self.db
+            if db is None:
+                raise ValueError("pgvector vector indexing requires an explicit Database instance")
             
             # Check if pgvector extension is available and create if needed
             from sqlalchemy import text
@@ -321,30 +346,29 @@ class VectorIndexingProcessor(BaseProcessor):
         if not self.config.get('force_reindex', False):
             metadata = document.get_metadata_dict()
             if metadata.get('vector_indexed'):
+                if self.db is None:
+                    return False
                 # Verify embedding actually exists in database
                 # Metadata flag might be set but embedding not stored (e.g., due to error)
                 try:
-                    if self.db:
-                        from sqlalchemy import text
-                        with self.db.session() as session:
-                            has_embedding = session.execute(
-                                text("SELECT embedding IS NOT NULL FROM document WHERE id = :doc_id"),
-                                {"doc_id": document.id}
-                            ).scalar()
-                            if has_embedding:
-                                # Both metadata flag and embedding exist - skip
-                                return False
-                            else:
-                                # Metadata flag set but no embedding - re-index
-                                logger.warning(
-                                    f"Document {document.id} has vector_indexed=True but no embedding in DB. "
-                                    "Will re-index."
-                                )
-                                return True
+                    from sqlalchemy import text
+                    with self.db.session() as session:
+                        has_embedding = session.execute(
+                            text("SELECT embedding IS NOT NULL FROM document WHERE id = :doc_id"),
+                            {"doc_id": document.id}
+                        ).scalar()
+                        if has_embedding:
+                            # Both metadata flag and embedding exist - skip
+                            return False
+                        else:
+                            # Metadata flag set but no embedding - re-index
+                            logger.warning(
+                                f"Document {document.id} has vector_indexed=True but no embedding in DB. "
+                                "Will re-index."
+                            )
+                            return True
                 except Exception as e:
-                    logger.warning(f"Could not verify embedding in DB: {e}. Will attempt to index.")
-                    # If we can't verify, try to index anyway
-                    return True
+                    raise RuntimeError(f"Could not verify vector indexing state for document {document.id}: {e}") from e
         
         # Process all documents that have text content
         return True
@@ -367,38 +391,9 @@ class VectorIndexingProcessor(BaseProcessor):
                 input_metadata={'document_id': document.id, 'vector_db_type': self.vector_db_type}
             )
             
-            # Get document text content
-            text_content = None
-            try:
-                text_content = self.get_document_text(document)
-                if not isinstance(text_content, str):
-                    text_content = str(text_content) if text_content else ''
-            except (UnicodeDecodeError, Exception) as e:
-                # Fallback: try to get text from metadata
-                logger.warning(f"Error getting document text directly: {e}, trying metadata...")
-                try:
-                    metadata = document.get_metadata_dict()
-                    # Handle DocumentMetadata objects
-                    extracted_text = metadata.get('extracted_text', '')
-                    if hasattr(extracted_text, 'value'):
-                        text_content = extracted_text.value
-                    elif hasattr(extracted_text, 'extra') and hasattr(extracted_text.extra, 'get'):
-                        text_content = extracted_text.extra.get('value', '')
-                    elif isinstance(extracted_text, str):
-                        text_content = extracted_text
-                    else:
-                        text_content = str(extracted_text) if extracted_text else ''
-                    
-                    if not text_content:
-                        # Last resort: try bytes with error handling
-                        try:
-                            content = document.get_content(mode='bytes')
-                            text_content = content.decode('utf-8', errors='replace')
-                        except Exception:
-                            text_content = ''
-                except Exception as e2:
-                    logger.warning(f"Error getting text from metadata: {e2}")
-                    text_content = ''
+            # Get document text content. Hard fail rather than falling back to
+            # metadata/byte decoding so indexing uses a single explicit source.
+            text_content = self.get_document_text(document)
             
             # Ensure text_content is a string
             if not isinstance(text_content, str):
@@ -418,15 +413,9 @@ class VectorIndexingProcessor(BaseProcessor):
                     text_for_embedding = f"{metadata_text}\n\n{text_content}"
                     logger.debug(f"Including metadata in embedding for document {document.id}")
             
-            # Generate embedding using LLM adapter
+            # Generate embedding using caller-provided embedding function
             logger.info(f"Generating embedding for document {document.id}")
-            embedding = await self.llm_adapter.llm_service.generate_embedding(text_for_embedding)
-            
-            if not embedding:
-                return ProcessingResult(
-                    success=False,
-                    error="Failed to generate embedding"
-                )
+            embedding = await _resolve_embedding(self.embedding_fn, text_for_embedding)
             
             # Store in vector database (store original text_content, not text_for_embedding)
             vector_id = await self._store_embedding(document, embedding, text_content)
@@ -434,7 +423,7 @@ class VectorIndexingProcessor(BaseProcessor):
             # Store metadata in DocEX
             metadata_updates = {
                 'vector_indexed': True,
-                'vector_indexed_at': datetime.utcnow().isoformat(),
+                'vector_indexed_at': datetime.now(UTC).isoformat(),
                 'vector_db_type': self.vector_db_type,
                 'embedding_dimension': len(embedding),
                 'vector_indexed_with_metadata': self.include_metadata,  # Track if metadata was included
@@ -604,4 +593,3 @@ class VectorIndexingProcessor(BaseProcessor):
         }
         
         return document.id
-
