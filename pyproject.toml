@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "docex"
-version = "2.8.8"
+version = "2.9.9"
 description = "A robust, lightweight, and developer friendly document management and transport system for Python"
 readme = "README.md"
 authors = [{ name = "Tommy Jiang", email = "tommySCOS@scos.ai" }]
@@ -22,8 +22,6 @@ dependencies = [
     "pydantic>=2.0.0",
     "python-dotenv>=1.0.0",
     "click>=8.0.0",
-    "jinja2>=3.1.0",
-    "python-docx>=1.0.0",
 ]
 
 [project.optional-dependencies]
@@ -36,11 +34,6 @@ postgres = [
 vector = [
     "numpy>=1.24.0",
     "pgvector>=0.2.0",
-]
-
-# LLM/Embedding support (required for vector indexing and embeddings)
-llm = [
-    "openai>=1.0.0",
 ]
 
 # Storage backends
@@ -61,21 +54,27 @@ pdf = [
     "pdfminer.six>=20221105",
 ]
 
+# Word document processing
+docx = [
+    "python-docx>=1.0.0",
+]
+
 # All optional features (convenience group)
 all = [
     "psycopg2-binary>=2.9.0",
     "numpy>=1.24.0",
     "pgvector>=0.2.0",
-    "openai>=1.0.0",
     "boto3>=1.26.0",
     "aiohttp>=3.9.0",
     "paramiko>=3.4.0",
     "pdfminer.six>=20221105",
+    "python-docx>=1.0.0",
 ]
 
 # Development dependencies
 dev = [
     "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
     "moto>=4.0.0",  # For mocking AWS services in tests
     "black>=22.0.0",
     "isort>=5.0.0",

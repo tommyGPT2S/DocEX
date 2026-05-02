@@ -212,7 +212,9 @@ class TenantDatabaseManager:
         Returns:
             SQLAlchemy engine
         """
-        postgres_config = db_config.get('postgres', {})
+        postgres_config = db_config.get('postgresql') or db_config.get('postgres')
+        if not postgres_config:
+            raise ValueError("PostgreSQL tenant database configuration requires a 'postgres' or 'postgresql' block")
         
         # Get base connection parameters
         host = postgres_config.get('host', 'localhost')

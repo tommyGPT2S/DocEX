@@ -8,9 +8,9 @@
 
 ![DocEX Architecture](docs/DocEX_Architecture.jpeg)
 
-**DocEX** is a robust, extensible document management and transport system for Python. It supports multiple storage backends, metadata management, and operation tracking, with a unified API for local, SFTP, HTTP, and other protocols.
+**DocEX** is a lean document storage, metadata, vector indexing, and transport library for Python. LLM and RAG orchestration are intentionally kept out of the core package and provided as copy-adapt examples under `examples/`.
 
-**⚠️ Current Version: 2.8.4 (Pre-Release of 3.0)** - This version introduces the new multi-tenancy architecture and tenant switching enforcement that will be finalized in DocEX 3.0. See [RELEASE_NOTES.md](RELEASE_NOTES.md) for details.
+**Current Version: 3.0.0** - This release focuses DocEX core on storage, metadata, transport, and provider-neutral vector indexing. See [docs/MIGRATION_3_0.md](docs/MIGRATION_3_0.md) for migration notes.
 
 ## Features
 
@@ -18,12 +18,7 @@
 - 🔄 Transport layer with pluggable protocols (local, SFTP, HTTP, etc.)
 - 🛣️ Configurable transport routes and routing rules
 - 📝 Operation and audit tracking
-- 🧩 Extensible architecture for new protocols and workflows
-- 🤖 **LLM adapter integration** - Process documents with OpenAI and other LLM providers
-- 📋 **Prompt management** - YAML-based prompt templates with Jinja2 support
-- 🔍 **Structured data extraction** - Extract structured data from documents using LLMs
-- 📊 **Vector indexing & semantic search** - Generate embeddings and perform similarity search
-- 🔎 **RAG support** - Build retrieval-augmented generation applications
+- 📊 **Vector indexing & semantic search** - Bring your own embedding function
 - ☁️ **S3 storage support** - Store documents in Amazon S3
 - 🏢 **Multi-tenancy support** - Database-level isolation for secure multi-tenant deployments
 - 🔐 **Enhanced security** - UserContext for audit logging and tenant routing
@@ -51,9 +46,6 @@ pip install docex[postgres]
 # Vector indexing and semantic search
 pip install docex[vector]
 
-# LLM/Embedding support (OpenAI, etc.)
-pip install docex[llm]
-
 # Amazon S3 storage backend
 pip install docex[storage-s3]
 
@@ -66,6 +58,9 @@ pip install docex[transport-sftp]
 # PDF text extraction
 pip install docex[pdf]
 
+# Word document text extraction
+pip install docex[docx]
+
 # All optional features
 pip install docex[all]
 
@@ -75,7 +70,7 @@ pip install docex[dev]
 
 **Combine multiple features:**
 ```sh
-pip install docex[postgres,vector,llm]
+pip install docex[postgres,vector]
 pip install docex[all,dev]  # All features + dev tools
 ```
 
@@ -106,10 +101,9 @@ The base installation includes:
 **Not included** (install via optional dependencies):
 - ❌ PostgreSQL support → `docex[postgres]`
 - ❌ Vector indexing/semantic search → `docex[vector]`
-- ❌ LLM/embedding capabilities → `docex[llm]`
 - ❌ S3 storage → `docex[storage-s3]`
 - ❌ HTTP/SFTP transport → `docex[transport-http]` / `docex[transport-sftp]`
-- ❌ PDF processing → `docex[pdf]`
+- ❌ PDF/DOCX processing → `docex[pdf]` / `docex[docx]`
 
 See [Dependency Optimization Guide](docs/DEPENDENCY_OPTIMIZATION.md) for detailed information.
 
@@ -179,78 +173,25 @@ basket = docEX.create_basket("invoices")
 
 See [Multi-Tenancy Guide](docs/MULTI_TENANCY_GUIDE.md) and [Security Best Practices](examples/SECURITY_BEST_PRACTICES.md) for details.
 
-### LLM-Powered Document Processing
+### LLM/RAG Integration Examples
 
-DocEX includes LLM adapters for intelligent document processing (requires `docex[llm]`):
+DocEX core does not ship LLM adapters, prompt templates, RAG services, or domain-specific extractors. Reference implementations live in:
 
-```python
-from docex import DocEX
-from docex.processors.llm import OpenAIAdapter
-import asyncio
-import os
-
-# Initialize DocEX
-docEX = DocEX()
-
-# Create a basket
-basket = docEX.create_basket('my_basket')
-
-# Add a document
-document = basket.add('invoice.pdf', metadata={'biz_doc_type': 'invoice'})
-
-# Create LLM adapter
-adapter = OpenAIAdapter({
-    'api_key': os.getenv('OPENAI_API_KEY'),
-    'model': 'gpt-4o',
-    'prompt_name': 'invoice_extraction',  # Uses prompts from docex/prompts/
-    'generate_summary': True,
-    'generate_embedding': True
-})
-
-# Process document with LLM
-result = await adapter.process(document)
-
-if result.success:
-    # Access extracted data
-    metadata = document.get_metadata_dict()
-    print(f"Invoice Number: {metadata.get('invoice_number')}")
-    print(f"Total Amount: {metadata.get('total_amount')}")
-    print(f"Summary: {metadata.get('llm_summary')}")
-```
-
-**Available Prompts:**
-- `invoice_extraction` - Extract invoice data (number, amounts, dates, line items)
-- `product_extraction` - Extract product information
-- `document_summary` - Generate document summaries
-- `generic_extraction` - Generic structured data extraction
-
-**Custom Prompts:**
-Create your own prompt files in YAML format in `docex/prompts/`:
-
-```yaml
-name: my_custom_prompt
-description: Custom extraction prompt
-version: 1.0
-
-system_prompt: |
-  You are an expert data extraction system.
-  Extract the following information...
-
-user_prompt_template: |
-  Please extract data from this text:
-  
-  {{ text }}
-```
+- `examples/integrations/` for OpenAI, Anthropic, and local LLM adapter examples.
+- `examples/patterns/` for RAG, knowledge base, advanced chunking, and invoice extraction patterns.
 
 ### Vector Indexing and Semantic Search
 
-DocEX includes vector indexing and semantic search capabilities (requires `docex[vector,llm]`):
+DocEX includes vector indexing and semantic search capabilities (requires `docex[vector]`). You provide the embedding function:
 
 ```python
 from docex import DocEX
-from docex.processors.llm import OpenAIAdapter
 from docex.processors.vector import VectorIndexingProcessor, SemanticSearchService
 import asyncio
+
+def embed(text: str) -> list[float]:
+    # Replace with your provider/model of choice.
+    return [float(len(text) % 10), 1.0, 0.0]
 
 # Initialize DocEX
 docEX = DocEX()
@@ -260,15 +201,10 @@ basket = docEX.create_basket('my_basket')
 document = basket.add('document.pdf')
 
 # Create vector indexing processor
-llm_adapter = OpenAIAdapter({
-    'api_key': os.getenv('OPENAI_API_KEY'),
-    'model': 'gpt-4o'
-})
-
-vector_processor = VectorIndexingProcessor({
-    'llm_adapter': llm_adapter,
-    'vector_db_type': 'memory'  # Use 'pgvector' for production
-})
+vector_processor = VectorIndexingProcessor(
+    embedding_fn=embed,
+    vector_db_type='memory'  # Use 'pgvector' for production
+)
 
 # Index document
 await vector_processor.process(document)
@@ -276,7 +212,7 @@ await vector_processor.process(document)
 # Perform semantic search
 search_service = SemanticSearchService(
     doc_ex=docEX,
-    llm_adapter=llm_adapter,
+    embedding_fn=embed,
     vector_db_type='memory',
     vector_db_config={'vectors': vector_processor.vector_db['vectors']}
 )

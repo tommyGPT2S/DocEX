@@ -1,8 +1,7 @@
 from typing import Dict, Type, Optional
 from docex.processors.base import BaseProcessor
 from docex.db.connection import Database
-from docex.db.models import Processor, DocBasket
-from docex.processors.pdf_invoice import PDFInvoiceProcessor
+from docex.db.models import Processor
 from docex.processors.mapper import ProcessorMapper
 
 class ProcessorFactory:

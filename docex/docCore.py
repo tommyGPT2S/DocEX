@@ -441,6 +441,12 @@ class DocEX:
                         elif 's3' in value:
                             # Nested S3 config - allow any S3 parameters
                             continue
+                    if key == 'database' and value.get('type') == 'postgresql':
+                        allowed_database_keys = set(defaults[key]) | {'postgresql'}
+                        for subkey in value:
+                            if subkey not in allowed_database_keys:
+                                logger.warning(f"Unexpected subkey in {key}: {subkey}")
+                        continue
                     # For other nested configs, check subkeys
                     for subkey in value:
                         if subkey not in defaults[key]:

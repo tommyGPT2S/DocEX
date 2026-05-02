@@ -17,7 +17,7 @@ from pathlib import Path
 
 from docex import DocEX
 from docex.context import UserContext
-from docex.processors.llm import OpenAIAdapter
+from examples.integrations.openai import OpenAIAdapter
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)

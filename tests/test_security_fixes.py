@@ -9,14 +9,13 @@ import pytest
 import tempfile
 import shutil
 from pathlib import Path
-from unittest.mock import Mock, AsyncMock, patch, MagicMock
+from unittest.mock import Mock, patch, MagicMock
 from io import BytesIO
 import json
 
 from docex.storage.filesystem_storage import FileSystemStorage
 from docex.processors.vector.semantic_search_service import SemanticSearchService
 from docex import DocEX
-from docex.processors.llm import BaseLLMProcessor
 
 
 class TestPathTraversalProtection:
@@ -183,17 +182,18 @@ class TestSQLInjectionProtection:
     
     def setup_method(self):
         """Set up test environment"""
-        # Create mock DocEX and LLM adapter
+        # Create mock DocEX and embedding function
         self.mock_doc_ex = Mock(spec=DocEX)
-        self.mock_llm_adapter = Mock(spec=BaseLLMProcessor)
-        self.mock_llm_service = Mock()
-        self.mock_llm_service.generate_embedding = AsyncMock(return_value=[0.1, 0.2, 0.3])
-        self.mock_llm_adapter.llm_service = self.mock_llm_service
+
+        async def embedding_fn(text):
+            return [0.1, 0.2, 0.3]
+
+        self.embedding_fn = embedding_fn
         
         # Create service with memory vector DB for testing
         self.service = SemanticSearchService(
             doc_ex=self.mock_doc_ex,
-            llm_adapter=self.mock_llm_adapter,
+            embedding_fn=self.embedding_fn,
             vector_db_type='memory',
             vector_db_config={'vectors': {}}
         )
@@ -209,9 +209,10 @@ class TestSQLInjectionProtection:
         # Create service with pgvector for this test
         service = SemanticSearchService(
             doc_ex=self.mock_doc_ex,
-            llm_adapter=self.mock_llm_adapter,
+            embedding_fn=self.embedding_fn,
             vector_db_type='pgvector',
-            vector_db_config={}
+            vector_db_config={},
+            db=mock_db
         )
         service.vector_db = {'type': 'pgvector', 'db': mock_db}
         
@@ -241,9 +242,10 @@ class TestSQLInjectionProtection:
         # Create service with pgvector
         service = SemanticSearchService(
             doc_ex=self.mock_doc_ex,
-            llm_adapter=self.mock_llm_adapter,
+            embedding_fn=self.embedding_fn,
             vector_db_type='pgvector',
-            vector_db_config={}
+            vector_db_config={},
+            db=mock_db
         )
         service.vector_db = {'type': 'pgvector', 'db': mock_db}
         
@@ -309,9 +311,10 @@ class TestSQLInjectionProtection:
         # Create service with pgvector
         service = SemanticSearchService(
             doc_ex=self.mock_doc_ex,
-            llm_adapter=self.mock_llm_adapter,
+            embedding_fn=self.embedding_fn,
             vector_db_type='pgvector',
-            vector_db_config={}
+            vector_db_config={},
+            db=mock_db
         )
         service.vector_db = {'type': 'pgvector', 'db': mock_db}
         
@@ -367,9 +370,10 @@ class TestSQLInjectionProtection:
         
         service = SemanticSearchService(
             doc_ex=self.mock_doc_ex,
-            llm_adapter=self.mock_llm_adapter,
+            embedding_fn=self.embedding_fn,
             vector_db_type='pgvector',
-            vector_db_config={}
+            vector_db_config={},
+            db=mock_db
         )
         service.vector_db = {'type': 'pgvector', 'db': mock_db}
         
@@ -397,9 +401,10 @@ class TestSQLInjectionProtection:
         
         service = SemanticSearchService(
             doc_ex=self.mock_doc_ex,
-            llm_adapter=self.mock_llm_adapter,
+            embedding_fn=self.embedding_fn,
             vector_db_type='pgvector',
-            vector_db_config={}
+            vector_db_config={},
+            db=mock_db
         )
         service.vector_db = {'type': 'pgvector', 'db': mock_db}
         
@@ -428,9 +433,10 @@ class TestSQLInjectionProtection:
         
         service = SemanticSearchService(
             doc_ex=self.mock_doc_ex,
-            llm_adapter=self.mock_llm_adapter,
+            embedding_fn=self.embedding_fn,
             vector_db_type='pgvector',
-            vector_db_config={}
+            vector_db_config={},
+            db=mock_db
         )
         service.vector_db = {'type': 'pgvector', 'db': mock_db}
         
@@ -516,4 +522,3 @@ class TestSecurityIntegration:
 
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])
-

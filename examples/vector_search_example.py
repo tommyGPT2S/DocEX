@@ -23,7 +23,7 @@ load_dotenv()
 
 from docex import DocEX
 from docex.context import UserContext
-from docex.processors.llm import OpenAIAdapter
+from examples.integrations.openai import OpenAIAdapter
 from docex.processors.vector import VectorIndexingProcessor, SemanticSearchService
 
 logging.basicConfig(level=logging.INFO)

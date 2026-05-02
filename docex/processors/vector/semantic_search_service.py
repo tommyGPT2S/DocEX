@@ -8,7 +8,9 @@ leveraging DocEX's document retrieval and metadata systems.
 import logging
 import time
 import hashlib
-from typing import Dict, Any, Optional, List, Tuple
+import inspect
+from collections.abc import Awaitable, Callable
+from typing import Dict, Any, Optional, List, Tuple, Union
 
 try:
     import numpy as np
@@ -19,9 +21,24 @@ except ImportError:
 
 from docex import DocEX
 from docex.document import Document
-from docex.processors.llm import BaseLLMProcessor
 
 logger = logging.getLogger(__name__)
+
+EmbeddingFn = Callable[[str], Union[List[float], Awaitable[List[float]]]]
+
+
+async def _resolve_embedding(embedding_fn: EmbeddingFn, text: str) -> List[float]:
+    embedding = embedding_fn(text)
+    if inspect.isawaitable(embedding):
+        embedding = await embedding
+
+    if not isinstance(embedding, list) or not embedding:
+        raise ValueError("embedding_fn must return a non-empty list of floats")
+
+    try:
+        return [float(value) for value in embedding]
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"embedding_fn returned non-numeric values: {exc}") from exc
 
 
 class SemanticSearchResult:
@@ -52,7 +69,7 @@ class SemanticSearchService:
     Semantic search service leveraging DocEX and vector databases.
     
     This service:
-    1. Generates query embeddings using LLM adapters
+    1. Generates query embeddings using a caller-provided embedding function
     2. Searches vector database for similar documents
     3. Retrieves full documents from DocEX
     4. Filters and ranks results using DocEX metadata
@@ -61,23 +78,28 @@ class SemanticSearchService:
     def __init__(
         self,
         doc_ex: DocEX,
-        llm_adapter: BaseLLMProcessor,
+        embedding_fn: EmbeddingFn,
         vector_db_type: str = 'memory',
-        vector_db_config: Optional[Dict[str, Any]] = None
+        vector_db_config: Optional[Dict[str, Any]] = None,
+        db: Optional[Any] = None,
     ):
         """
         Initialize semantic search service
         
         Args:
             doc_ex: DocEX instance for document retrieval
-            llm_adapter: LLM adapter for generating embeddings
+            embedding_fn: Sync or async callable that accepts text and returns an embedding.
             vector_db_type: Type of vector database ('pgvector' for production, 'memory' for testing)
             vector_db_config: Configuration for vector database (not needed for memory)
         """
+        if not callable(embedding_fn):
+            raise ValueError("embedding_fn is required and must be callable")
+
         self.doc_ex = doc_ex
-        self.llm_adapter = llm_adapter
+        self.embedding_fn = embedding_fn
         self.vector_db_type = vector_db_type
         self.vector_db_config = vector_db_config or {}
+        self.db = db
         
         # Initialize vector database connection
         self.vector_db = self._initialize_vector_db()
@@ -102,7 +124,9 @@ class SemanticSearchService:
     
     def _init_pgvector(self):
         """Initialize pgvector connection"""
-        from docex.db.connection import Database
+        if self.db is not None:
+            return {'type': 'pgvector', 'db': self.db}
+
         # Try to get tenant_id from multiple sources
         tenant_id = None
         # First check vector_db_config
@@ -111,7 +135,11 @@ class SemanticSearchService:
         # Then check doc_ex context if available
         elif hasattr(self.doc_ex, 'user_context') and self.doc_ex.user_context:
             tenant_id = getattr(self.doc_ex.user_context, 'tenant_id', None)
-        db = Database(tenant_id=tenant_id) if tenant_id else Database()
+        if tenant_id is None:
+            raise ValueError("pgvector semantic search requires an explicit Database instance or tenant_id")
+
+        from docex.db.connection import Database
+        db = Database(tenant_id=tenant_id)
         return {'type': 'pgvector', 'db': db}
     
     
@@ -144,54 +172,45 @@ class SemanticSearchService:
         Returns:
             List of SemanticSearchResult objects
         """
-        try:
-            # Check cache first
-            if use_cache:
-                cache_key = self._get_query_cache_key(query, basket_id, filters, top_k, min_similarity)
-                cached_result = self._get_cached_query(cache_key)
-                if cached_result is not None:
-                    logger.debug(f"Returning cached search results for query: {query[:50]}...")
-                    return cached_result
-            
-            # Generate query embedding
-            logger.info(f"Generating embedding for query: {query[:50]}...")
-            query_embedding = await self.llm_adapter.llm_service.generate_embedding(query)
-            
-            if not query_embedding:
-                logger.error("Failed to generate query embedding")
-                return []
-            
-            # Search vector database
-            vector_results = await self._search_vectors(
-                query_embedding,
-                top_k=top_k * 2,  # Get more results for filtering
-                basket_id=basket_id,
-                filters=filters
-            )
-            
-            # Apply minimum similarity threshold early
-            filtered_results = [
-                r for r in vector_results
-                if r['similarity'] >= min_similarity
-            ]
-            
-            # Batch retrieve documents for better performance
-            results = await self._batch_retrieve_documents(
-                filtered_results,
-                basket_id=basket_id,
-                filters=filters,
-                top_k=top_k
-            )
-            
-            # Cache results
-            if use_cache:
-                self._cache_query(cache_key, results)
-            
-            return results
-            
-        except Exception as e:
-            logger.error(f"Semantic search failed: {e}")
-            return []
+        # Check cache first
+        if use_cache:
+            cache_key = self._get_query_cache_key(query, basket_id, filters, top_k, min_similarity)
+            cached_result = self._get_cached_query(cache_key)
+            if cached_result is not None:
+                logger.debug(f"Returning cached search results for query: {query[:50]}...")
+                return cached_result
+        
+        # Generate query embedding
+        logger.info(f"Generating embedding for query: {query[:50]}...")
+        query_embedding = await _resolve_embedding(self.embedding_fn, query)
+        
+        # Search vector database
+        vector_results = await self._search_vectors(
+            query_embedding,
+            top_k=top_k * 2,  # Get more results for filtering
+            basket_id=basket_id,
+            filters=filters
+        )
+        
+        # Apply minimum similarity threshold early
+        filtered_results = [
+            r for r in vector_results
+            if r['similarity'] >= min_similarity
+        ]
+        
+        # Batch retrieve documents for better performance
+        results = await self._batch_retrieve_documents(
+            filtered_results,
+            basket_id=basket_id,
+            filters=filters,
+            top_k=top_k
+        )
+        
+        # Cache results
+        if use_cache:
+            self._cache_query(cache_key, results)
+        
+        return results
     
     async def _search_vectors(
         self,
@@ -346,8 +365,7 @@ class SemanticSearchService:
         vectors = self.vector_db.get('vectors', {})
         
         if not vectors:
-            logger.warning("No vectors found in memory database")
-            return []
+            raise ValueError("No vectors found in memory vector database")
         
         # Pre-filter by basket_id if provided
         filtered_vectors = {}
@@ -359,7 +377,7 @@ class SemanticSearchService:
                 filtered_vectors[doc_id] = vector_data
         
         if not filtered_vectors:
-            return []
+            raise ValueError("No vectors matched the provided search constraints")
         
         # Vectorized similarity calculation using numpy for better performance
         if HAS_NUMPY and len(filtered_vectors) > 10:  # Use vectorized for larger sets
@@ -384,6 +402,9 @@ class SemanticSearchService:
         """Calculate cosine similarity between two vectors"""
         try:
             if HAS_NUMPY:
+                if len(vec1) != len(vec2):
+                    raise ValueError("Cannot compare embeddings with different dimensions")
+
                 v1 = np.array(vec1)
                 v2 = np.array(vec2)
                 dot_product = np.dot(v1, v2)
@@ -391,22 +412,23 @@ class SemanticSearchService:
                 norm2 = np.linalg.norm(v2)
                 
                 if norm1 == 0 or norm2 == 0:
-                    return 0.0
+                    raise ValueError("Cannot compare zero-magnitude embedding")
                 
                 return float(dot_product / (norm1 * norm2))
-            else:
-                # Fallback without numpy
-                dot_product = sum(a * b for a, b in zip(vec1, vec2))
-                norm1 = sum(a * a for a in vec1) ** 0.5
-                norm2 = sum(b * b for b in vec2) ** 0.5
-                
-                if norm1 == 0 or norm2 == 0:
-                    return 0.0
-                
-                return float(dot_product / (norm1 * norm2))
+            if len(vec1) != len(vec2):
+                raise ValueError("Cannot compare embeddings with different dimensions")
+
+            dot_product = sum(a * b for a, b in zip(vec1, vec2))
+            norm1 = sum(a * a for a in vec1) ** 0.5
+            norm2 = sum(b * b for b in vec2) ** 0.5
+            
+            if norm1 == 0 or norm2 == 0:
+                raise ValueError("Cannot compare zero-magnitude embedding")
+            
+            return float(dot_product / (norm1 * norm2))
         except Exception as e:
             logger.error(f"Error calculating cosine similarity: {e}")
-            return 0.0
+            raise
     
     def _batch_cosine_similarity(
         self,
@@ -432,7 +454,7 @@ class SemanticSearchService:
             query_norm = np.linalg.norm(query_vec)
             
             if query_norm == 0:
-                return []
+                raise ValueError("Cannot compare zero-magnitude query embedding")
             
             # Normalize query vector
             query_vec = query_vec / query_norm
@@ -474,17 +496,8 @@ class SemanticSearchService:
             return results
             
         except Exception as e:
-            logger.warning(f"Vectorized similarity calculation failed, falling back: {e}")
-            # Fallback to individual calculations
-            return [
-                {
-                    'document_id': doc_id,
-                    'basket_id': vector_data.get('basket_id'),
-                    'similarity': self._cosine_similarity(query_embedding, vector_data['embedding']),
-                    'metadata': vector_data.get('metadata', {})
-                }
-                for doc_id, vector_data in vectors.items()
-            ]
+            logger.error(f"Vectorized similarity calculation failed: {e}")
+            raise
     
     async def _batch_retrieve_documents(
         self,
@@ -668,4 +681,3 @@ class SemanticSearchService:
                 return False
         
         return True
-

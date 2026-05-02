@@ -156,7 +156,9 @@ class Database:
                     # PostgreSQL configuration
                     from urllib.parse import quote_plus
 
-                    postgres_config = db_config.get('postgres', db_config.get('postgresql', {}))
+                    postgres_config = db_config.get('postgresql') or db_config.get('postgres')
+                    if not postgres_config:
+                        raise ValueError("PostgreSQL database configuration requires a 'postgres' or 'postgresql' block")
                     host = postgres_config.get('host', 'localhost')
                     port = postgres_config.get('port', 5432)
                     database = postgres_config.get('database', 'docex')
@@ -283,14 +285,16 @@ class Database:
                     # PostgreSQL configuration
                     from urllib.parse import quote_plus
 
-                    # Get PostgreSQL-specific config (nested under 'postgres' key)
-                    postgres_config = db_config.get('postgres', {})
+                    # Get PostgreSQL-specific config.
+                    postgres_config = db_config.get('postgresql') or db_config.get('postgres')
+                    if not postgres_config:
+                        raise ValueError("PostgreSQL database configuration requires a 'postgres' or 'postgresql' block")
 
-                    host = postgres_config.get('host', db_config.get('host', 'localhost'))
-                    port = postgres_config.get('port', db_config.get('port', 5432))
-                    database = postgres_config.get('database', db_config.get('database', 'docex'))
-                    user = postgres_config.get('user', db_config.get('user', 'postgres'))
-                    password = postgres_config.get('password', db_config.get('password', ''))
+                    host = postgres_config.get('host', 'localhost')
+                    port = postgres_config.get('port', 5432)
+                    database = postgres_config.get('database', 'docex')
+                    user = postgres_config.get('user', 'postgres')
+                    password = postgres_config.get('password', '')
                     
                     # URL-encode user and password to handle special characters
                     user_encoded = quote_plus(user)
@@ -503,7 +507,7 @@ class Database:
         """
         # Get bootstrap schema from config
         db_config = self.config.get('database', {})
-        postgres_config = db_config.get('postgres', db_config.get('postgresql', {}))
+        postgres_config = db_config.get('postgresql') or db_config.get('postgres') or {}
         bootstrap_schema = postgres_config.get('system_schema', 'docex_system')
 
         # Create connection and set search path to bootstrap schema
@@ -548,7 +552,7 @@ class Database:
         if db_config.get('type') not in ['postgresql', 'postgres']:
             return  # Only applies to PostgreSQL
 
-        postgres_config = db_config.get('postgres', db_config.get('postgresql', {}))
+        postgres_config = db_config.get('postgresql') or db_config.get('postgres') or {}
         bootstrap_schema = postgres_config.get('system_schema', 'docex_system')
 
         # Check if already initialized (both in-memory flag and database check)
@@ -628,7 +632,7 @@ class Database:
     def get_bootstrap_schema(self) -> str:
         """Get the bootstrap/system schema name."""
         db_config = self.config.get('database', {})
-        postgres_config = db_config.get('postgres', db_config.get('postgresql', {}))
+        postgres_config = db_config.get('postgresql') or db_config.get('postgres') or {}
         return postgres_config.get('system_schema', 'docex_system')
 
     def dispose(self) -> None:

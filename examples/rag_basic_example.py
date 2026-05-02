@@ -8,9 +8,9 @@ with existing semantic search infrastructure.
 import asyncio
 import logging
 from docex.docbasket import DocBasket
-from docex.processors.llm.claude_adapter import ClaudeAdapter
+from examples.integrations.anthropic import ClaudeAdapter
 from docex.processors.vector.semantic_search_service import SemanticSearchService
-from docex.processors.rag import RAGService
+from examples.patterns.rag import RAGService
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -144,43 +144,8 @@ async def basic_rag_example():
                 print(f"❌ Error processing question: {e}")
                 logger.error(f"Question failed: {e}", exc_info=True)
         
-        # Step 6: Demonstrate conversational RAG
-        print("\n🗣️  Conversational RAG Example")
-        print("=" * 50)
-        
-        try:
-            from docex.processors.rag import AdvancedRAGService
-            
-            advanced_rag = AdvancedRAGService(semantic_search, claude_adapter, rag_config)
-            
-            conversation_id = "demo_conversation_1"
-            
-            # First question
-            question1 = "What is machine learning?"
-            result1 = await advanced_rag.conversational_query(
-                question=question1,
-                conversation_id=conversation_id,
-                basket_id=basket.id
-            )
-            
-            print(f"❓ Q1: {question1}")
-            print(f"💡 A1: {result1.answer}")
-            
-            # Follow-up question
-            question2 = "Can you give me specific examples of those algorithms?"
-            result2 = await advanced_rag.conversational_query(
-                question=question2,
-                conversation_id=conversation_id,
-                basket_id=basket.id
-            )
-            
-            print(f"\n❓ Q2: {question2}")
-            print(f"💡 A2: {result2.answer}")
-            
-            print(f"\n✅ Conversational RAG completed successfully")
-            
-        except Exception as e:
-            print(f"⚠️  Conversational RAG not available: {e}")
+        # Conversational RAG is application-specific. Use the examples under
+        # examples/patterns/rag as a starting point for your own orchestration.
         
         print("\n🎉 Basic RAG example completed successfully!")
         

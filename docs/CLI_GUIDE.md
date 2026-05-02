@@ -4,18 +4,16 @@ Complete guide to using the DocEX command-line interface.
 
 ## Overview
 
-The DocEX CLI provides commands for managing tenants, baskets, documents, and performing operations like vector indexing.
+The DocEX CLI provides commands for managing tenants, baskets, and documents.
 
 ## Commands
 
 ### Main Commands
 
 - `init` - Initialize DocEX with configuration
-- `embed` - Generate vector embeddings for documents
 - `provision-tenant` - Provision a new tenant
 - `basket` - Manage document baskets
 - `document` - Manage documents
-- `processor` - Manage document processors
 
 ## Basket Commands
 
@@ -216,43 +214,6 @@ docex provision-tenant --tenant-id acme-corp --enable-multi-tenancy
 - `--verify` - Verify tenant by creating a test basket
 - `--enable-multi-tenancy` - Enable database-level multi-tenancy in config if not already enabled
 
-## Vector Indexing Commands
-
-### Embed Documents
-
-Generate vector embeddings for documents.
-
-```bash
-# Index all documents for a tenant
-docex embed --tenant-id my-tenant --all
-
-# Index documents in a specific basket
-docex embed --tenant-id my-tenant --basket my_basket_name
-
-# Index with filters
-docex embed --tenant-id my-tenant --all --document-type purchase_order
-
-# Force re-indexing
-docex embed --tenant-id my-tenant --all --force
-
-# Dry run
-docex embed --tenant-id my-tenant --all --dry-run
-```
-
-**Options:**
-- `--tenant-id` - Tenant ID for multi-tenant setups
-- `--all` - Index all documents across all baskets
-- `--basket` - Index documents in a specific basket (by name)
-- `--basket-id` - Index documents in a specific basket (by ID)
-- `--document-type` - Filter documents by document type
-- `--force` - Force re-indexing of already indexed documents
-- `--model` - Embedding model to use (default: `all-mpnet-base-v2`)
-- `--batch-size` - Number of documents to process in each batch (default: 10)
-- `--limit` - Maximum number of documents to index
-- `--skip` - Number of documents to skip (for pagination)
-- `--dry-run` - Show what would be indexed without actually indexing
-- `--vector-db-type` - Vector database type: `pgvector` (default) or `memory`
-
 ## Output Formats
 
 ### Table Format (Default)
@@ -306,8 +267,6 @@ docex document search --tenant-id acme-corp --basket-id bas_123 --metadata '{"ca
 # 7. Count documents
 docex document count --tenant-id acme-corp --basket-id bas_123
 
-# 8. Index for semantic search
-docex embed --tenant-id acme-corp --basket-id bas_123
 ```
 
 ### Advanced Queries
@@ -338,7 +297,7 @@ docex document get --tenant-id acme-corp --basket-id bas_123 --document-id doc_4
 
 4. **Tenant ID is optional**: If multi-tenancy is not enabled, you can omit `--tenant-id`.
 
-5. **Use dry-run for testing**: Use `--dry-run` with embed command to see what would be indexed without actually doing it.
+5. **Vector indexing is a Python API**: Use `VectorIndexingProcessor` with your own `embedding_fn` in application code.
 
 ## Troubleshooting
 
@@ -365,4 +324,3 @@ docex document get --tenant-id acme-corp --basket-id bas_123 --document-id doc_4
 - [Tenant Provisioning Guide](TENANT_PROVISIONING.md)
 - [Document Query Optimizations](DOCUMENT_QUERY_OPTIMIZATIONS.md)
 - [Multi-Tenancy Guide](MULTI_TENANCY_GUIDE.md)
-

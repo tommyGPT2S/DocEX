@@ -1,0 +1,1 @@
+"""Advanced chunking reference patterns."""

@@ -27,9 +27,9 @@ from docex.processors.chunking import (
     FixedSizeChunking,
     RecursiveChunking,
     DocumentBasedChunking,
-    SemanticChunking,
     HierarchicalChunking,
 )
+from examples.patterns.chunking.semantic_chunking import SemanticChunking
 
 # Try to import matplotlib, install if needed
 try:
@@ -875,4 +875,3 @@ async def main():
 
 if __name__ == '__main__':
     asyncio.run(main())
-

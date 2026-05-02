@@ -3,10 +3,8 @@ Tests for vector indexing and semantic search
 """
 
 import pytest
-import asyncio
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 from docex.processors.vector import VectorIndexingProcessor, SemanticSearchService
-from docex.processors.llm import OpenAIAdapter
 from docex import DocEX
 from docex.document import Document
 
@@ -15,29 +13,25 @@ class TestVectorIndexingProcessor:
     """Tests for VectorIndexingProcessor"""
     
     @pytest.fixture
-    def mock_llm_adapter(self):
-        """Create a mock LLM adapter"""
-        async def mock_generate_embedding(text):
+    def embedding_fn(self):
+        """Create a test embedding function"""
+        async def embed(text):
             return [0.1] * 1536
-        
-        adapter = Mock(spec=OpenAIAdapter)
-        adapter.llm_service = Mock()
-        adapter.llm_service.generate_embedding = mock_generate_embedding
-        return adapter
+
+        return embed
     
     @pytest.fixture
-    def processor_config(self, mock_llm_adapter):
+    def processor_config(self):
         """Create processor configuration"""
         return {
-            'llm_adapter': mock_llm_adapter,
             'vector_db_type': 'memory',
             'store_in_metadata': True
         }
     
     @pytest.fixture
-    def processor(self, processor_config):
+    def processor(self, processor_config, embedding_fn):
         """Create processor instance"""
-        return VectorIndexingProcessor(processor_config)
+        return VectorIndexingProcessor(embedding_fn=embedding_fn, **processor_config)
     
     @pytest.fixture
     def mock_document(self):
@@ -111,22 +105,19 @@ class TestSemanticSearchService:
         return Mock(spec=DocEX)
     
     @pytest.fixture
-    def mock_llm_adapter(self):
-        """Create a mock LLM adapter"""
-        async def mock_generate_embedding(text):
+    def embedding_fn(self):
+        """Create a test embedding function"""
+        async def embed(text):
             return [0.1] * 1536
-        
-        adapter = Mock()
-        adapter.llm_service = Mock()
-        adapter.llm_service.generate_embedding = mock_generate_embedding
-        return adapter
+
+        return embed
     
     @pytest.fixture
-    def search_service(self, mock_doc_ex, mock_llm_adapter):
+    def search_service(self, mock_doc_ex, embedding_fn):
         """Create search service instance"""
         return SemanticSearchService(
             doc_ex=mock_doc_ex,
-            llm_adapter=mock_llm_adapter,
+            embedding_fn=embedding_fn,
             vector_db_type='memory',
             vector_db_config={'vectors': {}}
         )
@@ -197,14 +188,12 @@ class TestSemanticSearchService:
         """Test search with empty database"""
         search_service.vector_db['vectors'] = {}
         
-        results = await search_service._search_memory(
-            [0.1] * 1536,
-            top_k=10
-        )
-        
-        assert len(results) == 0
+        with pytest.raises(ValueError, match="No vectors found"):
+            await search_service._search_memory(
+                [0.1] * 1536,
+                top_k=10
+            )
 
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
-

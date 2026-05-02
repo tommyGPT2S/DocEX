@@ -10,7 +10,7 @@ from pathlib import Path
 import tempfile
 
 from docex import DocEX
-from docex.processors.llm import LocalLLMAdapter
+from examples.integrations.local_llm import LocalLLMAdapter
 
 # Set up logging
 logging.basicConfig(
