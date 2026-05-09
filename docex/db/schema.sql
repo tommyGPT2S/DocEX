@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS documents (
     raw_content TEXT,
     related_po VARCHAR(50),
     checksum VARCHAR(64),
+    "user" VARCHAR(255),
     status VARCHAR(50) NOT NULL DEFAULT 'RECEIVED',
     processing_attempts INTEGER NOT NULL DEFAULT 0,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
