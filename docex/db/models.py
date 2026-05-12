@@ -73,7 +73,6 @@ class Document(Base):
     raw_content = Column(Text, nullable=True)  # Raw document content
     size = Column(Integer, nullable=True)  # Size in bytes
     checksum = Column(String(64), nullable=False)  # SHA-256 checksum
-    user = Column("user", String(255), nullable=True)  # uploader identifier (email/user id)
     status = Column(String(50), nullable=False, default='active')
     processing_attempts = Column(Integer, nullable=False, default=0)  # Number of processing attempts
     created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
