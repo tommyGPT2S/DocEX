@@ -16,7 +16,6 @@ import logging
 import re
 import sys
 
-from custom_processors.my_pdf_text_processor import MyPDFTextProcessor
 from docex import DocEX
 from docex.context import UserContext
 from docex.processors.factory import factory
@@ -72,14 +71,14 @@ def extract_invoice_metadata(text: str) -> InvoiceMetadata:
 
 def process_invoice(pdf_path: str):
     """
-    Process an invoice PDF and extract PO number.
+    Process an invoice PDF and extract structured invoice metadata.
     
     Args:
         pdf_path (str): Path to the PDF invoice file
     """
     try:
         factory.mapper.rules.insert(0, pdf_rule)
-        
+
         # 1. Create UserContext for audit logging
         user_context = UserContext(
             user_id="invoice_processor",
@@ -124,33 +123,6 @@ def process_invoice(pdf_path: str):
             logger.info('\nDocument Metadata:')
             doc_metadata = doc.get_metadata()
             logger.info(doc_metadata)
-            
-            # 9. Find documents with the same PO number
-            if 'cus_PO' in doc_metadata:
-                try:
-                    # Get PO number from metadata
-                    po_metadata = doc_metadata['cus_PO']
-                    po_number = po_metadata.extra.get('value') if hasattr(po_metadata, 'extra') else None
-                    
-                    if po_number:
-                        logger.info(f'\nFound PO Number: {po_number}')
-                        # Use basket's find_documents_by_metadata to search for related documents
-                        related_docs = basket.find_documents_by_metadata({'cus_PO': po_number})
-                        
-                        if related_docs:
-                            logger.info(f"\nFound {len(related_docs)} related documents:")
-                            for related_doc in related_docs:
-                                logger.info(f"""
-                                Related Document:
-                                ID: {related_doc.id}
-                                Name: {related_doc.name}
-                                Type: {related_doc.document_type}
-                                Created: {related_doc.created_at}
-                                ------------------------""")
-                        else:
-                            logger.info(f"No other documents found with PO number: {po_number}")
-                except Exception as e:
-                    logger.error(f"Error finding related documents: {str(e)}")
             
             return doc
         else:
