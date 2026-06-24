@@ -12,7 +12,7 @@ from docex.processors.factory import factory
 from my_pdf_text_processor import MyPDFTextProcessor
 import sys
 
-def pdf_rule(document):
+def pdf_rule(document, db=None):
     # Use our custom processor for any PDF file
     if document.name.lower().endswith('.pdf'):
         return MyPDFTextProcessor
