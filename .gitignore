@@ -96,9 +96,18 @@ test_meeting_notes.txt
 sk-ant-*
 KB_Implementation_Proposal.html
 
-# Documentation files (email responses, summaries, etc.)
+# Documentation files (email responses, summaries, PR descriptions, etc.)
 EMAIL_RESPONSE_*.md
 *_SUMMARY.md
 DOCEX_KB_RELATIONSHIP.md
 GENERIC_KB_SERVICE_SUMMARY.md
-PR_DESCRIPTION.md
+PR_DESCRIPTION*.md
+
+# Test/temp storage
+storage/doc_*
+storage/docex/basket_*
+storage/docex/docex/
+
+# Scripts and temp files
+setup_ollama.sh
+chunking/
