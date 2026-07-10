@@ -1,0 +1,27 @@
+# Default extraction fields for commercial real estate invoices.
+# Override by passing your own dict or YAML file to ExtractionConfig.
+fields:
+  invoice_number:
+    type: text
+    labels: ["Invoice No.", "Invoice Number", "Invoice #"]
+  invoice_date:
+    type: date
+    labels: ["Invoice Date", "Date"]
+  due_date:
+    type: date
+    labels: ["Due Date", "Payment Due"]
+  vendor:
+    type: text
+    labels: ["Remit To", "Vendor", "Landlord", "Property Manager"]
+  total:
+    type: money
+    labels: ["Total Due", "Amount Due", "Balance Due", "Total"]
+  base_rent:
+    type: money
+    labels: ["Base Rent", "Minimum Rent"]
+  cam:
+    type: money
+    labels: ["CAM", "Common Area Maintenance", "Operating Expenses"]
+  tax:
+    type: money
+    labels: ["Real Estate Tax", "Property Tax", "Tax"]
