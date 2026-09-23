@@ -23,7 +23,7 @@ This example demonstrates how to create and use a custom processor outside the m
    from docex.processors.factory import factory
    from my_pdf_text_processor import MyPDFTextProcessor
    
-   def pdf_rule(document):
+   def pdf_rule(document, db=None):
        if document.name.lower().endswith('.pdf'):
            return MyPDFTextProcessor
        return None
@@ -49,6 +49,7 @@ This example demonstrates how to create and use a custom processor outside the m
    ```
 
 2. Run the example:
-   ```
-   python3 test_example.py
+
+   ```sh
+   python examples/custom_processors/run_custom_pdf_processor.py
    ```
