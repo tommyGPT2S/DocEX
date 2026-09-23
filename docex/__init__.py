@@ -35,4 +35,4 @@ from docex.models.records import BasketRecord, DocumentRecord
 
 __all__ = ['DocEX', 'DocEXConfig', 'BasketRecord', 'DocumentRecord']
 
-__version__ = '2.8.4'
+__version__ = "2.9.10"

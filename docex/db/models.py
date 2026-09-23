@@ -65,8 +65,8 @@ class Document(Base):
     id = Column(String(36), primary_key=True, default=lambda: f"doc_{uuid4().hex}")
     basket_id = Column(String(36), ForeignKey('docbasket.id'), nullable=False)
     name = Column(String(255), nullable=False)
-    source = Column(String(255), nullable=False)  # Original source path
-    path = Column(String(255), nullable=False)  # Path relative to basket's storage
+    source = Column(Text, nullable=False)  # Original source path / object key
+    path = Column(Text, nullable=False)  # Tenant-scoped object paths can exceed 255 chars
     content_type = Column(String(100), nullable=True)
     document_type = Column(String(50), nullable=False, default='file')  # Type of document (file, url, etc.)
     content = Column(JSON, nullable=True)  # Document content as JSON
@@ -92,8 +92,8 @@ class FileHistory(Base):
     
     id = Column(String(36), primary_key=True, default=lambda: generate_id(FileHistory))
     document_id = Column(String(36), ForeignKey('document.id'), nullable=False)
-    original_path = Column(String(255))
-    internal_path = Column(String(255))
+    original_path = Column(Text)
+    internal_path = Column(Text)
     created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
     
     # Relationships

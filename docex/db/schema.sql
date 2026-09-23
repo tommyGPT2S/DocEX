@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS documents (
     id VARCHAR(36) PRIMARY KEY,
     basket_id VARCHAR(36) NOT NULL REFERENCES docbasket(id) ON DELETE CASCADE,
     document_type VARCHAR(50) NOT NULL,
-    source VARCHAR(255) NOT NULL,
+    source TEXT NOT NULL,
     content JSON,  -- SQLite will store as TEXT, handled by SQLAlchemy
     raw_content TEXT,
     related_po VARCHAR(50),
@@ -46,8 +46,8 @@ CREATE TABLE IF NOT EXISTS documents (
 CREATE TABLE IF NOT EXISTS file_history (
     id VARCHAR(36) PRIMARY KEY,
     document_id VARCHAR(36) NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
-    original_path VARCHAR(255) NOT NULL,
-    internal_path VARCHAR(255) NOT NULL,
+    original_path TEXT NOT NULL,
+    internal_path TEXT NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
